@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: payment-service-postgres
+    environment:
+      POSTGRES_DB: payment_service
+      POSTGRES_USER: payment
+      POSTGRES_PASSWORD: payment_local
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment -d payment_service"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - payment-service-postgres-data:/var/lib/postgresql
+
+volumes:
+  payment-service-postgres-data:
