@@ -139,7 +139,32 @@ Remove-Item Env:PAYMENT_DB_URL
 
 ## Docker의 environment와 차이
 
-`compose.yaml`에도 환경변수가 있습니다.
+Spring Boot와 Docker 컨테이너는 서로 다른 프로그램이므로 각각 전달받는 환경변수도 다릅니다.
+
+### Docker가 compose.yaml을 읽는 시점
+
+다음 명령을 실행하면 Docker Compose가 프로젝트 루트의 `compose.yaml`을 읽습니다.
+
+```powershell
+docker compose up -d
+```
+
+처리 순서는 다음과 같습니다.
+
+```text
+1. PowerShell에서 `docker compose up -d` 실행
+2. Docker Compose가 `compose.yaml` 읽기
+3. Docker Compose가 필요한 이미지와 컨테이너 설정 확인
+4. `environment` 값을 각 컨테이너의 환경변수로 전달
+5. PostgreSQL과 pgAdmin 컨테이너 시작
+6. 컨테이너 안의 프로그램이 자신에게 전달된 환경변수 읽기
+```
+
+`docker compose up -d`의 `-d`는 컨테이너를 백그라운드에서 계속 실행하라는 뜻입니다. 명령을 다시 실행하면 Docker Compose가 현재 설정과 기존 컨테이너를 비교하고 필요한 변경을 반영합니다.
+
+### 파일에 값을 직접 적은 경우
+
+현재 `compose.yaml`의 PostgreSQL 설정은 다음과 같습니다.
 
 ```yaml
 environment:
@@ -148,11 +173,101 @@ environment:
   POSTGRES_PASSWORD: payment_local
 ```
 
-이 값은 PostgreSQL 컨테이너에 전달되어 데이터베이스와 사용자를 초기화합니다.
+오른쪽 값이 `compose.yaml`에 직접 적혀 있으므로 PowerShell에서 `POSTGRES_*`를 따로 설정할 필요가 없습니다. `docker compose up -d`를 실행하면 Docker Compose가 파일에 적힌 값을 PostgreSQL 컨테이너에 자동으로 전달합니다.
+
+```text
+compose.yaml에 적힌 값
+        │
+        │ docker compose up -d
+        ▼
+PostgreSQL 컨테이너의 환경변수
+        │
+        ▼
+PostgreSQL 이미지의 시작 프로그램이 읽음
+```
+
+PostgreSQL 공식 이미지의 시작 프로그램은 데이터 저장 공간이 비어 있는 첫 실행에서 이 값을 사용합니다.
+
+- `POSTGRES_DB`: 처음 생성할 데이터베이스 이름
+- `POSTGRES_USER`: 처음 생성할 사용자 이름
+- `POSTGRES_PASSWORD`: 해당 사용자의 비밀번호
+
+이미 PostgreSQL 볼륨이 초기화된 상태라면 `compose.yaml`의 값을 바꾸고 다시 실행하는 것만으로 기존 데이터베이스나 사용자가 자동 변경되지는 않습니다. `POSTGRES_*`는 주로 최초 초기화에 사용되기 때문입니다.
+
+### PowerShell 값을 받아서 전달하는 경우
+
+Docker Compose 설정에서도 값을 파일에 직접 적지 않고 PowerShell 환경변수를 받을 수 있습니다. 현재 pgAdmin 설정이 이 방식을 사용합니다.
+
+```yaml
+environment:
+  PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@payment-service.com}
+  PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-payment_admin_local}
+```
+
+`${PGADMIN_DEFAULT_EMAIL:-기본값}`은 다음 의미입니다.
+
+1. Docker Compose가 실행된 PowerShell에서 `PGADMIN_DEFAULT_EMAIL`을 찾습니다.
+2. 값이 있으면 그 값을 컨테이너에 전달합니다.
+3. 값이 없으면 `:-` 뒤에 있는 기본값을 전달합니다.
+
+평소에는 PowerShell에서 아무 값도 설정하지 않으므로 파일의 기본값이 사용됩니다.
+
+```powershell
+docker compose up -d
+```
+
+다른 값을 전달하고 싶을 때만 먼저 환경변수를 설정합니다.
+
+```powershell
+$env:PGADMIN_DEFAULT_EMAIL = 'my-admin@example.com'
+$env:PGADMIN_DEFAULT_PASSWORD = '다른-로컬-비밀번호'
+docker compose up -d
+```
+
+여기서도 Docker Compose가 환경변수를 자동 생성하는 것은 아닙니다. PowerShell에 값이 없으면 `compose.yaml`에 작성된 기본값을 선택하는 것입니다.
+
+### Spring Boot 환경변수와 자동으로 연결되나요?
+
+자동으로 연결되지 않습니다. 현재 Spring Boot는 로컬 JVM에서 실행되고 PostgreSQL은 Docker 컨테이너에서 실행됩니다.
 
 ```text
 PowerShell 또는 IntelliJ의 PAYMENT_DB_* → Spring Boot가 읽음
 compose.yaml의 POSTGRES_*              → PostgreSQL 컨테이너가 읽음
 ```
 
-둘 다 이름과 값의 형태지만 값을 읽는 프로그램과 목적이 다릅니다.
+`POSTGRES_PASSWORD`가 자동으로 `PAYMENT_DB_PASSWORD`가 되는 기능은 없습니다. 현재 두 설정의 기본값이 모두 `payment_local`로 작성되어 있어서 서로 일치하는 것입니다.
+
+```text
+compose.yaml
+POSTGRES_PASSWORD: payment_local
+        │
+        │ 같은 값을 개발자가 맞춰 작성
+        │
+application.yml
+${PAYMENT_DB_PASSWORD:payment_local}
+```
+
+예를 들어 `compose.yaml`의 PostgreSQL 비밀번호를 바꾸면 Spring Boot가 사용할 `PAYMENT_DB_PASSWORD`도 맞는 값으로 전달해야 합니다.
+
+### 두 실행 명령의 역할
+
+```powershell
+docker compose up -d
+.\gradlew.bat bootRun
+```
+
+첫 번째 명령은 `compose.yaml`을 읽어 PostgreSQL과 pgAdmin을 실행합니다. 두 번째 명령은 Spring Boot를 실행하고, Spring Boot는 `application.yml`과 자신에게 전달된 환경변수를 읽습니다.
+
+```text
+docker compose up -d
+  └─ compose.yaml 읽기
+      ├─ POSTGRES_* → PostgreSQL 컨테이너
+      └─ PGADMIN_*  → pgAdmin 컨테이너
+
+.\gradlew.bat bootRun
+  └─ Spring Boot 실행
+      └─ application.yml 읽기
+          └─ PAYMENT_DB_* → Spring Boot의 DB 접속 설정
+```
+
+환경변수는 모두 이름과 값의 형태이지만, 어떤 명령으로 프로그램을 시작했는지와 어떤 프로그램이 그 이름을 읽도록 만들어졌는지에 따라 용도가 결정됩니다.
