@@ -195,12 +195,9 @@ docker compose up -d
 | 비밀번호 | `POSTGRES_PASSWORD: payment_local` | `${PAYMENT_DB_PASSWORD:payment_local}` |
 | 포트 | 로컬 `5432`를 컨테이너 `5432`에 연결 | URL의 `localhost:5432` |
 
-환경변수는 명령이 아니라 프로그램에 전달하는 입력값입니다. 그 이름을 알아보도록 만들어진 프로그램이 실제 작업을 수행합니다.
+PostgreSQL 공식 Docker 이미지에는 `POSTGRES_USER`라는 환경변수 이름을 알아보고, 처음 초기화할 때 그 값으로 PostgreSQL 사용자를 생성하는 처리 코드가 미리 들어 있습니다.
 
-- PostgreSQL 공식 Docker 이미지의 시작 프로그램은 처음 초기화할 때 `POSTGRES_USER`의 값 `payment`를 읽어 사용자를 생성합니다.
-- Spring Boot는 `application.yml`에 연결된 `PAYMENT_DB_USERNAME`의 값으로 그 사용자에 로그인합니다.
-
-두 변수는 자동으로 연결되지 않으며, **최종 사용자·비밀번호·DB 이름 값이 같아서** 접속할 수 있습니다.
+따라서 Docker 이미지는 `POSTGRES_USER`의 값 `payment`로 사용자를 생성하고, `PAYMENT_DB_USERNAME`은 Spring Boot가 그 사용자로 로그인할 때 사용합니다. 두 변수는 자동으로 연결되지 않으며, **최종 사용자·비밀번호·DB 이름 값이 같아서** 접속할 수 있습니다.
 
 한쪽 값을 변경하면 다른 쪽의 최종 값도 같게 맞춰야 합니다.
 
