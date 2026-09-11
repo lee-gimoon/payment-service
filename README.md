@@ -35,14 +35,15 @@ flowchart LR
     Browser["브라우저<br/>index.html · result.html"]
 
     subgraph App["Spring Boot 프로세스 · PC에서 직접 실행"]
-        Web["Spring Boot Web<br/>정적 파일 · Controller · Service"]
+        Web["Spring Boot Web<br/>정적 파일 · Controller · Service<br/>127.0.0.1:8080"]
         Jpa["Spring Data JPA<br/>Hibernate"]
         Jdbc["PostgreSQL<br/>JDBC 드라이버"]
         Gateway["TossPaymentGateway"]
 
         Web -->|"Repository 호출"| Jpa
         Jpa -->|"객체 작업을 SQL로 변환"| Jdbc
-        Web -->|"결제 승인·조회 요청"| Gateway
+        Web -->|"외부 결제 처리 요청"| Gateway
+        Gateway -->|"외부 결제 처리 결과"| Web
     end
 
     DbHost["PC의 PostgreSQL 접속 주소<br/>127.0.0.1:5432"]
@@ -56,22 +57,22 @@ flowchart LR
     TossCheckout["토스페이먼츠<br/>결제창 및 SDK"]
     TossApi["토스페이먼츠<br/>REST API"]
 
-    Browser -->|"HTTP · 화면 및 API 요청<br/>127.0.0.1:8080"| Web
+    Browser -->|"화면 조회 · 주문 생성 · 결제 승인 처리 요청"| Web
+    Web -->|"HTML 화면 · 주문 및 결제 결과 응답"| Browser
 
-    Jdbc -->|"TCP 접속<br/>JDBC URL의 localhost:5432 사용"| DbHost
-    DbHost -->|"Docker 포트 전달<br/>PC 5432 → 컨테이너 5432"| DB
+    Jdbc -->|"데이터베이스 연결 및 SQL 실행"| DbHost
+    DbHost -->|"PostgreSQL 컨테이너로 연결 전달"| DB
 
-    Browser -->|"HTTP 접속"| AdminHost
-    AdminHost -->|"Docker 포트 전달<br/>PC 5050 → 컨테이너 80"| Admin
-    Admin -->|"Compose 내부 주소<br/>postgres:5432"| DB
+    Browser -->|"pgAdmin 화면 요청"| AdminHost
+    AdminHost -->|"pgAdmin 웹 서버로 요청 전달"| Admin
+    Admin -->|"데이터베이스 관리 요청<br/>내부 주소 postgres:5432"| DB
 
-    Browser -->|"① HTTPS · SDK 로드 및 카드 인증"| TossCheckout
-    TossCheckout -->|"② successUrl 또는 failUrl로 이동"| Browser
-    Browser -->|"③ HTTP · POST /payments/confirm"| Web
-    Gateway -->|"④ HTTPS · POST /v1/payments/confirm"| TossApi
-    TossApi -->|"⑤ 승인 결과 응답"| Gateway
+    Browser -->|"결제창 열기 및 카드 인증"| TossCheckout
+    TossCheckout -->|"인증 결과와 함께 result.html로 이동"| Browser
+    Gateway -->|"최종 결제 승인 요청"| TossApi
+    TossApi -->|"승인 결과 응답"| Gateway
 
-    Gateway -.->|"결과 재확인 요청<br/>HTTPS GET /v1/payments/{paymentKey}"| TossApi
+    Gateway -.->|"결제 상태 재확인 요청"| TossApi
     TossApi -.->|"조회 결과 응답"| Gateway
 ```
 
