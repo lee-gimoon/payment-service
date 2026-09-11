@@ -1,6 +1,6 @@
 # Payment Service
 
-토스페이먼츠 결제 승인 흐름을 독립 서비스로 구현한 Spring Boot 학습용 MVP입니다. 주문 생성부터 결제 승인, 멱등 처리, 불명확한 결제 결과의 재확인까지 다룹니다.
+토스페이먼츠 결제 승인 흐름을 Spring Boot REST API와 React 클라이언트로 구현한 학습용 MVP입니다. 주문 생성부터 결제 승인, 멱등 처리, 불명확한 결제 결과의 재확인까지 다룹니다.
 
 > 이 프로젝트는 로컬 개발과 학습을 위한 예제입니다. 인증과 주문별 접근 제어가 없으므로 그대로 운영 환경에 배포하지 마세요.
 
@@ -12,6 +12,7 @@
 - `Idempotency-Key`를 이용한 중복 승인 방지
 - 데이터베이스 트랜잭션과 외부 PG 호출 분리
 - 처리 제한 시간이 지난 결제의 결과 재확인
+- React, TypeScript, React Router로 구성한 단일 페이지 테스트 결제 클라이언트
 - Swagger UI 기반 API 문서
 - PostgreSQL, pgAdmin을 포함한 Docker Compose 개발 환경
 - Testcontainers 기반 통합 테스트
@@ -22,6 +23,7 @@
 | --- | --- |
 | Language | Java 21 |
 | Framework | Spring Boot 4.1.1, Spring MVC, Spring Data JPA |
+| Frontend | React 19, React Router, TypeScript 7, Vite 8 |
 | Database | PostgreSQL 18, Flyway |
 | API documentation | OpenAPI 3, Swagger UI, springdoc-openapi |
 | Test | JUnit 5, Spring Boot Test, Testcontainers |
@@ -32,10 +34,18 @@
 
 ```mermaid
 flowchart LR
-    Browser["브라우저<br/>index.html · result.html"]
+    subgraph Client["React 클라이언트 개발 환경"]
+        Vite["Vite 개발 서버<br/>127.0.0.1:5173"]
+        Browser["브라우저<br/>React 앱 실행<br/>StorePage · PaymentResultPage"]
+        TossSdk["토스 JavaScript SDK<br/>결제창 호출 도구"]
+
+        Browser -->|"초기 화면 및 주문·결제 API 요청"| Vite
+        Vite -->|"React 파일 및 API 응답"| Browser
+        Browser -->|"결제창 실행 요청"| TossSdk
+    end
 
     subgraph App["Spring Boot 프로세스 · PC에서 직접 실행"]
-        Web["Spring Boot Web<br/>정적 파일 · Controller · Service<br/>127.0.0.1:8080"]
+        Web["REST Controller · Service<br/>127.0.0.1:8080"]
         Jpa["Spring Data JPA<br/>Hibernate"]
         Jdbc["PostgreSQL<br/>JDBC 드라이버"]
         Gateway["TossPaymentGateway"]
@@ -54,35 +64,36 @@ flowchart LR
         DB[("PostgreSQL 컨테이너<br/>포트 5432")]
     end
 
-    TossCheckout["토스페이먼츠<br/>결제창 및 SDK"]
+    TossCheckout["토스페이먼츠 결제창<br/>카드 인증 화면"]
     TossApi["토스페이먼츠<br/>REST API"]
 
-    Browser -->|"화면 조회 · 주문 생성 · 결제 승인 처리 요청"| Web
-    Web -->|"HTML 화면 · 주문 및 결제 결과 응답"| Browser
+    Vite -->|"개발 프록시로 API 요청 전달"| Web
+    Web -->|"JSON 응답"| Vite
 
     Jdbc -->|"데이터베이스 연결 및 SQL 실행"| DbHost
     DbHost -->|"PostgreSQL 컨테이너로 연결 전달"| DB
 
-    Browser -->|"pgAdmin 화면 요청"| AdminHost
-    AdminHost -->|"pgAdmin 웹 서버로 요청 전달"| Admin
-    Admin -->|"데이터베이스 관리 요청<br/>내부 주소 postgres:5432"| DB
-
-    Browser -->|"결제창 열기 및 카드 인증"| TossCheckout
-    TossCheckout -->|"인증 결과와 함께 result.html로 이동"| Browser
+    TossSdk -->|"결제창 열기"| TossCheckout
+    TossCheckout -->|"인증 결과와 함께 /payment/result로 이동"| Vite
     Gateway -->|"최종 결제 승인 요청"| TossApi
     TossApi -->|"승인 결과 응답"| Gateway
 
     Gateway -.->|"결제 상태 재확인 요청"| TossApi
     TossApi -.->|"조회 결과 응답"| Gateway
+
+    UserBrowser["브라우저의 pgAdmin 화면"] -->|"pgAdmin 화면 요청"| AdminHost
+    AdminHost -->|"pgAdmin 웹 서버로 요청 전달"| Admin
+    Admin -->|"데이터베이스 관리 요청<br/>내부 주소 postgres:5432"| DB
 ```
 
-이 그림은 로컬 개발 환경을 기준으로 합니다. Spring Boot는 PC에서 직접 실행하고, PostgreSQL과 pgAdmin은 Docker Compose로 실행합니다. JPA와 Hibernate가 객체 작업을 SQL로 변환하면 JDBC 드라이버가 `localhost:5432`로 접속하고, Docker가 이 연결을 PostgreSQL 컨테이너로 전달합니다. pgAdmin은 애플리케이션과 별개인 로컬 데이터베이스 관리 도구입니다.
+이 그림은 로컬 개발 환경을 기준으로 합니다. Vite가 하나의 `index.html`과 React 파일을 브라우저에 제공하고, React Router가 `/`와 `/payment/result` 화면을 선택합니다. 브라우저에서 발생한 API 요청은 Vite를 거쳐 Spring Boot로 전달됩니다. Spring Boot는 PC에서 직접 실행하며 PostgreSQL과 pgAdmin은 Docker Compose로 실행합니다. JPA와 Hibernate가 객체 작업을 SQL로 변환하면 JDBC 드라이버가 `localhost:5432`로 접속하고, Docker가 이 연결을 PostgreSQL 컨테이너로 전달합니다.
 
 ## 시작하기
 
 ### 사전 요구사항
 
 - Java 21
+- Node.js 20.19 이상과 npm
 - Docker Desktop 또는 Docker Engine과 Docker Compose
 
 ### 1. 저장소 복제
@@ -118,7 +129,7 @@ export TOSS_SECRET_KEY='test_sk_로 시작하는 시크릿 키'
 
 결제위젯 키인 `test_gck_`와 `test_gsk_`는 사용할 수 없습니다. 키를 소스 코드나 Git에 커밋하지 마세요.
 
-### 4. 애플리케이션 실행
+### 4. Spring Boot API 실행
 
 ```bash
 ./gradlew bootRun
@@ -130,11 +141,21 @@ Windows PowerShell에서는 다음 명령을 사용합니다.
 .\gradlew.bat bootRun
 ```
 
-실행 후 다음 주소를 사용할 수 있습니다.
+### 5. React 클라이언트 실행
+
+새 터미널에서 다음 명령을 실행합니다.
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Vite 개발 서버는 `/orders`, `/payments`, `/payment-config` 요청을 `127.0.0.1:8080`의 Spring Boot API로 전달합니다. Spring Boot와 Vite를 실행한 상태에서 다음 주소를 사용할 수 있습니다.
 
 | 서비스 | 주소 | 설명 |
 | --- | --- | --- |
-| Store | [http://127.0.0.1:8080](http://127.0.0.1:8080) | 결제 흐름을 확인하는 웹 화면 |
+| React Store | [http://127.0.0.1:5173](http://127.0.0.1:5173) | 결제 흐름을 확인하는 React 화면 |
 | Swagger UI | [http://127.0.0.1:8080/swagger-ui.html](http://127.0.0.1:8080/swagger-ui.html) | API 명세 확인 및 직접 호출 |
 | pgAdmin | [http://127.0.0.1:5050](http://127.0.0.1:5050) | PostgreSQL 관리 화면 |
 
@@ -226,6 +247,8 @@ Invoke-RestMethod "http://127.0.0.1:8080/orders/$($order.orderId)"
 
 ## 테스트
 
+### 백엔드
+
 Docker가 실행 중인 상태에서 다음 명령을 사용합니다.
 
 ```bash
@@ -242,6 +265,15 @@ Windows PowerShell에서는 다음 명령을 사용합니다.
 
 테스트 리포트는 `build/reports/tests/test/index.html`에 생성됩니다.
 
+### 프런트엔드
+
+다음 명령은 TypeScript 타입을 검사하고 배포용 React 파일을 생성합니다.
+
+```powershell
+cd frontend
+npm run build
+```
+
 ## 프로젝트 구조
 
 ```text
@@ -254,8 +286,15 @@ src/main/java/com/example/payment
 └── payment/      # 결제 승인, 상태 전이 및 재확인
 
 src/main/resources
-├── db/migration/ # Flyway 데이터베이스 마이그레이션
-└── static/       # 로컬 결제 화면
+└── db/migration/ # Flyway 데이터베이스 마이그레이션
+
+frontend/src
+├── api/          # Spring Boot REST API 호출
+├── components/   # 재사용 가능한 React 화면 컴포넌트
+├── lib/          # 날짜, 금액, 브라우저 저장소 도우미
+├── pages/        # 스토어 및 결제 결과 페이지
+├── payments/     # 토스 SDK 및 결제 리다이렉트 처리
+└── types/        # API 요청·응답 TypeScript 타입
 
 docker/pgadmin/   # pgAdmin 서버 및 비밀번호 파일
 docs/             # 상세 설계와 개발 환경 문서

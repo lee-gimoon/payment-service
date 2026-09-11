@@ -1,0 +1,457 @@
+:root {
+  font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+  color: #253831;
+  background: #f6f5ef;
+  font-synthesis: none;
+  line-height: 1.6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+header,
+main,
+footer {
+  max-width: 1120px;
+  margin: auto;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 30px 32px;
+  border-bottom: 1px solid #ddded4;
+}
+
+.brand {
+  color: inherit;
+  text-decoration: none;
+  font-size: 20px;
+  font-weight: 750;
+}
+
+.brand span {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.19em;
+  font-weight: 500;
+}
+
+.test-badge {
+  border: 1px solid #becabb;
+  background: #edf2e8;
+  border-radius: 30px;
+  font-size: 12px;
+  padding: 5px 13px;
+}
+
+main {
+  padding: 54px 32px 48px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #677863;
+  margin: 0 0 14px;
+}
+
+h1 {
+  font-size: 46px;
+  letter-spacing: -0.06em;
+  line-height: 1.28;
+  margin: 0 0 18px;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 21px;
+  letter-spacing: -0.04em;
+  margin: 0 0 12px;
+}
+
+.intro > p:last-child {
+  color: #717a72;
+  font-size: 14px;
+  margin-bottom: 35px;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 26px;
+}
+
+.product-card,
+.checkout-card,
+.lookup-card,
+.result-card {
+  border: 1px solid #dedfd5;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fffef9;
+}
+
+.product-art {
+  background: #eae5da;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  padding: 30px;
+}
+
+.product-art svg {
+  width: 82%;
+  height: 255px;
+}
+
+.product-tag {
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: #686c60;
+}
+
+.art-caption {
+  position: absolute;
+  bottom: 16px;
+  font-size: 11px;
+  color: #828477;
+}
+
+.product-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 22px 26px;
+}
+
+.product-info h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.product-info p {
+  font-size: 12px;
+  color: #7b8277;
+  margin: 4px 0 0;
+}
+
+.product-info strong {
+  font-size: 22px;
+  white-space: nowrap;
+}
+
+.product-info strong span {
+  font-size: 12px;
+  margin-left: 3px;
+}
+
+.checkout-card {
+  padding: 30px;
+}
+
+.summary {
+  margin: 22px 0 0;
+}
+
+.summary div,
+.result-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 9px 0;
+}
+
+.summary dt,
+.result-details dt {
+  font-size: 13px;
+  color: #758073;
+  flex-shrink: 0;
+}
+
+.summary dd,
+.result-details dd {
+  font-size: 14px;
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.summary .total {
+  border-top: 1px solid #e3e5dc;
+  margin-top: 15px;
+  padding-top: 20px;
+}
+
+.total dd {
+  font-weight: 750;
+  font-size: 23px;
+}
+
+.total dt {
+  color: #253831;
+  padding-top: 8px;
+}
+
+.subtle {
+  font-size: 12px;
+  color: #7c847a;
+}
+
+.checkout-card > .subtle {
+  margin: 8px 0 22px;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  padding: 13px 18px;
+  font-size: 14px;
+  font-weight: 650;
+  background: #304d3b;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+button:hover:not(:disabled) {
+  background: #42684f;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid #8fa97a;
+  outline-offset: 3px;
+}
+
+.checkout-card > button {
+  width: 100%;
+  margin: 4px 0 8px;
+}
+
+.checkout-card > button span {
+  float: right;
+}
+
+.secondary {
+  background: #eef0e7;
+  color: #344b3a;
+  white-space: nowrap;
+}
+
+.secondary:hover:not(:disabled) {
+  background: #e1e6d8;
+}
+
+.notice {
+  font-size: 12px;
+  color: #6e795f;
+  margin: 10px 0;
+}
+
+.lookup-card {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  align-items: center;
+  gap: 28px;
+  padding: 28px;
+  margin-top: 28px;
+}
+
+.lookup-card h2 {
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+
+.lookup-card p {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 6px;
+  color: #6a796b;
+}
+
+input {
+  min-width: 0;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d6dccf;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+}
+
+.result-card {
+  margin-top: 24px;
+  padding: 26px;
+}
+
+.result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status-badge {
+  border-radius: 20px;
+  background: #edf0e6;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.result-card > p {
+  font-size: 14px;
+  color: #697464;
+}
+
+.result-details {
+  margin: 20px 0;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.error {
+  color: #913f31;
+  background: #f9ebe4;
+  border: 1px solid #e7c9ba;
+  padding: 15px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.result-page {
+  max-width: 800px;
+  min-height: 72vh;
+}
+
+.result-page h1 {
+  margin-top: 18px;
+}
+
+.result-page > p:not(.eyebrow) {
+  color: #667663;
+}
+
+.back-link {
+  display: inline-block;
+  color: #385440;
+  margin-top: 26px;
+  font-size: 14px;
+}
+
+footer {
+  padding: 22px 32px;
+  border-top: 1px solid #ddded4;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  color: #8a9385;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+footer span {
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+@media (max-width: 700px) {
+  header {
+    padding: 20px;
+  }
+
+  .brand {
+    font-size: 17px;
+  }
+
+  main {
+    padding: 32px 20px;
+  }
+
+  h1 {
+    font-size: 36px;
+  }
+
+  .shop-grid,
+  .lookup-card {
+    grid-template-columns: 1fr;
+  }
+
+  .product-art {
+    min-height: 270px;
+  }
+
+  .product-art svg {
+    height: 230px;
+  }
+
+  .checkout-card,
+  .lookup-card,
+  .result-card {
+    padding: 23px;
+  }
+
+  .lookup-card {
+    gap: 10px;
+  }
+
+  .product-info {
+    padding: 20px;
+  }
+
+  .product-info strong {
+    font-size: 20px;
+  }
+
+  .result-details div {
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .result-details dd {
+    text-align: left;
+  }
+
+  footer {
+    padding: 22px 20px;
+    flex-direction: column;
+    gap: 5px;
+  }
+}

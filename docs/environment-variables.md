@@ -207,4 +207,8 @@ docker compose up -d
 
 # application.yml을 읽어 Spring Boot 실행
 .\gradlew.bat bootRun
+
+# frontend/vite.config.ts를 읽어 React 개발 서버 실행
+cd frontend
+npm run dev
 ```

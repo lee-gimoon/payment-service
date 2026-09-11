@@ -1,18 +1,18 @@
 # 로컬 개발 환경 설정
 
-이 문서는 payment-service를 로컬에서 실행할 때 사용하는 `application.yml`과 `compose.yaml`의 역할, 두 설정이 연결되는 방식, 실행 순서를 설명합니다.
+이 문서는 payment-service를 로컬에서 실행할 때 사용하는 `frontend/vite.config.ts`, `application.yml`, `compose.yaml`의 역할과 연결 방식, 실행 순서를 설명합니다.
 
 ## 현재 실행 구성
 
 | 구성 요소 | 실행 위치 | 역할 |
 |---|---|---|
-| 정적 클라이언트 | Spring Boot 애플리케이션 내부 | `index.html`, CSS, JavaScript 제공 |
-| Spring Boot 서버 | 로컬 Windows JVM | HTTP API 처리 및 정적 파일 제공 |
+| React 클라이언트 | 로컬 Vite 개발 서버 | React 화면 제공 및 API 요청 전달 |
+| Spring Boot 서버 | 로컬 Windows JVM | 주문·결제 REST API 처리 |
 | PostgreSQL | Docker 컨테이너 | 주문·결제 데이터 저장 |
 | pgAdmin | Docker 컨테이너 | PostgreSQL을 관리하는 웹 화면 제공 |
 | 브라우저 | 로컬 컴퓨터 | 클라이언트와 pgAdmin 화면 표시 |
 
-프로젝트 전체를 실행하려면 다음 두 명령이 필요합니다.
+프로젝트 전체를 실행하려면 세 개의 터미널에서 다음 명령을 사용합니다.
 
 ```powershell
 # PostgreSQL과 pgAdmin 실행
@@ -20,20 +20,25 @@ docker compose up -d
 
 # Spring Boot 실행
 .\gradlew.bat bootRun
+
+# React 실행
+cd frontend
+npm run dev
 ```
 
-실행 후 프로젝트 화면은 [http://127.0.0.1:8080](http://127.0.0.1:8080), pgAdmin은 [http://127.0.0.1:5050](http://127.0.0.1:5050)에서 확인할 수 있습니다.
+최초 한 번은 `frontend` 디렉터리에서 `npm install`로 의존성을 설치해야 합니다. 실행 후 React 화면은 [http://127.0.0.1:5173](http://127.0.0.1:5173), Swagger UI는 [http://127.0.0.1:8080/swagger-ui.html](http://127.0.0.1:8080/swagger-ui.html), pgAdmin은 [http://127.0.0.1:5050](http://127.0.0.1:5050)에서 확인할 수 있습니다.
 
 ## 설정 파일의 차이
 
-두 파일은 모두 YAML 형식이지만 읽는 프로그램과 설정 대상이 다릅니다.
+각 파일을 읽는 프로그램과 설정 대상이 다릅니다.
 
 | 파일 | 읽는 프로그램 | 설정 대상 |
 |---|---|---|
 | `src/main/resources/application.yml` | Spring Boot | 결제 서버 자체 |
+| `frontend/vite.config.ts` | Vite | React 개발 서버와 API 프록시 |
 | `compose.yaml` | Docker Compose | PostgreSQL과 pgAdmin 컨테이너 |
 
-현재 프로젝트의 Spring 설정 파일 확장자는 `.yml`입니다. `.yml`과 `.yaml`은 같은 YAML 형식의 확장자입니다.
+Spring 설정 파일과 Docker Compose 파일은 YAML 형식이고, Vite 설정은 TypeScript로 작성합니다. `.yml`과 `.yaml`은 같은 YAML 형식의 확장자입니다.
 
 ## application.yml
 
@@ -123,7 +128,21 @@ server:
   port: ${PORT:8080}
 ```
 
-기본적으로 Spring Boot는 `127.0.0.1:8080`에서 실행됩니다. 브라우저가 `/`로 요청하면 Spring Boot의 정적 리소스 자동 설정이 `src/main/resources/static/index.html`을 찾아 반환합니다.
+기본적으로 Spring Boot는 `127.0.0.1:8080`에서 실행되며 주문·결제 REST API와 Swagger UI를 제공합니다. React 화면은 별도의 Vite 개발 서버에서 실행됩니다.
+
+## frontend/vite.config.ts
+
+Vite는 React 개발 서버를 `127.0.0.1:5173`에서 실행합니다. 브라우저의 React 클라이언트가 상대 주소로 API를 호출하면 Vite가 다음 요청을 Spring Boot의 `127.0.0.1:8080`으로 전달합니다.
+
+```text
+/orders
+/payments
+/payment-config
+```
+
+따라서 개발 중에는 별도의 CORS 설정 없이 React에서 Spring Boot API를 호출할 수 있습니다. HTML 진입점은 `index.html` 하나이며, React Router가 `/`에서는 스토어 화면을, `/payment/result`에서는 토스 결제창 인증 후의 결과 화면을 표시합니다.
+
+운영 환경에서 정적 파일 서버나 CDN을 사용할 때는 `/payment/result` 직접 요청에도 `index.html`을 반환하는 SPA fallback 설정이 필요합니다.
 
 ## compose.yaml
 
@@ -188,27 +207,28 @@ volumes:
 
 `docker compose down`으로 컨테이너를 종료해도 이 볼륨은 유지되므로 다음 실행에서 기존 데이터를 다시 사용할 수 있습니다.
 
-## 두 파일이 연결되는 방식
+## 실행 구성의 연결 방식
 
 ```text
-브라우저
+브라우저의 React 클라이언트
   │
-  ├─ http://127.0.0.1:8080
-  │         │
-  │         ▼
-  │   로컬 Spring Boot
-  │         │
-  │         │ application.yml의 datasource 설정
-  │         ▼
-  │   localhost:5432
-  │         │
-  │         ▼
-  │   Docker PostgreSQL
+  └─ Vite 개발 서버 127.0.0.1:5173
+             │ API 프록시
+             ▼
+       Spring Boot 127.0.0.1:8080
+             │ application.yml의 datasource 설정
+             ▼
+       localhost:5432
+             │
+             ▼
+       Docker PostgreSQL
+
+브라우저의 pgAdmin 화면
   │
   └─ http://127.0.0.1:5050
-            │
-            ▼
-      Docker pgAdmin ── postgres:5432 ──▶ Docker PostgreSQL
+             │
+             ▼
+       Docker pgAdmin ── postgres:5432 ──▶ Docker PostgreSQL
 ```
 
 두 파일의 데이터베이스 설정은 다음과 같이 일치해야 합니다.
@@ -220,7 +240,7 @@ volumes:
 | 사용자 | `payment` 생성 | `payment` 사용 |
 | 비밀번호 | `payment_local` 지정 | `payment_local` 사용 |
 
-`compose.yaml`은 Spring Boot가 사용할 PostgreSQL과 관리 도구를 실행합니다. `application.yml`은 Spring Boot가 실행된 인프라에 어떻게 접속하고 서버 자체를 어떻게 동작시킬지 설정합니다.
+`compose.yaml`은 Spring Boot가 사용할 PostgreSQL과 관리 도구를 실행합니다. `application.yml`은 Spring Boot가 실행된 인프라에 어떻게 접속하고 서버 자체를 어떻게 동작시킬지 설정합니다. `frontend/vite.config.ts`는 React 개발 서버와 Spring Boot API 사이의 프록시를 설정합니다.
 
 ## 실행과 종료
 
@@ -229,9 +249,11 @@ volumes:
 ```powershell
 docker compose up -d
 .\gradlew.bat bootRun
+cd frontend
+npm run dev
 ```
 
-Spring Boot는 `bootRun`을 실행한 터미널에서 `Ctrl+C`를 눌러 종료합니다. PostgreSQL과 pgAdmin을 종료하려면 다음 명령을 실행합니다.
+Spring Boot와 Vite는 각 명령을 실행한 터미널에서 `Ctrl+C`를 눌러 종료합니다. PostgreSQL과 pgAdmin을 종료하려면 다음 명령을 실행합니다.
 
 ```powershell
 docker compose down
