@@ -7,7 +7,7 @@
 값:   jdbc:postgresql://localhost:5432/payment_service
 ```
 
-Java 변수가 코드 안에 있다면, 환경변수는 PowerShell, IntelliJ, Docker 또는 운영 서버가 실행 중인 프로그램에 전달합니다.
+Java 변수가 코드 안에 있다면, 환경변수는 PowerShell, IntelliJ, Docker 또는 운영 서버가 프로그램을 시작할 때 새 프로세스에 전달하는 값입니다.
 
 ## 이름은 누가 정하나요?
 
@@ -54,7 +54,7 @@ Spring Boot의 처리 순서:
 
 ## PowerShell에서 설정하기
 
-환경변수는 Spring Boot를 실행하는 PowerShell에서 설정합니다.
+환경변수는 Spring Boot를 실행하기 전에 같은 PowerShell에서 설정합니다.
 
 ```powershell
 $env:PAYMENT_DB_URL = 'jdbc:postgresql://localhost:5432/payment_service'
@@ -65,6 +65,21 @@ $env:PAYMENT_DB_PASSWORD = 'payment_local'
 ```
 
 `bootRun`으로 시작된 Spring Boot는 PowerShell에서 환경변수를 전달받습니다.
+
+```text
+1. PowerShell에 환경변수 설정
+2. bootRun 실행
+3. Gradle 프로세스가 환경변수를 전달받음
+4. Gradle이 시작한 Spring Boot도 환경변수를 전달받음
+```
+
+두 명령을 한 줄에 적어도 실행 순서는 같습니다.
+
+```powershell
+$env:PAYMENT_DB_URL = 'jdbc:postgresql://localhost:5432/payment_service'; .\gradlew.bat bootRun
+```
+
+Spring Boot가 이미 실행된 다음 PowerShell의 환경변수를 변경해도 실행 중인 Spring Boot 설정은 바뀌지 않습니다. 변경한 값을 적용하려면 Spring Boot를 다시 시작해야 합니다.
 
 값 확인:
 
