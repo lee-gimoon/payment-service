@@ -1,6 +1,6 @@
 package com.example.payment.payment;
 
-import com.example.payment.api.ApiException;
+import com.example.payment.api.error.ApiException;
 import com.example.payment.config.TossProperties;
 import com.example.payment.gateway.PaymentGateway.PaymentCommand;
 import com.example.payment.order.OrderRepository;

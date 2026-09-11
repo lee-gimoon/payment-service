@@ -1,6 +1,6 @@
 package com.example.payment.order;
 
-import com.example.payment.api.ApiException;
+import com.example.payment.api.error.ApiException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Pattern;

@@ -209,7 +209,8 @@ Windows PowerShell에서는 다음 명령을 사용합니다.
 
 ```text
 src/main/java/com/example/payment
-├── api/          # 공통 API 오류 처리
+├── api/
+│   └── error/    # 공통 API 예외 및 오류 응답 처리
 ├── config/       # 애플리케이션, Toss, OpenAPI 설정
 ├── gateway/      # 토스페이먼츠 API 연동
 ├── order/        # 주문 도메인과 API

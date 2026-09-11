@@ -1,4 +1,4 @@
-package com.example.payment.api;
+package com.example.payment.api.error;
 
 import org.springframework.http.HttpStatus;
 

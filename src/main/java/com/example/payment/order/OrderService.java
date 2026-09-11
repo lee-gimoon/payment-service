@@ -1,6 +1,6 @@
 package com.example.payment.order;
 
-import com.example.payment.api.ApiException;
+import com.example.payment.api.error.ApiException;
 import com.example.payment.payment.PaymentRepository;
 import java.time.Clock;
 import org.springframework.http.HttpStatus;
