@@ -64,6 +64,41 @@ flowchart TB
     PaymentAPI -->|"처리 결과 응답"| API
 ```
 
+## 결제 흐름
+
+```mermaid
+sequenceDiagram
+    actor User as 사용자
+    participant Client as React Client
+    participant Server as Spring Boot
+    participant DB as PostgreSQL
+    participant Checkout as Toss 결제창
+    participant Toss as Toss 결제 API
+
+    User->>Client: 주문 만들기
+    Client->>Server: POST /orders
+    Server->>DB: 주문번호와 결제 금액 저장
+    DB-->>Server: 저장 완료
+    Server-->>Client: orderId와 amount
+
+    User->>Client: 결제 버튼 클릭
+    Client->>Checkout: requestPayment(orderId, amount)
+    Checkout->>User: 카드 인증 요청
+    User->>Checkout: 카드 인증
+    Checkout-->>Client: 인증 결과와 함께 /payment/result로 이동
+
+    Client->>Server: POST /payments/confirm<br/>paymentKey, orderId, amount
+    Server->>DB: 주문 잠금 · 금액 검증<br/>PROCESSING 저장
+    DB-->>Server: 트랜잭션 커밋
+    Server->>Toss: POST /v1/payments/confirm<br/>Idempotency-Key
+    Toss-->>Server: 승인 결과
+    Server->>DB: 최종 결제 상태 저장
+    DB-->>Server: 저장 완료
+    Server-->>Client: 주문과 결제 상태
+```
+
+승인 타임아웃, 중복 요청과 결과 재확인 과정은 [결제 서비스 개발 계획과 도메인 설계](docs/payment-domain.md)를 참고하세요.
+
 ## 시작하기
 
 ### 사전 요구사항
