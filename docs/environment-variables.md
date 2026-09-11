@@ -188,6 +188,15 @@ docker compose up -d
 
 이 값들은 자동으로 서로 연결되지 않습니다. 현재는 `compose.yaml`과 `application.yml`에 같은 DB 이름, 사용자, 비밀번호를 개발자가 맞춰 작성해 놓았습니다.
 
+| 항목 | `compose.yaml`: PostgreSQL 생성 설정 | `application.yml`: Spring Boot 접속 설정 |
+|---|---|---|
+| DB 이름 | `POSTGRES_DB: payment_service` | URL 끝의 `/payment_service` |
+| 사용자 | `POSTGRES_USER: payment` | `${PAYMENT_DB_USERNAME:payment}` |
+| 비밀번호 | `POSTGRES_PASSWORD: payment_local` | `${PAYMENT_DB_PASSWORD:payment_local}` |
+| 포트 | 로컬 `5432`를 컨테이너 `5432`에 연결 | URL의 `localhost:5432` |
+
+예를 들어 Docker가 `payment` 사용자를 `payment_local` 비밀번호로 만들고, Spring Boot도 기본값으로 같은 사용자와 비밀번호를 사용하기 때문에 접속할 수 있습니다. 한쪽 값을 변경하면 다른 쪽 접속 설정도 같은 값으로 변경해야 합니다.
+
 ```powershell
 # compose.yaml을 읽어 PostgreSQL과 pgAdmin 실행
 docker compose up -d
