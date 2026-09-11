@@ -195,7 +195,7 @@ docker compose up -d
 | 비밀번호 | `POSTGRES_PASSWORD: payment_local` | `${PAYMENT_DB_PASSWORD:payment_local}` |
 | 포트 | 로컬 `5432`를 컨테이너 `5432`에 연결 | URL의 `localhost:5432` |
 
-`POSTGRES_USER`와 `PAYMENT_DB_USERNAME`은 서로 다른 변수이며 자동으로 연결되지 않습니다. Docker는 자기 설정을 읽어 `payment` 사용자를 만들고, Spring Boot는 자기 설정을 읽어 `payment` 사용자로 접속합니다. 이처럼 **변수 이름이 같아서가 아니라 최종 사용자·비밀번호·DB 이름 값이 같아서** 접속할 수 있습니다.
+`POSTGRES_USER`는 PostgreSQL을 처음 초기화할 때 `payment` 사용자를 생성하고, `PAYMENT_DB_USERNAME`은 Spring Boot가 그 사용자로 로그인할 때 사용합니다. 두 변수는 자동으로 연결되지 않으며, **최종 사용자·비밀번호·DB 이름 값이 같아서** 접속할 수 있습니다.
 
 한쪽 값을 변경하면 다른 쪽의 최종 값도 같게 맞춰야 합니다.
 
