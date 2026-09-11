@@ -18,3 +18,15 @@ spring:
 
   flyway:
     enabled: true
+
+payment:
+  toss:
+    client-key: ${TOSS_CLIENT_KEY:}
+    secret-key: ${TOSS_SECRET_KEY:}
+
+server:
+  address: ${PAYMENT_BIND_ADDRESS:127.0.0.1}
+  port: ${PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never

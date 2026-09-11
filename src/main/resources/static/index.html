@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>한 장의 티셔츠 · 테스트 스토어</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/store.js" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/">한 장의 티셔츠<span>PAYMENT LAB</span></a><span class="test-badge">테스트 스토어</span></header>
+  <main>
+    <section class="intro"><p class="eyebrow">작은 주문, 완전한 결제 경험</p><h1>시작은 한 장이면<br>충분하니까.</h1><p>주문부터 결제 확인까지, 직접 경험하는 작은 스토어입니다.</p></section>
+    <div class="shop-grid">
+      <section class="product-card" aria-label="판매 상품">
+        <div class="product-art"><span class="product-tag">THE EVERYDAY TEE</span><svg viewBox="0 0 360 300" role="img" aria-label="흰색 기본 티셔츠"><ellipse cx="180" cy="275" rx="105" ry="10" fill="#dfd7cb"/><path d="M127 42 81 63 30 134 79 167 107 129 102 260Q180 277 258 260L253 129 281 167 330 134 279 63 233 42Q180 66 127 42Z" fill="#fffdf8" stroke="#cec6b9" stroke-width="2"/><path d="M146 48Q180 94 214 48M127 42 146 48M214 48 233 42" fill="none" stroke="#cec6b9" stroke-width="3"/><path d="M104 248Q180 262 256 248M45 135 78 156M282 156 315 135" fill="none" stroke="#e6dfd4" stroke-width="2"/></svg><span class="art-caption">매일의 기본이 되는 한 장.</span></div>
+        <div class="product-info"><div><h2>에브리데이 티셔츠</h2><p>티셔츠 1장 · 단일 상품</p></div><strong>10,000<span>원</span></strong></div>
+      </section>
+      <section class="checkout-card" aria-labelledby="checkout-title">
+        <p class="eyebrow">YOUR ORDER</p><h2 id="checkout-title">주문하기</h2>
+        <dl class="summary"><div><dt>상품</dt><dd>티셔츠</dd></div><div><dt>수량</dt><dd>1장</dd></div><div class="total"><dt>결제 금액</dt><dd>10,000원</dd></div></dl>
+        <p class="subtle">배송비와 할인은 적용하지 않습니다.</p>
+        <button id="create-order" type="button">주문 만들기 <span aria-hidden="true">↗</span></button>
+        <button id="pay" type="button" hidden>10,000원 테스트 결제</button>
+        <p id="config-notice" class="notice" role="status">결제 설정을 확인하고 있습니다.</p>
+        <p class="subtle">토스페이먼츠 테스트 환경으로 연결됩니다.<br>테스트 키로 진행하며 실제 금액은 청구되지 않습니다.</p>
+      </section>
+    </div>
+    <section class="lookup-card" aria-labelledby="lookup-title"><div><p class="eyebrow">ORDER STATUS</p><h2 id="lookup-title">결제 결과 다시 확인하기</h2><p class="subtle">주문번호로 저장된 결과를 언제든 확인하세요.</p></div><form id="lookup-form"><label for="order-id">주문번호</label><div class="input-row"><input id="order-id" name="orderId" required minlength="6" maxlength="64" pattern="[a-zA-Z0-9_-]{6,64}" placeholder="주문번호를 입력하세요" autocomplete="off"><button class="secondary" type="submit">조회</button></div></form></section>
+    <section id="order-result" class="result-card" hidden aria-live="polite"><div class="result-heading"><h2 id="status-title"></h2><span id="status-badge" class="status-badge"></span></div><p id="status-message"></p><dl class="result-details"><div><dt>주문번호</dt><dd id="result-order-id"></dd></div><div><dt>주문 내용</dt><dd id="result-product"></dd></div><div><dt>승인 시각</dt><dd id="result-approved-at"></dd></div><div><dt>결과 확인 시각</dt><dd id="result-checked-at"></dd></div></dl><div class="actions"><button id="refresh" class="secondary" type="button">저장된 결과 조회</button><button id="reconcile" type="button" hidden>PG 결과 재확인</button></div></section>
+    <p id="error" class="error" role="alert" hidden></p>
+  </main>
+  <footer>PAYMENT LAB <span>주문 → 카드 인증 → 결제 승인 → 결과 확인</span></footer>
+</body>
+</html>
