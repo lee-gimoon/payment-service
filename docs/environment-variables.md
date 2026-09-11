@@ -38,7 +38,7 @@ Spring Boot의 처리 순서:
 2. 값이 있으면 그 값을 사용합니다.
 3. 값이 없으면 `jdbc:postgresql://localhost:5432/payment_service`를 사용합니다.
 
-현재 로컬 설정에는 기본값이 있으므로 환경변수를 직접 입력하지 않아도 실행됩니다.
+현재 로컬 설정에는 기본값이 있으므로 `PAYMENT_DB_*` 환경변수를 직접 입력하지 않아도 실행됩니다. 이 경우 환경변수가 자동으로 만들어지는 것이 아니라, Spring Boot가 환경변수를 찾지 못해 `application.yml`의 기본값을 사용하는 것입니다.
 
 ## 현재 프로젝트의 환경변수
 
@@ -54,29 +54,58 @@ Spring Boot의 처리 순서:
 
 ## PowerShell에서 설정하기
 
-환경변수는 Spring Boot를 실행하기 전에 같은 PowerShell에서 설정합니다.
+현재 프로젝트의 로컬 DB 설정은 `application.yml`의 기본값과 `compose.yaml`의 PostgreSQL 설정이 일치합니다. 따라서 평소에는 다음 명령만 실행하면 됩니다.
 
 ```powershell
-$env:PAYMENT_DB_URL = 'jdbc:postgresql://localhost:5432/payment_service'
-$env:PAYMENT_DB_USERNAME = 'payment'
-$env:PAYMENT_DB_PASSWORD = 'payment_local'
+.\gradlew.bat bootRun
+```
+
+이때 실제 처리 순서는 다음과 같습니다.
+
+```text
+1. PowerShell에서 `.\gradlew.bat bootRun` 실행
+2. Gradle Wrapper가 Gradle의 `bootRun` 작업 실행
+3. `bootRun`이 Spring Boot 애플리케이션용 Java 프로세스 시작
+4. Spring Boot가 `application.yml`을 읽음
+5. Spring Boot가 `PAYMENT_DB_URL`, `PAYMENT_DB_USERNAME`, `PAYMENT_DB_PASSWORD`를 찾음
+6. 해당 환경변수가 없으므로 `application.yml`의 콜론 뒤 기본값 사용
+7. 기본값으로 Docker PostgreSQL에 접속
+```
+
+즉, 다음 환경변수들이 자동으로 설정되는 것은 아닙니다.
+
+```text
+PAYMENT_DB_URL      → 없음 → application.yml 기본값 사용
+PAYMENT_DB_USERNAME → 없음 → application.yml 기본값 사용
+PAYMENT_DB_PASSWORD → 없음 → application.yml 기본값 사용
+```
+
+환경변수 설정은 기본값을 다른 값으로 바꿔 실행할 때만 필요합니다. 예를 들어 다른 PostgreSQL에 연결하려면 Spring Boot를 실행하기 전에 같은 PowerShell에서 설정합니다.
+
+```powershell
+$env:PAYMENT_DB_URL = 'jdbc:postgresql://다른-DB-주소:5432/payment_service'
+$env:PAYMENT_DB_USERNAME = '다른_DB_사용자'
+$env:PAYMENT_DB_PASSWORD = '다른_DB_비밀번호'
 
 .\gradlew.bat bootRun
 ```
 
-`bootRun`으로 시작된 Spring Boot는 PowerShell에서 환경변수를 전달받습니다.
+이 경우의 처리 순서는 다음과 같습니다.
 
 ```text
 1. PowerShell에 환경변수 설정
-2. bootRun 실행
-3. Gradle 프로세스가 환경변수를 전달받음
-4. Gradle이 시작한 Spring Boot도 환경변수를 전달받음
+2. PowerShell에서 `.\gradlew.bat bootRun` 실행
+3. Gradle Wrapper가 Gradle의 `bootRun` 작업 실행
+4. `bootRun`이 현재 환경을 전달하여 Spring Boot용 Java 프로세스 시작
+5. Spring Boot가 `application.yml`을 읽고 환경변수를 찾음
+6. 환경변수가 있으므로 콜론 뒤 기본값 대신 환경변수 값 사용
+7. 환경변수로 지정한 PostgreSQL에 접속
 ```
 
-두 명령을 한 줄에 적어도 실행 순서는 같습니다.
+환경변수 설정과 실행 명령을 한 줄에 적어도 실행 순서는 같습니다.
 
 ```powershell
-$env:PAYMENT_DB_URL = 'jdbc:postgresql://localhost:5432/payment_service'; .\gradlew.bat bootRun
+$env:PAYMENT_DB_URL = 'jdbc:postgresql://다른-DB-주소:5432/payment_service'; .\gradlew.bat bootRun
 ```
 
 Spring Boot가 이미 실행된 다음 PowerShell의 환경변수를 변경해도 실행 중인 Spring Boot 설정은 바뀌지 않습니다. 변경한 값을 적용하려면 Spring Boot를 다시 시작해야 합니다.
