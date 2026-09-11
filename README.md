@@ -33,60 +33,36 @@
 ## 아키텍처
 
 ```mermaid
-flowchart LR
-    subgraph Client["React 클라이언트 개발 환경"]
-        Vite["Vite 개발 서버<br/>127.0.0.1:5173"]
-        Browser["브라우저<br/>React 앱 실행<br/>StorePage · PaymentResultPage"]
-        TossSdk["토스 JavaScript SDK<br/>결제창 호출 도구"]
-
-        Browser -->|"초기 화면 및 주문·결제 API 요청"| Vite
-        Vite -->|"React 파일 및 API 응답"| Browser
-        Browser -->|"결제창 실행 요청"| TossSdk
+flowchart TB
+    subgraph Frontend["Frontend"]
+        Browser["React SPA · 브라우저<br/>React Router · Toss SDK"]
+        Vite["Vite<br/>개발 서버 · API 프록시"]
     end
 
-    subgraph App["Spring Boot 프로세스 · PC에서 직접 실행"]
-        Web["REST Controller · Service<br/>127.0.0.1:8080"]
-        Jpa["Spring Data JPA<br/>Hibernate"]
-        Jdbc["PostgreSQL<br/>JDBC 드라이버"]
-        Gateway["TossPaymentGateway"]
-
-        Web -->|"Repository 호출"| Jpa
-        Jpa -->|"객체 작업을 SQL로 변환"| Jdbc
-        Web -->|"외부 결제 처리 요청"| Gateway
-        Gateway -->|"외부 결제 처리 결과"| Web
+    subgraph Backend["Backend"]
+        API["Spring Boot<br/>주문 · 결제 서비스"]
     end
 
-    DbHost["PC의 PostgreSQL 접속 주소<br/>127.0.0.1:5432"]
-    AdminHost["PC의 pgAdmin 접속 주소<br/>127.0.0.1:5050"]
-
-    subgraph Docker["Docker Compose 내부"]
-        Admin["pgAdmin 컨테이너<br/>웹 서버가 포트 80에서 대기"]
-        DB[("PostgreSQL 컨테이너<br/>포트 5432")]
+    subgraph Infrastructure["Docker Compose"]
+        DB[("PostgreSQL")]
+        Admin["pgAdmin"]
     end
 
-    TossCheckout["토스페이먼츠 결제창<br/>카드 인증 화면"]
-    TossApi["토스페이먼츠<br/>REST API"]
+    subgraph External["Toss Payments"]
+        Checkout["결제창 · 카드 인증"]
+        PaymentAPI["결제 REST API"]
+    end
 
-    Vite -->|"개발 프록시로 API 요청 전달"| Web
-    Web -->|"JSON 응답"| Vite
+    Browser <-->|"화면 · API 요청/응답"| Vite
+    Vite <-->|"주문 · 결제 요청/응답"| API
+    API <-->|"데이터 저장 · 조회"| DB
+    Admin -.->|"DB 관리"| DB
 
-    Jdbc -->|"데이터베이스 연결 및 SQL 실행"| DbHost
-    DbHost -->|"PostgreSQL 컨테이너로 연결 전달"| DB
-
-    TossSdk -->|"결제창 열기"| TossCheckout
-    TossCheckout -->|"인증 결과와 함께 /payment/result로 이동"| Vite
-    Gateway -->|"최종 결제 승인 요청"| TossApi
-    TossApi -->|"승인 결과 응답"| Gateway
-
-    Gateway -.->|"결제 상태 재확인 요청"| TossApi
-    TossApi -.->|"조회 결과 응답"| Gateway
-
-    UserBrowser["브라우저의 pgAdmin 화면"] -->|"pgAdmin 화면 요청"| AdminHost
-    AdminHost -->|"pgAdmin 웹 서버로 요청 전달"| Admin
-    Admin -->|"데이터베이스 관리 요청<br/>내부 주소 postgres:5432"| DB
+    Browser -->|"결제창 실행"| Checkout
+    Checkout -->|"인증 결과 · 화면 복귀"| Browser
+    API -->|"결제 승인 · 조회 요청"| PaymentAPI
+    PaymentAPI -->|"처리 결과 응답"| API
 ```
-
-이 그림은 로컬 개발 환경을 기준으로 합니다. Vite가 하나의 `index.html`과 React 파일을 브라우저에 제공하고, React Router가 `/`와 `/payment/result` 화면을 선택합니다. 브라우저에서 발생한 API 요청은 Vite를 거쳐 Spring Boot로 전달됩니다. Spring Boot는 PC에서 직접 실행하며 PostgreSQL과 pgAdmin은 Docker Compose로 실행합니다. JPA와 Hibernate가 객체 작업을 SQL로 변환하면 JDBC 드라이버가 `localhost:5432`로 접속하고, Docker가 이 연결을 PostgreSQL 컨테이너로 전달합니다.
 
 ## 시작하기
 
