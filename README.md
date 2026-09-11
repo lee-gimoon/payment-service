@@ -32,14 +32,50 @@
 
 ```mermaid
 flowchart LR
-    Browser[Browser] -->|HTTP| App[Spring Boot payment-service]
-    App -->|JPA / JDBC| DB[(PostgreSQL)]
-    App -->|HTTPS| Toss[Toss Payments API]
-    Browser -->|HTTP :5050| Admin[pgAdmin]
-    Admin -->|postgres:5432| DB
+    Browser["브라우저<br/>index.html · result.html"]
+
+    subgraph App["Spring Boot 프로세스 · PC에서 직접 실행"]
+        Web["Spring Boot Web<br/>정적 파일 · Controller · Service"]
+        Jpa["Spring Data JPA<br/>Hibernate"]
+        Jdbc["PostgreSQL<br/>JDBC 드라이버"]
+        Gateway["TossPaymentGateway"]
+
+        Web -->|"Repository 호출"| Jpa
+        Jpa -->|"객체 작업을 SQL로 변환"| Jdbc
+        Web -->|"결제 승인·조회 요청"| Gateway
+    end
+
+    DbHost["PC의 PostgreSQL 접속 주소<br/>127.0.0.1:5432"]
+    AdminHost["PC의 pgAdmin 접속 주소<br/>127.0.0.1:5050"]
+
+    subgraph Docker["Docker Compose 내부"]
+        Admin["pgAdmin 컨테이너<br/>웹 서버가 포트 80에서 대기"]
+        DB[("PostgreSQL 컨테이너<br/>포트 5432")]
+    end
+
+    TossCheckout["토스페이먼츠<br/>결제창 및 SDK"]
+    TossApi["토스페이먼츠<br/>REST API"]
+
+    Browser -->|"HTTP · 화면 및 API 요청<br/>127.0.0.1:8080"| Web
+
+    Jdbc -->|"TCP 접속<br/>JDBC URL의 localhost:5432 사용"| DbHost
+    DbHost -->|"Docker 포트 전달<br/>PC 5432 → 컨테이너 5432"| DB
+
+    Browser -->|"HTTP 접속"| AdminHost
+    AdminHost -->|"Docker 포트 전달<br/>PC 5050 → 컨테이너 80"| Admin
+    Admin -->|"Compose 내부 주소<br/>postgres:5432"| DB
+
+    Browser -->|"① HTTPS · SDK 로드 및 카드 인증"| TossCheckout
+    TossCheckout -->|"② successUrl 또는 failUrl로 이동"| Browser
+    Browser -->|"③ HTTP · POST /payments/confirm"| Web
+    Gateway -->|"④ HTTPS · POST /v1/payments/confirm"| TossApi
+    TossApi -->|"⑤ 승인 결과 응답"| Gateway
+
+    Gateway -.->|"결과 재확인 요청<br/>HTTPS GET /v1/payments/{paymentKey}"| TossApi
+    TossApi -.->|"조회 결과 응답"| Gateway
 ```
 
-애플리케이션은 PostgreSQL을 영속 저장소로 사용하고, 결제 승인과 결과 조회가 필요할 때만 토스페이먼츠 API를 호출합니다. pgAdmin은 애플리케이션과 별개인 로컬 데이터베이스 관리 도구입니다.
+이 그림은 로컬 개발 환경을 기준으로 합니다. Spring Boot는 PC에서 직접 실행하고, PostgreSQL과 pgAdmin은 Docker Compose로 실행합니다. JPA와 Hibernate가 객체 작업을 SQL로 변환하면 JDBC 드라이버가 `localhost:5432`로 접속하고, Docker가 이 연결을 PostgreSQL 컨테이너로 전달합니다. pgAdmin은 애플리케이션과 별개인 로컬 데이터베이스 관리 도구입니다.
 
 ## 시작하기
 
