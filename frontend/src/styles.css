@@ -1,3 +1,4 @@
+/* 파일 역할: 스토어와 결제 결과 화면의 공통 색상·글꼴·카드·버튼·반응형 배치를 정의한다. */
 :root {
   font-family: "Segoe UI", "Malgun Gothic", sans-serif;
   color: #253831;
@@ -88,6 +89,7 @@ h2 {
   margin-bottom: 35px;
 }
 
+/* 넓은 화면에서는 상품 소개와 주문 영역을 나란히 배치한다. */
 .shop-grid {
   display: grid;
   grid-template-columns: 1.25fr 1fr;
@@ -219,6 +221,7 @@ h2 {
   margin: 8px 0 22px;
 }
 
+/* 버튼의 공통 모양과 아래의 hover·disabled·focus 상태 표현을 정의한다. */
 button {
   border: 0;
   border-radius: 8px;
@@ -392,6 +395,7 @@ footer span {
   letter-spacing: 0;
 }
 
+/* 작은 화면에서는 카드와 입력 영역을 화면 폭에 맞게 다시 배치한다. */
 @media (max-width: 700px) {
   header {
     padding: 20px;

@@ -1,1 +1,2 @@
+// 파일 역할: Gradle이 사용하는 루트 프로젝트 이름을 지정한다.
 rootProject.name = 'payment-service'

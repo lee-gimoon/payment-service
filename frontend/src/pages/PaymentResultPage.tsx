@@ -1,3 +1,7 @@
+/**
+ * 파일 역할: 토스 결제창에서 돌아온 /payment/result 화면의 승인 요청과 결과 확인을 담당한다.
+ * 흐름: paymentRedirect로 인증 결과 읽기 → paymentApi로 서버 승인 요청 → 주문·결제 상태 표시.
+ */
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -17,12 +21,14 @@ import type { ConfirmPaymentCommand, Order } from "../types/payment";
 
 const LAST_ORDER_ID_KEY = "lastOrderId";
 
+/** 통신 등에서 발생한 오류를 화면에 표시할 문장으로 바꾸고, 해석할 수 없으면 기본 안내를 쓴다. */
 function errorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : "결과를 확인하지 못했습니다. 다시 결제하지 말고 저장된 결과를 조회해주세요.";
 }
 
+/** 카드 인증 결과로 승인을 요청하고, 주문 조회·PG 결과 재확인·승인 요청 재전송 버튼을 관리한다. */
 export function PaymentResultPage() {
   const [redirect] = useState(readPaymentRedirect);
   const [order, setOrder] = useState<Order | null>(null);
@@ -34,9 +40,14 @@ export function PaymentResultPage() {
     "카드 인증 후 서버에서 최종 승인 결과를 확인합니다."
   );
   const [error, setError] = useState("");
+  // busy는 화면 표시용이고, busyRef.current는 진행 중인 작업에 즉시 중복 진입하지 못하게 한다.
   const [busy, setBusy] = useState(true);
   const busyRef = useRef(true);
 
+  /**
+   * 서버가 반환한 상태와 안내를 표시한다. 결제 시도가 이미 기록되었다면 임시 승인 요청 정보를 지운다.
+   * UNKNOWN도 서버에 시도가 있는 상태이므로 이후에는 주문 조회와 PG 결과 재확인으로 이어진다.
+   */
   function showOrder(nextOrder: Order) {
     setOrder(nextOrder);
     setTitle(paymentStatusLabel(nextOrder.payment.status));
@@ -52,6 +63,7 @@ export function PaymentResultPage() {
     }
   }
 
+  /** 요청 오류를 결제 실패로 단정하지 않고, 저장된 결과부터 조회하도록 안내한다. */
   function showRequestError(requestError: unknown) {
     setTitle("결제 결과 확인이 필요합니다");
     setMessage(
@@ -60,6 +72,7 @@ export function PaymentResultPage() {
     setError(errorMessage(requestError));
   }
 
+  /** 결과 화면의 비동기 작업을 하나씩 실행하고, 로딩·오류 처리 후 반드시 실행 잠금을 해제한다. */
   async function runAction(work: () => Promise<void>) {
     if (busyRef.current) {
       return;
@@ -79,10 +92,15 @@ export function PaymentResultPage() {
     }
   }
 
+  // 화면 진입 시 인증 결과를 처리한다. 화면을 떠나면 active로 늦게 도착한 응답의 반영을 막는다.
   useEffect(() => {
     let active = true;
     document.title = "결제 결과 · 한 장의 티셔츠";
 
+    /**
+     * 인증 실패로 돌아오면 저장된 주문만 조회한다. 승인 정보가 있으면 서버에 최종 승인을 요청한다.
+     * 인증 성공 리다이렉트 자체는 결제 완료가 아니며, 승인 정보가 없는 재방문에서는 주문을 조회한다.
+     */
     async function initializeResult() {
       try {
         if (!redirect.orderId) {
@@ -126,11 +144,13 @@ export function PaymentResultPage() {
 
     void initializeResult();
 
+    // effect 정리 함수: 진행 중인 요청의 완료 후 이 화면 상태를 갱신하지 않게 한다.
     return () => {
       active = false;
     };
   }, []);
 
+  /** 주문번호로 우리 서버 DB에 기록된 결과를 다시 읽어 화면에 반영한다. */
   function handleRefresh() {
     if (!redirect.orderId) {
       return;
@@ -141,6 +161,7 @@ export function PaymentResultPage() {
     });
   }
 
+  /** 서버가 기존 paymentKey로 토스의 결과를 조회하고 DB와 맞추도록 요청한다. 재승인 요청은 아니다. */
   function handleReconcile() {
     if (!redirect.orderId) {
       return;
@@ -151,6 +172,10 @@ export function PaymentResultPage() {
     });
   }
 
+  /**
+   * 임시 승인 정보가 남아 있을 때 동일한 승인 요청을 서버에 다시 전달한다.
+   * 서버는 이미 기록된 결제 시도가 있으면 저장된 결과를 반환하므로 기존 시도를 새로 만들지 않는다.
+   */
   function handleRetryConfirmation() {
     if (!confirmation) {
       return;

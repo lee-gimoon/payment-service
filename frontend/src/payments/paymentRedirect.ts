@@ -1,11 +1,14 @@
+/** 파일 역할: 토스 결제창의 복귀 URL을 읽어 승인 요청 데이터를 준비하고, 재방문에 필요한 임시 정보를 복원한다. */
 import type { ConfirmPaymentCommand } from "../types/payment";
 import {
   readSessionValue,
   writeSessionValue
 } from "../lib/storage";
 
+/** 결제창에서 돌아온 인증 결과 구분이다. success만으로 최종 결제 성공을 의미하지는 않는다. */
 export type PaymentRedirectFlow = "success" | "fail" | null;
 
+/** 결과 화면이 승인 요청 또는 주문 조회 중 무엇을 할지 판단하는 데 필요한 데이터다. */
 export interface PaymentRedirectState {
   orderId: string | null;
   flow: PaymentRedirectFlow;
@@ -16,6 +19,7 @@ export interface PaymentRedirectState {
 const ORDER_ID_PATTERN = /^[a-zA-Z0-9_-]{6,64}$/;
 const AMOUNT_PATTERN = /^\d{1,12}$/;
 
+/** 출처를 신뢰할 수 없는 값이 해당 주문의 승인 요청 형식인지 검사한다. 실제 주문 금액 검증은 서버가 한다. */
 function isConfirmation(
   value: unknown,
   expectedOrderId: string
@@ -37,6 +41,7 @@ function isConfirmation(
   );
 }
 
+/** 새로고침 전에 저장한 승인 정보를 읽고, JSON 형식과 주문번호가 맞는 경우에만 복원한다. */
 function readStoredConfirmation(
   storageKey: string,
   orderId: string
@@ -54,6 +59,10 @@ function readStoredConfirmation(
   }
 }
 
+/**
+ * 인증 성공 URL에서 승인 정보를 읽어 임시 저장하거나, 일반 재방문이면 저장된 정보를 복원한다.
+ * 처리 후 URL에서 paymentKey를 제거한다. URL·저장소를 변경하는 동작이며 서버 요청은 하지 않는다.
+ */
 export function readPaymentRedirect(): PaymentRedirectState {
   const parameters = new URLSearchParams(window.location.search);
   const rawOrderId = parameters.get("orderId") || parameters.get("requestedOrderId");

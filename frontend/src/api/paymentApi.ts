@@ -1,18 +1,22 @@
+/** 파일 역할: React 화면에서 사용하는 Spring Boot API 경로, 요청 형식, 공통 응답 처리를 모은다. */
 import type {
   ConfirmPaymentCommand,
   Order,
   PaymentConfig
 } from "../types/payment";
 
+/** 서버의 공통 오류 응답 형식이다. 예상과 다른 응답에서도 읽을 수 있도록 필드는 선택 사항이다. */
 interface ApiErrorResponse {
   code?: string;
   message?: string;
 }
 
+/** HTTP 상태 코드와 서버 오류 코드를 함께 보관하여 API 요청 실패를 화면에 전달한다. */
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code?: string;
 
+  /** 서버 오류 메시지를 Error에 담고, HTTP 상태와 업무 오류 코드를 함께 기록한다. */
   constructor(status: number, error: ApiErrorResponse) {
     super(error.message || "요청을 처리하지 못했습니다. 저장된 결과를 조회해주세요.");
     this.name = "ApiRequestError";
@@ -21,6 +25,10 @@ export class ApiRequestError extends Error {
   }
 }
 
+/**
+ * fetch로 요청한 JSON 응답을 읽고, 허용하지 않은 HTTP 오류는 ApiRequestError로 전달한다.
+ * T는 호출자가 기대하는 응답 타입이며 런타임 검증은 아니다. acceptedErrorStatuses는 본문을 결과로 받을 오류 코드다.
+ */
 async function request<T>(
   path: string,
   options?: RequestInit,
@@ -38,18 +46,25 @@ async function request<T>(
   return data as T;
 }
 
+/** GET /payment-config로 결제 가능 여부와 브라우저용 클라이언트 키를 읽는다. */
 export function getPaymentConfig(): Promise<PaymentConfig> {
   return request<PaymentConfig>("/payment-config");
 }
 
+/** POST /orders로 주문을 만든다. 상품·수량·금액은 서버가 결정하므로 요청 본문을 보내지 않는다. */
 export function createOrder(): Promise<Order> {
   return request<Order>("/orders", { method: "POST" });
 }
 
+/** GET /orders/{orderId}로 우리 서버에 저장된 주문과 결제 상태를 읽는다. */
 export function getOrder(orderId: string): Promise<Order> {
   return request<Order>(`/orders/${encodeURIComponent(orderId)}`);
 }
 
+/**
+ * 카드 인증으로 받은 정보를 POST /payments/confirm에 보내 최종 승인을 요청한다.
+ * HTTP 422도 결제 거절 상태를 담은 Order 응답이므로 일반 요청 오류 대신 화면에 표시할 결과로 받는다.
+ */
 export function confirmPayment(command: ConfirmPaymentCommand): Promise<Order> {
   return request<Order>(
     "/payments/confirm",
@@ -62,6 +77,7 @@ export function confirmPayment(command: ConfirmPaymentCommand): Promise<Order> {
   );
 }
 
+/** POST /payments/{orderId}/reconcile로 PG 결과 재확인을 요청한다. 확정 실패의 422 응답도 Order로 받는다. */
 export function reconcilePayment(orderId: string): Promise<Order> {
   return request<Order>(
     `/payments/${encodeURIComponent(orderId)}/reconcile`,

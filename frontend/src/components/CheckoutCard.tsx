@@ -1,6 +1,8 @@
+/** 파일 역할: 주문 요약과 주문 만들기·테스트 결제 버튼을 표시하고 클릭을 StorePage에 전달한다. */
 import type { Order, PaymentConfig } from "../types/payment";
 import { formatAmount } from "../lib/formatters";
 
+/** 부모 화면이 관리하는 주문·설정·작업 상태와 버튼 클릭 시 실행할 콜백을 받는다. */
 interface CheckoutCardProps {
   order: Order | null;
   paymentConfig: PaymentConfig | null;
@@ -11,6 +13,7 @@ interface CheckoutCardProps {
 
 const IN_PROGRESS_STATUSES = ["READY", "PROCESSING", "UNKNOWN"];
 
+/** 현재 결제 상태에 맞는 버튼을 보여준다. API 호출은 부모가 전달한 onCreateOrder·onPay가 담당한다. */
 export function CheckoutCard({
   order,
   paymentConfig,

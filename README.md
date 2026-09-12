@@ -313,6 +313,7 @@ docs/             # 상세 설계와 개발 환경 문서
 
 ## 문서
 
+- [코드 주석과 읽는 순서](docs/code-reading-guide.md)
 - [결제 서비스 개발 계획과 도메인 설계](docs/payment-domain.md)
 - [로컬 개발 환경 구성](docs/environment-configuration.md)
 - [환경변수 설정 가이드](docs/environment-variables.md)

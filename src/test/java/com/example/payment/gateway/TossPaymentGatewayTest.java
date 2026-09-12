@@ -1,3 +1,4 @@
+/* 파일 역할: 실제 토스 API 대신 모의 HTTP 응답으로 PG 요청 계약과 결제 결과 해석을 검증한다. */
 package com.example.payment.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,6 +30,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+/** 토스 전용 클라이언트의 요청 헤더·본문과 성공·거절·미확정 응답 처리를 검증한다. */
 class TossPaymentGatewayTest {
     private static final String BASE = "https://api.tosspayments.com/v1/payments";
     private static final PaymentCommand COMMAND = new PaymentCommand("order-123", "payment-key", 10_000, "attempt-123", "operation-123");
@@ -39,6 +41,7 @@ class TossPaymentGatewayTest {
     private MockRestServiceServer server;
     private TossPaymentGateway gateway;
 
+    /** 각 테스트마다 실제 설정을 적용한 RestClient에 모의 응답 서버를 연결한다. */
     @BeforeEach
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
@@ -47,9 +50,11 @@ class TossPaymentGatewayTest {
         gateway = new TossPaymentGateway(builder.build());
     }
 
+    /** 테스트에서 기대한 HTTP 요청들이 실제로 모두 발생했는지 확인한다. */
     @AfterEach
     void verifyRequests() { server.verify(); }
 
+    /** 승인 URL·POST·인증·멱등 키·JSON 본문과 성공 결과의 UTC 승인 시각을 확인한다. */
     @Test
     void sendsExactContractAndValidatesApproval() {
         server.expect(requestTo(BASE + "/confirm")).andExpect(method(HttpMethod.POST))
@@ -64,6 +69,7 @@ class TossPaymentGatewayTest {
         assertThat(outcome.approvedAt()).hasToString("2026-09-11T01:00:00Z");
     }
 
+    /** 결제 정보 불일치, 미승인 상태, 미지원 결제 수단을 성공으로 처리하지 않는지 확인한다. */
     @ParameterizedTest
     @CsvSource({"order-123,another-order", "payment-key,another-key", "10000,10001", "10000,10000.5", "KRW,USD", "DONE,IN_PROGRESS", "DONE,READY", "DONE,CANCELED", "DONE,PARTIAL_CANCELED", "카드,계좌이체"})
     void neverMarksMismatchedOrUnapprovedResponseAsPaid(String from, String to) {
@@ -71,6 +77,7 @@ class TossPaymentGatewayTest {
         assertThat(gateway.confirm(COMMAND).status()).isEqualTo(PaymentStatus.UNKNOWN);
     }
 
+    /** 비어 있거나 형식이 잘못된 PG 응답은 결과 미확정으로 남기는지 확인한다. */
     @ParameterizedTest
     @ValueSource(strings = {"{}", "null", "{invalid-json}", ""})
     void missingOrMalformedResponsesStayUnknown(String response) {
@@ -78,12 +85,14 @@ class TossPaymentGatewayTest {
         assertThat(gateway.confirm(COMMAND).status()).isEqualTo(PaymentStatus.UNKNOWN);
     }
 
+    /** PG 상태가 DONE이어도 승인 시각이 없으면 성공으로 확정하지 않는지 확인한다. */
     @Test
     void doneWithoutApprovalTimeIsUnknown() {
         server.expect(requestTo(BASE + "/confirm")).andRespond(withSuccess(DONE.replace("\"2026-09-11T10:00:00+09:00\"", "null"), MediaType.APPLICATION_JSON));
         assertThat(gateway.confirm(COMMAND).status()).isEqualTo(PaymentStatus.UNKNOWN);
     }
 
+    /** PG 조회에서 ABORTED 또는 EXPIRED를 확인하면 확정 실패로 해석하는지 확인한다. */
     @ParameterizedTest
     @ValueSource(strings = {"ABORTED", "EXPIRED"})
     void authoritativeTerminalFailureIsFailed(String status) {
@@ -92,6 +101,7 @@ class TossPaymentGatewayTest {
         assertThat(gateway.lookup(COMMAND).status()).isEqualTo(PaymentStatus.FAILED);
     }
 
+    /** 승인 요청의 명시적인 카드사 거절은 FAILED로 변환하는지 확인한다. */
     @Test
     void explicitCardDeclineIsFailed() {
         server.expect(requestTo(BASE + "/confirm")).andRespond(withStatus(HttpStatus.BAD_REQUEST)
@@ -99,6 +109,7 @@ class TossPaymentGatewayTest {
         assertThat(gateway.confirm(COMMAND)).isEqualTo(PaymentOutcome.failed("REJECT_CARD_COMPANY"));
     }
 
+    /** 중복 처리·설정·서버 오류 등 승인 여부를 확정할 수 없는 오류를 UNKNOWN으로 유지하는지 확인한다. */
     @ParameterizedTest
     @CsvSource({"400,ALREADY_PROCESSED_PAYMENT", "409,IDEMPOTENT_REQUEST_PROCESSING", "401,UNAUTHORIZED_KEY", "500,REJECT_CARD_COMPANY", "429,TOO_MANY_REQUESTS", "400,UNKNOWN_NEW_ERROR"})
     void ambiguousErrorsStayUnknown(int status, String code) {
@@ -107,12 +118,14 @@ class TossPaymentGatewayTest {
         assertThat(gateway.confirm(COMMAND).status()).isEqualTo(PaymentStatus.UNKNOWN);
     }
 
+    /** 응답 타임아웃을 카드 거절로 간주하지 않고 통신 오류에 따른 UNKNOWN으로 처리하는지 확인한다. */
     @Test
     void timeoutDoesNotMeanDeclined() {
         server.expect(requestTo(BASE + "/confirm")).andRespond(withException(new SocketTimeoutException("response lost")));
         assertThat(gateway.confirm(COMMAND)).isEqualTo(PaymentOutcome.unknown("PG_COMMUNICATION_ERROR"));
     }
 
+    /** PG 조회의 404 응답만으로 미결제를 확정하지 않는지 확인한다. */
     @Test
     void lookup404DoesNotMeanUnpaid() {
         server.expect(requestTo(BASE + "/payment-key")).andRespond(withStatus(HttpStatus.NOT_FOUND)
@@ -120,6 +133,7 @@ class TossPaymentGatewayTest {
         assertThat(gateway.lookup(COMMAND).status()).isEqualTo(PaymentStatus.UNKNOWN);
     }
 
+    /** 기존 결제 키의 GET 조회에서 일치하는 승인 결과를 받으면 성공으로 복구할 수 있는지 확인한다. */
     @Test
     void lookupRestoresSuccessfulPayment() {
         server.expect(requestTo(BASE + "/payment-key")).andExpect(method(HttpMethod.GET))

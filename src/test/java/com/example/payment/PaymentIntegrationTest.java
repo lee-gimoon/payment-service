@@ -1,3 +1,4 @@
+/* 파일 역할: Spring API·서비스·실제 PostgreSQL을 연결하여 주문부터 결제 복구까지 검증한다. */
 package com.example.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +50,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+/**
+ * 별도 PostgreSQL 컨테이너에서 HTTP 처리·DB 제약·동시 요청·저장 장애 복구를 검증하는 통합 테스트다.
+ * PG만 Mockito 모의 구현으로 교체하므로 실제 토스 키나 외부 결제 요청은 필요하지 않다.
+ */
 @SpringBootTest(properties = {"payment.toss.client-key=test_ck_integration", "payment.toss.secret-key=test_sk_integration"})
 @AutoConfigureMockMvc
 @Testcontainers
@@ -56,6 +61,7 @@ class PaymentIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine");
 
+    /** 테스트 전용 PostgreSQL 컨테이너의 접속 정보를 Spring 데이터소스 설정에 연결한다. */
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry properties) {
         properties.add("spring.datasource.url", POSTGRES::getJdbcUrl);
@@ -70,11 +76,13 @@ class PaymentIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @MockitoBean PaymentGateway gateway;
 
+    /** 각 테스트가 독립적인 데이터로 시작하도록 테스트 컨테이너의 주문·결제 테이블을 비운다. */
     @BeforeEach
     void cleanDatabase() {
         jdbc.execute("TRUNCATE TABLE payments, purchase_orders CASCADE");
     }
 
+    /** 주문 생성→승인→조회, PG 호출 전 커밋, 중복 승인 억제와 응답의 결제 키 제외를 함께 확인한다. */
     @Test
     void completeOrderAndPaymentFlow() throws Exception {
         String body = mvc.perform(post("/orders")).andExpect(status().isCreated())
@@ -105,6 +113,7 @@ class PaymentIntegrationTest {
         verify(gateway, never()).lookup(any());
     }
 
+    /** 상품·가격 조작 및 승인 금액 불일치를 DB 결제 저장이나 PG 호출 전에 거부하는지 확인한다. */
     @Test
     void rejectsOrderTamperingAndWrongAmountBeforeCallingPg() throws Exception {
         mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("{\"amount\":1,\"quantity\":50}"))
@@ -117,6 +126,7 @@ class PaymentIntegrationTest {
         verifyNoInteractions(gateway);
     }
 
+    /** 잘못된 JSON, 누락 값, 소수·음수 금액, 빈 결제 키 요청이 PG 호출 없이 400이 되는지 확인한다. */
     @ParameterizedTest
     @ValueSource(strings = {"{}", "{invalid}", "null", "{\"orderId\":\"missing-order\",\"paymentKey\":\"key\",\"amount\":10000.5}",
             "{\"orderId\":\"missing-order\",\"paymentKey\":\"key\",\"amount\":-1}",
@@ -126,6 +136,7 @@ class PaymentIntegrationTest {
         verifyNoInteractions(gateway);
     }
 
+    /** 존재하지 않는 주문의 조회·승인·재확인 요청이 모두 404가 되는지 확인한다. */
     @Test
     void nonexistentOrderReturns404() throws Exception {
         mvc.perform(get("/orders/missing-order")).andExpect(status().isNotFound());
@@ -135,6 +146,7 @@ class PaymentIntegrationTest {
         verifyNoInteractions(gateway);
     }
 
+    /** 명확한 카드 거절을 FAILED로 저장하고 동일 승인 요청이 다시 와도 PG를 재호출하지 않는지 확인한다. */
     @Test
     void clearDeclineIsStoredAndNotRetried() throws Exception {
         String id = orders.create().orderId();
@@ -146,6 +158,7 @@ class PaymentIntegrationTest {
         verify(gateway).confirm(any());
     }
 
+    /** 통신 오류의 UNKNOWN 결과를 새 승인 없이 PG 조회로 복구하며 시도 식별자를 유지하는지 확인한다. */
     @Test
     void unknownResultIsRecoveredByLookupWithoutReconfirmation() throws Exception {
         String id = orders.create().orderId();
@@ -162,6 +175,7 @@ class PaymentIntegrationTest {
         verify(gateway).lookup(any());
     }
 
+    /** 동시 요청에서도 PG 승인은 한 번만 실행되고, PG 응답 대기 중 다른 요청이 DB 잠금에 막히지 않는지 확인한다. */
     @Test
     void simultaneousConfirmationCallsPgOnlyOnceAndDoesNotHoldDbLockDuringNetwork() throws Exception {
         String id = orders.create().orderId();
@@ -193,6 +207,7 @@ class PaymentIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM payments", Integer.class)).isOne();
     }
 
+    /** 기존 주문의 결제 키 교체와 다른 주문에서 같은 키 재사용을 409로 거부하는지 확인한다. */
     @Test
     void cannotSubstitutePaymentKeyOrReuseItForAnotherOrder() throws Exception {
         String first = orders.create().orderId();
@@ -208,6 +223,7 @@ class PaymentIntegrationTest {
         assertThat(orders.get(second).payment().status()).isEqualTo(PaymentStatus.READY);
     }
 
+    /** PG 승인 뒤 DB 갱신에 실패해도 선점 정보가 남고, 처리 기한 이후 조회로 복구할 수 있는지 확인한다. */
     @ParameterizedTest
     @ValueSource(strings = {"P0001", "23514"})
     void databaseFailureAfterPgSuccessPreservesClaimAndCanBeRecovered(String sqlState) throws Exception {
@@ -236,6 +252,7 @@ class PaymentIntegrationTest {
         verify(gateway).lookup(any());
     }
 
+    /** 중단된 작업 이후 재확인한 성공 결과가 이전 작업의 늦은 실패 응답에 덮어써지지 않는지 확인한다. */
     @Test
     void abandonedClaimAndLateResponseDoNotOverwriteRecoveredResult() {
         String id = orders.create().orderId();
@@ -248,6 +265,7 @@ class PaymentIntegrationTest {
         verify(gateway, never()).confirm(any());
     }
 
+    /** Flyway가 적용되었으며 주문 테이블의 고정 금액·수량 제약이 직접 SQL 갱신도 거부하는지 확인한다. */
     @Test
     void migrationEnforcesPriceAndOrderPaymentAmountRelationship() {
         String id = orders.create().orderId();
@@ -256,6 +274,7 @@ class PaymentIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success = true", Integer.class)).isPositive();
     }
 
+    /** 공개 결제 설정 응답에는 클라이언트 키만 있고 시크릿 키는 없는지 확인한다. */
     @Test
     void publicConfigDoesNotExposeSecret() throws Exception {
         mvc.perform(get("/payment-config")).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true))
@@ -263,18 +282,22 @@ class PaymentIntegrationTest {
                 .andExpect(jsonPath("$.secretKey").doesNotExist());
     }
 
+    /** 실제로 기다리지 않고 재확인 가능 상태를 만들도록 테스트 DB의 처리 기한을 과거로 바꾼다. */
     private void expireLease(String orderId) {
         jdbc.update("UPDATE payments SET processing_until = now() - interval '1 second' WHERE order_id = ?", orderId);
     }
 
+    /** 여러 테스트에서 공통으로 사용하는 고정 승인 시각의 PG 성공 결과를 만든다. */
     private static PaymentOutcome succeeded() {
         return new PaymentOutcome(PaymentStatus.SUCCEEDED, "DONE", null, Instant.parse("2026-09-11T01:00:00Z"));
     }
 
+    /** 서비스 메서드를 직접 호출하는 테스트용 10,000원 승인 요청 DTO를 만든다. */
     private static ConfirmPaymentRequest request(String id, String key) {
         return new ConfirmPaymentRequest(id, key, BigDecimal.valueOf(10_000));
     }
 
+    /** MockMvc로 HTTP 입력 검증을 확인할 수 있도록 지정한 값의 승인 요청 JSON을 만든다. */
     private static String confirmJson(String id, String key, String amount) {
         return "{\"orderId\":\"" + id + "\",\"paymentKey\":\"" + key + "\",\"amount\":" + amount + "}";
     }

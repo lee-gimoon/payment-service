@@ -1,5 +1,7 @@
+/** 파일 역할: 주문번호를 입력하고 저장된 주문 조회를 요청하는 폼을 제공한다. */
 import type { FormEvent } from "react";
 
+/** 부모가 관리하는 입력값·작업 상태와 입력 변경·조회 요청 콜백을 전달받는다. */
 interface OrderLookupProps {
   orderId: string;
   busy: boolean;
@@ -7,12 +9,14 @@ interface OrderLookupProps {
   onSubmit: () => void;
 }
 
+/** 주문번호 입력값을 부모와 공유하고 조회 버튼이나 Enter 입력을 처리하는 화면 컴포넌트다. */
 export function OrderLookup({
   orderId,
   busy,
   onOrderIdChange,
   onSubmit
 }: OrderLookupProps) {
+  /** 폼 제출의 기본 페이지 이동을 막고 부모 화면의 주문 조회 함수를 호출한다. */
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onSubmit();

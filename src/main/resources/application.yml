@@ -1,12 +1,15 @@
+# 파일 역할: Spring Boot의 DB 연결, JPA·Flyway, 토스 키, 서버 주소, API 문서 경로를 설정한다.
 spring:
   application:
     name: payment-service
 
+  # 환경변수가 있으면 그 값을 쓰고, 없으면 콜론 뒤의 로컬 개발 기본값을 사용한다.
   datasource:
     url: ${PAYMENT_DB_URL:jdbc:postgresql://localhost:5432/payment_service}
     username: ${PAYMENT_DB_USERNAME:payment}
     password: ${PAYMENT_DB_PASSWORD:payment_local}
 
+  # 테이블 생성은 Flyway가 담당하고, JPA는 엔티티와 테이블 구조가 맞는지 검증한다.
   jpa:
     open-in-view: false
     hibernate:
@@ -16,14 +19,17 @@ spring:
         jdbc:
           time_zone: UTC
 
+  # db/migration의 SQL을 버전 순서로 적용하고 기존에 적용한 파일의 변경 여부를 검사한다.
   flyway:
     enabled: true
 
+# TossProperties로 바인딩되는 키 설정이다. 키가 모두 없으면 주문 기능만 사용할 수 있다.
 payment:
   toss:
     client-key: ${TOSS_CLIENT_KEY:}
     secret-key: ${TOSS_SECRET_KEY:}
 
+# 기본적으로 로컬에서만 API를 열고, 일반 서버 오류 응답에 내부 예외 내용을 포함하지 않는다.
 server:
   address: ${PAYMENT_BIND_ADDRESS:127.0.0.1}
   port: ${PORT:8080}
@@ -31,6 +37,7 @@ server:
     include-message: never
     include-stacktrace: never
 
+# Controller의 OpenAPI 어노테이션을 Swagger UI로 확인할 주소와 정렬 방식을 정한다.
 springdoc:
   swagger-ui:
     path: /swagger-ui.html

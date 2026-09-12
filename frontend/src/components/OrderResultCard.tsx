@@ -1,3 +1,4 @@
+/** 파일 역할: 스토어에서 주문의 결제 결과를 보여주고 저장 결과 조회·PG 재확인 버튼을 제공한다. */
 import {
   formatAmount,
   formatDateTime,
@@ -5,6 +6,7 @@ import {
 } from "../lib/formatters";
 import type { Order } from "../types/payment";
 
+/** 표시할 주문과 작업 여부, 부모 화면이 실행할 두 종류의 조회 콜백이다. */
 interface OrderResultCardProps {
   order: Order;
   busy: boolean;
@@ -12,6 +14,7 @@ interface OrderResultCardProps {
   onReconcile: () => void;
 }
 
+/** 주문 내용·결제 상태·처리 시각을 표시하고, 서버가 허용한 경우 PG 결과 재확인 버튼을 보여준다. */
 export function OrderResultCard({
   order,
   busy,

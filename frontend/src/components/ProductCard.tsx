@@ -1,3 +1,6 @@
+/** 파일 역할: 학습용 단일 상품인 티셔츠의 그림·이름·가격을 보여주는 상품 소개 영역이다. */
+
+/** 고정 상품 소개와 SVG 그림을 렌더링한다. 실제 주문 금액을 결정하고 저장하는 곳은 서버다. */
 export function ProductCard() {
   return (
     <section className="product-card" aria-label="판매 상품">
