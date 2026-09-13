@@ -1,4 +1,7 @@
-/** 파일 역할: 브라우저 저장소가 차단되더라도 화면 동작을 계속할 수 있도록 저장소 접근 오류를 처리한다. */
+/**
+ * 브라우저의 localStorage와 sessionStorage에서 값을 읽고 쓰는 함수들을 모았다.
+ * 저장소 접근에 실패하면 읽기는 null을 반환하고, 저장·삭제는 오류 없이 건너뛴다.
+ */
 
 /** 브라우저를 닫아도 유지되는 localStorage에서 값을 읽고, 접근할 수 없으면 null을 반환한다. */
 export function readLocalValue(key: string): string | null {

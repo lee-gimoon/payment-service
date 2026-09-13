@@ -18,6 +18,7 @@ import { readLocalValue, writeLocalValue } from "../lib/storage";
 import { openTossPayment } from "../payments/tossPayments";
 import type { Order, PaymentConfig } from "../types/payment";
 
+/** 마지막 주문번호를 localStorage에 저장하거나 찾을 때 쓰는 항목 이름이다. 실제 주문번호는 이 항목의 값으로 저장한다. */
 const LAST_ORDER_ID_KEY = "lastOrderId";
 
 /** 잡힌 오류에서 사용자에게 보여줄 메시지를 꺼내고, 오류 형식을 모르면 기본 안내를 반환한다. */
@@ -32,11 +33,12 @@ export function StorePage() {
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
   const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
   const [lookupOrderId, setLookupOrderId] = useState("");
-  // state 변경은 다음 렌더링에 반영된다. busy는 버튼 비활성화 등 화면 표시에 사용한다.
+  // 화면용 상태: true이면 JSX의 disabled={busy} 때문에 버튼이 비활성화된다.
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  // ref는 렌더링 사이에 유지되며 current를 바꾸면 즉시 읽을 수 있다. 변경 자체가 렌더링을 요청하지는 않는다.
-  // 초기 설정 조회가 끝날 때까지 true로 두고, 이후에는 이 화면의 작업이 겹쳐 실행되는 것을 막는다.
+  // ref로 값 참조하기: useRef()는 current에 값을 담는 객체를 반환하며, 값을 바꿔도 재렌더링하지 않고 다음 렌더링에서도 그 값을 유지한다.
+  // ref로 DOM 조작하기: JSX 요소에 ref를 전달하면 React가 그 DOM 요소를 ref.current에 넣어 focus() 같은 메서드로 조작할 수 있다.
+  // ref 콘텐츠 재생성 피하기: 초기값은 첫 렌더링에만 저장되지만 초기값을 만드는 식은 매번 실행되므로, 비용 큰 객체는 current가 null일 때만 생성한다.
   const busyRef = useRef(true);
 
   /** 받은 주문을 화면과 조회 입력란에 반영하고, 다음 방문에서 찾을 수 있도록 주문번호를 기억한다. */
@@ -47,8 +49,9 @@ export function StorePage() {
   }
 
   /**
-   * 전달받은 비동기 작업을 실행하면서 중복 진입, 버튼 비활성화, 오류 표시를 공통 처리한다.
-   * work는 지금 실행할 주문 생성·조회 등의 함수이며, 성공과 실패 모두 finally에서 잠금을 해제한다.
+   * 주문 생성·조회·결제 등 버튼을 눌렀을 때 각 handle 함수가 호출하는 공통 작업 처리 함수다.
+   * handle 함수가 전달한 work()를 실행하되, 이미 다른 작업이 진행 중이면 이번 호출을 건너뛴다.
+   * 실행 중에는 버튼을 비활성화하고, 실패하면 오류를 표시하며, 끝나면 다시 버튼을 사용할 수 있게 한다.
    */
   async function runAction(work: () => Promise<void>) {
     if (busyRef.current) {
@@ -69,8 +72,15 @@ export function StorePage() {
     }
   }
 
-  // 화면이 마운트되면 초기 데이터를 읽는다. active는 화면을 떠난 뒤 도착한 응답의 반영을 막는다.
+  /**
+   * useEffect는 화면을 렌더링한 뒤 실행할 작업을 React에 지정하는 Hook이다.
+   * []이므로 StorePage가 처음 마운트된 뒤 실행하고, 상태 변경에 따른 재렌더링에서는 다시 실행하지 않는다.
+   * StorePage의 탭 제목과 결제 설정(사용 가능 여부·브라우저용 키)을 준비하고, 저장된 주문번호가 있으면 주문을 조회한다.
+   * 초기 처리가 끝나면 busy를 false로 바꾸며, 화면을 떠난 뒤 도착한 응답은 active로 무시한다.
+   */
   useEffect(() => {
+    // 서버 응답이 도착했을 때 StorePage가 아직 열려 있는지 확인하는 변수다.
+    // 화면을 떠나면 false로 바꿔, 늦게 온 응답으로 setPaymentConfig() 등을 호출하지 않는다.
     let active = true;
     document.title = "한 장의 티셔츠 · 테스트 스토어";
 
@@ -112,7 +122,8 @@ export function StorePage() {
 
     void initializeStore();
 
-    // effect 정리 함수: 네트워크 요청을 취소하는 대신 이 실행에서 받은 결과의 화면 반영을 중단한다.
+    // useEffect 콜백이 반환하는 정리 함수다. React는 효과를 다시 실행하기 전이나 StorePage가 제거될 때 자동 호출한다.
+    // 여기서는 active를 false로 바꿔, 나중에 도착한 서버 응답이 상태를 바꾸지 못하게 한다.
     return () => {
       active = false;
     };

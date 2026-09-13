@@ -27,7 +27,11 @@ public class PaymentController {
         this.properties = properties;
     }
 
-    /** GET /payment-config: 브라우저에 결제 사용 여부와 클라이언트 키만 공개한다. */
+    /**
+     * GET /payment-config: StorePage가 처음 열릴 때 서버의 테스트 결제 설정을 조회한다.
+     * enabled는 결제 버튼 활성 여부에, clientKey는 브라우저에서 토스 결제창을 여는 데 사용한다.
+     * 서버의 결제 승인에 사용하는 secretKey는 응답에 포함하지 않는다.
+     */
     @GetMapping("/payment-config")
     @Operation(summary = "브라우저용 결제 설정 조회", description = "결제 가능 여부와 클라이언트 키만 반환하며 시크릿 키는 노출하지 않습니다.")
     PublicConfig config() {

@@ -40,8 +40,11 @@ export function PaymentResultPage() {
     "카드 인증 후 서버에서 최종 승인 결과를 확인합니다."
   );
   const [error, setError] = useState("");
-  // busy는 화면 표시용이고, busyRef.current는 진행 중인 작업에 즉시 중복 진입하지 못하게 한다.
+  // 화면용 상태: true이면 JSX의 disabled={busy} 때문에 결과 조회와 재확인 버튼이 비활성화된다.
   const [busy, setBusy] = useState(true);
+  // ref로 값 참조하기: useRef()는 current에 값을 담는 객체를 반환하며, 값을 바꿔도 재렌더링하지 않고 다음 렌더링에서도 그 값을 유지한다.
+  // ref로 DOM 조작하기: JSX 요소에 ref를 전달하면 React가 그 DOM 요소를 ref.current에 넣어 focus() 같은 메서드로 조작할 수 있다.
+  // ref 콘텐츠 재생성 피하기: 초기값은 첫 렌더링에만 저장되지만 초기값을 만드는 식은 매번 실행되므로, 비용 큰 객체는 current가 null일 때만 생성한다.
   const busyRef = useRef(true);
 
   /**
@@ -72,7 +75,11 @@ export function PaymentResultPage() {
     setError(errorMessage(requestError));
   }
 
-  /** 결과 화면의 비동기 작업을 하나씩 실행하고, 로딩·오류 처리 후 반드시 실행 잠금을 해제한다. */
+  /**
+   * 결과 조회·PG 재확인·승인 요청 버튼을 눌렀을 때 각 handle 함수가 호출하는 공통 작업 처리 함수다.
+   * handle 함수가 전달한 work()를 실행하되, 이미 다른 작업이 진행 중이면 이번 호출을 건너뛴다.
+   * 실행 중에는 버튼을 비활성화하고, 실패하면 오류를 표시하며, 끝나면 다시 버튼을 사용할 수 있게 한다.
+   */
   async function runAction(work: () => Promise<void>) {
     if (busyRef.current) {
       return;
