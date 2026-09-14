@@ -1,6 +1,6 @@
 # Payment Service
 
-토스페이먼츠 결제 승인 흐름을 Spring Boot REST API와 React 클라이언트로 구현한 학습용 MVP입니다. 주문 생성부터 결제 승인, 멱등 처리, 불명확한 결제 결과의 재확인까지 다룹니다.
+토스페이먼츠 결제 승인 흐름을 Spring Boot REST API와 React 클라이언트로 구현한 학습용 MVP입니다. 자바 초보자가 주문 생성 → 카드 인증 → 결제 승인 → 결과 조회를 따라갈 수 있도록 서비스 코드를 순서대로 구성했습니다. 먼저 [코드 읽는 순서](docs/code-reading-guide.md)를 참고하세요.
 
 > 이 프로젝트는 로컬 개발과 학습을 위한 예제입니다. 인증과 주문별 접근 제어가 없으므로 그대로 운영 환경에 배포하지 마세요.
 
@@ -11,7 +11,7 @@
 - 주문별 결제 1건 및 결제 키 유일성 보장
 - `Idempotency-Key`를 이용한 중복 승인 방지
 - 데이터베이스 트랜잭션과 외부 PG 호출 분리
-- 처리 제한 시간이 지난 결제의 결과 재확인
+- 응답이 불명확하거나 중단된 결제의 수동 결과 재확인
 - React, TypeScript, React Router로 구성한 단일 페이지 테스트 결제 클라이언트
 - Swagger UI 기반 API 문서
 - PostgreSQL, pgAdmin을 포함한 Docker Compose 개발 환경
@@ -88,7 +88,7 @@ sequenceDiagram
     Checkout-->>Client: 인증 결과와 함께 /payment/result로 이동
 
     Client->>Server: POST /payments/confirm<br/>paymentKey, orderId, amount
-    Server->>DB: 주문 잠금 · 금액 검증<br/>PROCESSING 저장
+    Server->>DB: 주문 조회 · 금액 검증<br/>PROCESSING 저장
     DB-->>Server: 트랜잭션 커밋
     Server->>Toss: POST /v1/payments/confirm<br/>Idempotency-Key
     Toss-->>Server: 승인 결과
@@ -97,7 +97,7 @@ sequenceDiagram
     Server-->>Client: 주문과 결제 상태
 ```
 
-승인 타임아웃, 중복 요청과 결과 재확인 과정은 [결제 서비스 개발 계획과 도메인 설계](docs/payment-domain.md)를 참고하세요.
+현재 코드와 DB 컬럼은 [코드 읽는 순서](docs/code-reading-guide.md)에 정리했습니다. [이전 확장 설계](docs/payment-domain.md)는 이후 학습을 위한 참고 자료입니다.
 
 ## 시작하기
 
@@ -187,7 +187,7 @@ Password: payment_admin_local
 | `GET` | `/orders/{orderId}` | 저장된 주문 및 결제 상태 조회 |
 | `GET` | `/payment-config` | 브라우저용 결제 가능 여부와 클라이언트 키 조회 |
 | `POST` | `/payments/confirm` | 결제창 인증 결과를 이용해 결제 승인 |
-| `POST` | `/payments/{orderId}/reconcile` | 불명확하거나 제한 시간이 지난 결제 결과 재확인 |
+| `POST` | `/payments/{orderId}/reconcile` | 처리 중이거나 결과가 불명확한 결제를 토스에서 조회 |
 
 주문 생성 및 조회 예시:
 
@@ -213,7 +213,7 @@ Invoke-RestMethod "http://127.0.0.1:8080/orders/$($order.orderId)"
 | 상태 | 의미 |
 | --- | --- |
 | `READY` | 결제 승인 요청 전 |
-| `PROCESSING` | 결제 승인 또는 결과 재확인 진행 중 |
+| `PROCESSING` | 승인 요청 정보를 저장했고 결과를 기다리는 중 |
 | `SUCCEEDED` | 승인 완료 결과 저장 |
 | `FAILED` | 명시적인 거절 또는 만료 확인 |
 | `UNKNOWN` | 통신 오류나 저장 실패 등으로 결과 재확인 필요 |
@@ -229,16 +229,21 @@ Invoke-RestMethod "http://127.0.0.1:8080/orders/$($order.orderId)"
 
 주요 HTTP 상태 코드는 `400`, `404`, `409`, `422`, `503`입니다. 결제 결과가 불명확할 때는 재승인하지 않고 결과 재확인 API를 사용합니다.
 
-## 결제 안정성 설계
+## 학습용 구현과 기본 검증
 
-- 주문 행을 잠근 짧은 트랜잭션에서 결제 시도와 작업 소유권을 저장합니다.
-- 데이터베이스 커밋 후 PG를 호출하여 외부 네트워크 요청 중 트랜잭션을 유지하지 않습니다.
-- 동일 요청에는 저장된 결과를 반환하고, 다른 `paymentKey`로 기존 주문을 교체하지 않습니다.
-- PG 승인 요청에는 결제 시도 UUID를 `Idempotency-Key`로 전달합니다.
-- `PROCESSING` 상태가 30초 이상 지속되면 조회 응답에서 `UNKNOWN`으로 표시하고 재확인을 허용합니다.
-- 늦게 도착한 이전 작업의 응답이 새 재확인 결과를 덮어쓰지 않도록 작업 UUID를 검사합니다.
+- `PaymentService.confirm()`에서 주문 조회, 금액 비교, 승인 정보 저장, 토스 호출, 결과 저장 순서로 진행합니다.
+- `PaymentTransactions`, 작업 ID, 처리 기한, 주문 조회 잠금과 공통 실행 함수는 제거했습니다.
+- 결제 정보를 먼저 커밋하고 토스를 호출합니다. HTTP 응답을 기다리는 동안 DB 잠금을 유지하지 않습니다.
+- 주문당 결제 한 행과 결제 키 유일성은 DB 제약으로 검사합니다.
+- UUID 주문번호를 토스의 `Idempotency-Key`로 보냅니다.
+- 요청한 주문번호·키·금액과 토스의 승인 결과가 일치하는지 확인합니다.
+- 타임아웃은 결제 실패로 단정하지 않습니다. PROCESSING과 UNKNOWN은 수동 PG 조회로 확인할 수 있습니다.
+- 동시에 도착한 결과는 JPA의 `@Version`으로 검사합니다. 충돌 응답을 받으면 저장된 결과를 다시 조회합니다.
+- 주문 생성 요청의 본문은 읽지 않습니다. 금액을 보내도 서버가 정한 10,000원으로 주문을 만듭니다.
 
-자동 재확인 배치, 취소, 환불, 배송, 정산, 상품 관리와 사용자 인증은 현재 범위에 포함하지 않습니다.
+DB는 주문 5개 컬럼, 결제 8개 컬럼입니다. V2 마이그레이션이 기존 행을 유지하면서 사용하지 않는 컬럼을 제거합니다. 원화는 API에서 KRW로 반환하고, 프론트의 `attemptId` 응답에는 결제가 있으면 주문번호를 재사용합니다.
+
+취소·환불·웹훅·자동 복구 배치·여러 결제 시도 관리는 이후 확장 범위입니다.
 
 ## 환경변수
 

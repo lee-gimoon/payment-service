@@ -11,6 +11,7 @@ interface CheckoutCardProps {
   onPay: () => void;
 }
 
+/** 결제 대기·처리 중·결과 확인 필요 상태에서는 기존 주문을 이어서 처리하므로 새 주문 버튼을 숨긴다. */
 const IN_PROGRESS_STATUSES = ["READY", "PROCESSING", "UNKNOWN"];
 
 /** 현재 결제 상태에 맞는 버튼을 보여준다. API 호출은 부모가 전달한 onCreateOrder·onPay가 담당한다. */

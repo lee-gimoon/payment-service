@@ -1,83 +1,107 @@
-# 코드 주석과 읽는 순서
+# 처음 읽는 주문·결제 코드
 
-이 프로젝트의 소스에는 학습을 위해 파일 첫머리에 역할을, 클래스·타입·함수 위에는 책임과 처리 규칙을 적었습니다. Java에는 Javadoc, TypeScript에는 JSDoc 형식의 `/** ... */` 주석을 사용합니다. 편집기에서 선언이나 호출에 마우스를 올리면 설명을 확인할 수 있습니다.
+현재 자바 코드는 주문 생성 → 카드 인증 → 결제 승인 → 결과 조회를 이해하기 위한 학습용 구조입니다. React 코드는 기존 그대로 사용합니다.
 
-## 주석은 보통 어떻게 작성하나요?
+## 1. 주문을 만든다
 
-모든 파일과 함수에 같은 분량의 설명을 붙이는 보편적인 정답은 없습니다. 팀 규칙에 따라 다르지만, 이름만으로 알기 어려운 책임·입력 조건·반환 결과·오류·설계 이유를 기록하는 방식이 유용합니다. 코드의 동작이 바뀌면 주석도 함께 수정해야 합니다.
+`POST /orders` → `OrderController.create()` → `OrderService.create()`
 
-| 위치 | 적으면 도움이 되는 내용 | 이 프로젝트의 예 |
+```java
+PurchaseOrder order = new PurchaseOrder("티셔츠", 1, 10_000);
+order = orderRepository.save(order);
+return OrderResponse.of(order, null);
+```
+
+- `new PurchaseOrder(...)`: 메모리에 주문 객체를 만듭니다.
+- `save(order)`: DB의 `purchase_orders`에 저장합니다.
+- `OrderResponse.of(order, null)`: 아직 결제가 없으므로 `READY`를 반환합니다.
+- 클라이언트가 보내는 상품·금액은 읽지 않습니다. 주문 금액은 서버에서 정합니다.
+
+## 2. 카드 인증을 한다
+
+React가 클라이언트 키와 주문번호·금액으로 토스 결제창을 엽니다. 사용자가 카드 인증을 끝내면 토스가 브라우저에 `paymentKey`, `orderId`, `amount`를 돌려줍니다.
+
+카드 인증은 토스 결제창에서 진행합니다. 이 단계가 끝났다고 서버의 결제 승인까지 완료된 것은 아닙니다.
+
+## 3. 서버에 결제 승인을 요청한다
+
+React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
+
+`PaymentController.confirm()` → **`PaymentService.confirm()`**
+
+이 메서드를 먼저 읽으세요. 번호가 붙은 주석대로 다음 작업을 합니다.
+
+1. 주문번호로 서버의 주문을 찾습니다.
+2. 브라우저가 보낸 금액과 DB의 주문 금액을 비교합니다.
+3. 이미 같은 결제 요청이 저장돼 있으면 그 결과를 반환합니다.
+4. 결제 키를 `PROCESSING` 상태로 먼저 저장합니다.
+5. `TossPaymentClient.confirm()`으로 토스에 최종 승인을 요청합니다.
+6. 토스 결과를 결제에 반영하고 저장합니다.
+
+`TossPaymentClient`는 토스 HTTP 통신만 담당합니다. 내부의 `client.post().uri(...).body(...)`가 외부 API 요청입니다. `PaymentResult`는 그 응답을 우리 서비스의 상태로 바꾼 DTO입니다.
+
+## 4. 결과를 조회한다
+
+`GET /orders/{orderId}` → `OrderService.get()`
+
+서버는 주문과 결제를 DB에서 읽어 `OrderResponse`로 반환합니다. 주문번호를 `Payment`의 기본 키로도 쓰기 때문에 같은 번호로 두 테이블을 조회할 수 있습니다.
+
+## 먼저 볼 파일
+
+| 순서 | 파일 | 읽을 부분 |
 | --- | --- | --- |
-| 파일 첫머리 | 전체 흐름에서 맡는 역할 | `paymentApi.ts`는 React와 Spring Boot API 사이의 요청·응답 처리 |
-| 클래스·타입 위 | 객체의 책임과 다른 객체와의 관계 | `PaymentService`는 DB 작업 선점 → PG 호출 → 결과 저장의 순서를 조율 |
-| 함수·메서드 위 | 무엇을 처리하며 어떤 조건·결과가 있는지 | `claimConfirmation()`은 금액을 확인하고 새 결제 시도를 저장하거나 기존 결과를 반환 |
-| 함수 내부 | 코드만 보고 놓치기 쉬운 이유 | PG 응답을 기다리는 동안 DB 잠금을 유지하지 않는 이유 |
-| 테스트 위 | 어떤 상황에서 어떤 결과를 기대하는지 | 승인 후 DB 저장에 실패해도 PG 조회로 복구할 수 있는지 |
+| 1 | [OrderController](../src/main/java/com/example/payment/order/OrderController.java) | 요청 URL과 서비스 호출 |
+| 2 | [OrderService](../src/main/java/com/example/payment/order/OrderService.java) | 주문 객체 생성과 저장 |
+| 3 | [PaymentController](../src/main/java/com/example/payment/payment/PaymentController.java) | 인증 결과 JSON 받기 |
+| 4 | [PaymentService](../src/main/java/com/example/payment/payment/PaymentService.java) | confirm()의 1~6번 |
+| 5 | [TossPaymentClient](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | confirm()의 HTTP 요청 |
+| 6 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java), [Payment](../src/main/java/com/example/payment/payment/Payment.java) | DB에 저장하는 필드 |
+| 7 | [OrderResponse](../src/main/java/com/example/payment/order/OrderResponse.java) | 프론트에 반환하는 JSON 구성 |
 
-Java에서 파일 하나에 클래스 하나만 있으면 파일 설명과 클래스 설명을 합치기도 합니다. 이번에는 파일을 처음 여는 학습 상황을 고려해 둘 다 붙였습니다. 단순 getter도 요청에 맞춰 설명했지만, 일반적인 유지보수 코드에서는 이름만으로 충분한 getter의 주석을 생략하기도 합니다. 필요한 경우 Javadoc에 `@param`, `@return`, `@throws`로 입력·반환·예외 조건을 더 자세히 작성할 수 있습니다.
+프록시나 팩토리의 내부 원리를 몰라도 이 순서로 읽을 수 있습니다. 이전에 정리한 JPA 개념은 [별도 참고 문서](java-jpa-notes.md)에 있습니다.
 
-React의 `StorePage()`와 `CheckoutCard()`도 함수입니다. 화면을 반환하는 함수는 컴포넌트, 클릭에 반응하는 함수는 이벤트 처리 함수, `runAction()`처럼 다른 함수를 실행하는 함수는 공통 처리 도우미로 읽으면 됩니다. 짧은 익명 콜백은 감싸는 함수의 설명과 함께 읽고, 초기화 effect와 정리 함수처럼 별도의 역할이 있는 곳에는 내부 주석도 붙였습니다.
+## 지금 DB에 남긴 컬럼
 
-## 먼저 주문 생성 한 건을 따라가세요
+`purchase_orders`는 5개 컬럼입니다.
 
-| 순서 | 코드 | 확인할 내용 |
-| --- | --- | --- |
-| 1 | [CheckoutCard.tsx](../frontend/src/components/CheckoutCard.tsx)의 주문 만들기 버튼 | `onClick={onCreateOrder}`로 부모가 전달한 함수 호출 |
-| 2 | [StorePage.tsx](../frontend/src/pages/StorePage.tsx)의 `handleCreateOrder()` | `runAction()`을 거쳐 `createOrder()` 실행 |
-| 3 | [paymentApi.ts](../frontend/src/api/paymentApi.ts)의 `createOrder()`와 `request()` | `fetch`로 본문 없는 `POST /orders` 요청 |
-| 4 | [OrderController.java](../src/main/java/com/example/payment/order/OrderController.java)의 `create()` | 요청 본문 검사 후 주문 서비스 호출 |
-| 5 | [OrderService.java](../src/main/java/com/example/payment/order/OrderService.java)의 `create()` | 트랜잭션 안에서 주문 생성·저장 |
-| 6 | [PurchaseOrder.java](../src/main/java/com/example/payment/order/PurchaseOrder.java)의 `tShirt()` | 주문번호 발급과 상품·수량·금액 결정 |
-| 7 | [OrderRepository.java](../src/main/java/com/example/payment/order/OrderRepository.java) | 상속받은 `save()`의 구현은 Spring Data JPA가 제공 |
-| 8 | [OrderResponse.java](../src/main/java/com/example/payment/order/OrderResponse.java)의 `of()` | 결제 기록이 없는 주문을 `READY` 응답으로 변환 |
-| 9 | `OrderController` → `paymentApi` → `StorePage.showOrder()` | HTTP 201 응답이 돌아오고 React state 갱신으로 주문 표시 |
-
-각 단계에서 **입력값 → 호출한 함수 → 데이터 변경 → 반환값**을 확인하세요. `runAction()`의 `busyRef`는 현재 화면의 중복 실행을 막는 보조 장치입니다. 서버의 중복 결제 처리는 별도로 `PaymentTransactions`와 DB 제약조건이 담당합니다.
-
-## 다음으로 결제 승인과 재확인을 읽으세요
-
-1. [StorePage.tsx](../frontend/src/pages/StorePage.tsx)의 `handlePayment()`가 최신 주문을 확인합니다.
-2. [tossPayments.ts](../frontend/src/payments/tossPayments.ts)의 `openTossPayment()`가 카드 인증창을 엽니다.
-3. 인증 후 [paymentRedirect.ts](../frontend/src/payments/paymentRedirect.ts)가 복귀 URL을 읽고 [PaymentResultPage.tsx](../frontend/src/pages/PaymentResultPage.tsx)가 서버에 승인을 요청합니다.
-4. [PaymentController.java](../src/main/java/com/example/payment/payment/PaymentController.java) → [PaymentService.java](../src/main/java/com/example/payment/payment/PaymentService.java) → [PaymentTransactions.java](../src/main/java/com/example/payment/payment/PaymentTransactions.java)의 `claimConfirmation()` 순으로 진행합니다.
-5. 새 시도의 식별 정보와 `PROCESSING`을 커밋한 뒤 [TossPaymentGateway.java](../src/main/java/com/example/payment/gateway/TossPaymentGateway.java)가 PG에 승인을 요청합니다.
-6. `PaymentTransactions.finish()` → [Payment.java](../src/main/java/com/example/payment/payment/Payment.java)의 `complete()`로 결과를 반영하고 별도 트랜잭션으로 저장합니다.
-7. 결과가 미확정이면 `reconcile()`이 `claimReconciliation()` → PG `lookup()` → `finish()`를 거쳐 결과를 재확인합니다.
-
-`READY`는 아직 결제 기록이 없는 주문의 응답 상태입니다. `UNKNOWN`은 통신 오류 등의 결과로 DB에 저장되기도 하지만, 처리 기한이 지난 `PROCESSING`을 `visibleStatus()`가 응답에서만 `UNKNOWN`으로 보여주기도 합니다. 조회했다고 항상 DB 상태가 바뀌는 것은 아닙니다.
-
-정상 흐름을 먼저 읽은 뒤 [PaymentTest.java](../src/test/java/com/example/payment/payment/PaymentTest.java), [TossPaymentGatewayTest.java](../src/test/java/com/example/payment/gateway/TossPaymentGatewayTest.java), [PaymentIntegrationTest.java](../src/test/java/com/example/payment/PaymentIntegrationTest.java)에서 실패·중복·복구 시나리오를 대조하세요. 통합 테스트는 별도 PostgreSQL 컨테이너를 사용하며 PG 응답은 모의 구현입니다.
-
-## 설정과 보조 파일의 역할
-
-설정 파일은 클래스나 함수가 없어도 애플리케이션 동작에 영향을 줍니다. 주석을 지원하는 설정에는 파일 역할을 적었고, JSON·생성 도구의 파일·기존 DB 마이그레이션은 아래에서 설명합니다.
-
-| 파일 | 역할 |
+| 컬럼 | 의미 |
 | --- | --- |
-| [build.gradle](../build.gradle) | 백엔드 Java 버전·라이브러리·빌드·테스트 설정 |
-| [settings.gradle](../settings.gradle) | Gradle 프로젝트 이름 |
-| [gradlew](../gradlew), [gradlew.bat](../gradlew.bat) | 운영체제별 Gradle Wrapper 실행 스크립트. 도구가 생성한 표준 파일 |
-| [gradle-wrapper.properties](../gradle/wrapper/gradle-wrapper.properties) | Wrapper가 내려받아 사용할 Gradle 배포판과 다운로드 설정 |
-| `gradle/wrapper/gradle-wrapper.jar` | 지정한 Gradle을 준비하고 실행하는 바이너리 도구 |
-| [compose.yaml](../compose.yaml) | PostgreSQL·pgAdmin 컨테이너와 포트·볼륨 연결 |
-| [application.yml](../src/main/resources/application.yml) | Spring Boot의 DB·JPA·Flyway·토스·웹 서버 설정 |
-| [V1__create_orders_and_payments.sql](../src/main/resources/db/migration/V1__create_orders_and_payments.sql) | 주문·결제 테이블, 고정 상품 제약, 주문과 결제 금액 일치, 결제 키 유일성, 복구 조회용 인덱스 생성 |
-| [servers.json](../docker/pgadmin/servers.json) | pgAdmin이 사용할 PostgreSQL 연결 정보 등록 |
-| [pgpass](../docker/pgadmin/pgpass) | pgAdmin에서 로컬 예제 DB에 연결할 때 사용할 암호 파일 |
-| [frontend/package.json](../frontend/package.json) | React 의존성과 개발·빌드·타입 검사 명령 |
-| [frontend/package-lock.json](../frontend/package-lock.json) | npm이 기록한 실제 의존성 버전·다운로드 정보 |
-| [frontend/tsconfig.json](../frontend/tsconfig.json) | TypeScript 타입 검사·모듈·JSX 해석 설정 |
-| [frontend/vite.config.ts](../frontend/vite.config.ts) | React 개발 서버·빌드 플러그인·개발용 API 프록시 |
-| [frontend/index.html](../frontend/index.html) | React를 붙일 root 요소와 프런트엔드 시작 스크립트 |
-| [main.tsx](../frontend/src/main.tsx) | React 시작과 스토어·결제 결과 화면 라우팅 |
-| [vite-env.d.ts](../frontend/src/vite-env.d.ts) | Vite 클라이언트 환경·정적 파일 import 타입 선언 |
-| [styles.css](../frontend/src/styles.css) | 두 화면의 공통 스타일과 작은 화면 배치 |
-| [.gitignore](../.gitignore), [frontend/.gitignore](../frontend/.gitignore) | Git에 넣지 않을 빌드 결과·로컬 도구 파일 패턴 |
-| [.gitattributes](../.gitattributes) | Git이 파일 형식과 줄바꿈을 다루는 규칙 |
-| [README.md](../README.md) | 전체 기능·아키텍처·결제 시퀀스·실행 방법 |
-| [payment-domain.md](payment-domain.md) | 결제 업무 개념·범위·설계·복구 규칙 |
-| [environment-configuration.md](environment-configuration.md) | 로컬 개발 환경 구성 안내 |
-| [environment-variables.md](environment-variables.md) | 실행 환경변수 설정 안내 |
-| [code-reading-guide.md](code-reading-guide.md) | 현재 문서. 주석 작성 기준과 코드를 따라 읽는 순서 |
+| id | 주문번호 |
+| product_name | 상품명 |
+| quantity | 수량 |
+| amount | 주문 총금액 |
+| created_at | 주문 시각 |
 
-표준 JSON은 주석을 지원하지 않으므로 `package.json`이나 `servers.json` 안에 설명을 삽입하지 않습니다. `tsconfig.json`은 주석을 허용하지만, 여기서는 설정 파일들의 역할을 위 표에서 함께 안내합니다. 이미 적용된 Flyway 버전 마이그레이션은 주석 수정도 체크섬에 영향을 줄 수 있어 원문을 유지합니다. 이 프로젝트의 `V1`에서 `READY`가 상태 제약에 없는 이유는 결제 시도 전에는 결제 행 자체가 없기 때문입니다.
+`payments`는 8개 컬럼입니다.
+
+| 컬럼 | 의미 |
+| --- | --- |
+| order_id | 결제할 주문번호. 기본 키이므로 주문당 한 행 |
+| payment_key | 토스 승인·조회에 쓰는 키. 다른 주문과 중복 금지 |
+| status | PROCESSING / SUCCEEDED / FAILED / UNKNOWN |
+| approved_at | 토스에서 결제가 승인된 시각 |
+| checked_at | 토스 결과를 마지막으로 확인한 시각 |
+| pg_status | 토스의 원본 상태. 예: DONE |
+| error_code | 화면에 전달할 오류 원인 |
+| version | JPA가 동시 저장 충돌을 검사하는 번호 |
+
+금액은 주문 테이블 한 곳에서만 관리합니다. 원화 전용이므로 응답의 `currency`는 항상 `KRW`입니다. 기존 프론트는 `attemptId`가 있으면 임시 승인 정보를 지우므로, 결제가 있으면 여기에 주문번호를 반환합니다. 별도 컬럼은 저장하지 않습니다.
+
+기존 DB는 [V2 마이그레이션](../src/main/resources/db/migration/V2__simplify_payment_processing.sql)으로 바뀝니다. 주문·결제 행과 승인 결과는 유지하고, 쓰지 않는 컬럼만 제거합니다. V1은 이전 DB를 만들었던 변경 이력이므로 다시 수정하지 않습니다.
+
+## 정상 흐름을 이해한 뒤 볼 보조 기능
+
+- `reconcile()`: PROCESSING 또는 UNKNOWN 결제를 토스에서 다시 조회합니다. 새 승인은 요청하지 않습니다.
+- `ApiExceptionHandler`: 잘못된 입력과 저장 오류를 React용 JSON 메시지로 바꿉니다.
+- `Payment.version`의 `@Version`: 두 요청이 동시에 결과를 저장하면, 오래된 결과의 덮어쓰기를 JPA가 거부합니다. 이 경우 화면에서 저장된 결과를 다시 조회합니다.
+- `TossProperties`, `PaymentConfiguration`: 테스트 키, 토스 주소, HTTP 제한 시간을 설정합니다.
+
+## 간단하게 바꾼 부분과 남긴 규칙
+
+별도 트랜잭션 서비스, 주문 행의 비관적 잠금, 작업 ID, 30초 처리 기한, 공통 실행 함수는 제거했습니다. `PROCESSING` 상태는 시간이 지났다는 이유로 자동 변경하지 않으며, 바로 수동 재확인이 가능합니다.
+
+저장소 메서드 호출별로 트랜잭션을 끝내므로 토스 호출 전체에 `@Transactional`을 붙이지 않습니다. 토스 호출 전에 결제 정보를 저장해 중복 승인을 막고, 저장 실패 뒤에도 같은 키로 결과를 조회할 수 있습니다. UUID 주문번호를 토스의 `Idempotency-Key`로 사용합니다.
+
+중복 요청이 최초 저장 시점에 정확히 겹치거나 결과 저장이 충돌하면 한 요청은 409를 받을 수 있습니다. 프론트의 저장된 결과 조회로 확인합니다. 조회한 토스 결과조차 아직 불명확하면 UNKNOWN을 유지합니다.
+
+취소·환불·웹훅·자동 복구 배치·여러 결제 시도를 다루는 확장은 이후 학습 단계입니다. 인증과 주문 접근 권한이 없는 로컬 테스트 예제라는 범위도 동일합니다.

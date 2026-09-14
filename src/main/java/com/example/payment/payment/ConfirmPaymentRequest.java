@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 
 /**
  * 카드 인증 후 클라이언트가 보내는 주문번호·paymentKey·승인 금액을 받는 불변 DTO다.
- * 어노테이션은 형식과 범위를 검사하며, 저장된 주문과의 금액 일치 여부는 PaymentTransactions에서 검사한다.
+ * 어노테이션은 형식과 범위를 검사하며, 저장된 주문과의 금액 일치 여부는 PaymentService에서 검사한다.
  */
 public record ConfirmPaymentRequest(
         @NotBlank @Pattern(regexp = "[a-zA-Z0-9_-]{6,64}") String orderId,
