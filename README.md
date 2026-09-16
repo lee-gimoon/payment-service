@@ -319,6 +319,8 @@ docs/             # 상세 설계와 개발 환경 문서
 ## 문서
 
 - [코드 주석과 읽는 순서](docs/code-reading-guide.md)
+- [Spring MVC 요청이 JPA를 거쳐 DB까지 가는 객체와 프록시 흐름](docs/spring-jpa-proxy-request-flow.md)
+- [OrderRepository.save()가 DB까지 도달하는 전체 코드 경로](docs/spring-data-jpa-save-flow.md)
 - [결제 서비스 개발 계획과 도메인 설계](docs/payment-domain.md)
 - [로컬 개발 환경 구성](docs/environment-configuration.md)
 - [환경변수 설정 가이드](docs/environment-variables.md)
