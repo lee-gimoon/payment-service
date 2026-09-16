@@ -391,6 +391,21 @@ Repository 생성과 `save()` 내부의 더 자세한 구현은 [OrderRepository
 
 `JpaRepository`가 제공하는 기본 CRUD의 대표 구현체가 `SimpleJpaRepository`다.
 
+JPA의 `EntityManager`에는 `save()`라는 메서드가 없다. `save()`는 Spring Data JPA가 제공하는 상위 수준의 메서드로, 엔티티 상태를 보고 `persist()`와 `merge()` 중 하나를 선택한다.
+
+```text
+repository.save(entity)
+    ↓
+Spring Data가 객체의 정보로 새 엔티티인지 판정
+    ├─ 새 엔티티
+    │    → EntityManager.persist(entity)
+    │    → flush 또는 commit 때 INSERT
+    │
+    └─ 기존 엔티티
+         → EntityManager.merge(entity)
+         → flush 또는 commit 때 INSERT 또는 UPDATE
+```
+
 `save()`는 개념적으로 다음과 같다.
 
 ```java
@@ -402,15 +417,50 @@ if (entityInformation.isNew(entity)) {
 return entityManager.merge(entity);
 ```
 
-현재 프로젝트의 `PurchaseOrder`는 생성자에서 문자열 UUID를 미리 ID에 넣고 `@Version` 필드가 없다. 따라서 새 Java 객체라도 Spring Data의 기본 새 엔티티 판정에서는 `merge()` 경로를 선택한다.
+여기서 `isNew()`는 같은 ID의 행이 DB에 있는지 조회하지 않는다. Spring Data JPA는 기본적으로 객체의 `@Version` 값과 ID 값으로 새 엔티티 여부를 판정한다.
 
 ```text
-PurchaseOrder.id != null
+nullable 타입의 @Version 필드가 있음
+→ version == null이면 새 엔티티
+
+@Version 필드가 없음
+→ id == null이면 새 엔티티
+→ id != null이면 기존 엔티티로 판정
+```
+
+현재 프로젝트의 `PurchaseOrder`는 `@Version` 필드가 없고, 생성자에서 문자열 UUID를 ID에 미리 넣는다.
+
+```text
+new PurchaseOrder(...)
+→ 생성자에서 UUID 할당
+→ PurchaseOrder.id != null
 → isNew(order) == false
 → entityManager.merge(order)
 ```
 
-이때 `SimpleJpaRepository`가 들고 있는 `entityManager`도 대상 `EntityManager`를 고정해서 보관하지 않고 공유 프록시를 참조한다.
+따라서 방금 만든 새 Java 객체이고 DB에 아직 행이 없어도 Spring Data의 기본 판정에서는 `merge()` 경로를 선택한다. Spring Data의 새 엔티티 판정은 DB 조회 결과가 아니라 객체의 Version·ID 값을 이용한 추정이기 때문이다.
+
+`persist()`는 전달받은 새 객체 자체를 관리 상태로 만든다. 반면 `merge()`는 전달받은 객체의 상태를 관리 객체에 복사하고 그 관리 객체를 반환한다. Hibernate는 `merge()`를 처리하면서 필요하면 같은 ID의 행을 조회하며, 행이 없으면 `INSERT`, 있으면 `UPDATE`로 이어질 수 있다.
+
+```text
+Spring Data의 isNew()
+→ Version·ID 값만 확인
+→ DB 조회 없음
+→ persist() 또는 merge() 선택
+
+Hibernate의 merge()
+→ 필요하면 같은 ID의 DB 행 확인
+→ 행이 없으면 INSERT
+→ 행이 있으면 UPDATE 가능
+```
+
+`merge()` 경로에서는 반환된 객체가 영속성 컨텍스트의 관리 객체이므로 `save()`의 반환값을 사용하는 것이 중요하다.
+
+```java
+order = orderRepository.save(order);
+```
+
+이때 `SimpleJpaRepository`의 `entityManager` 필드에는 특정 대상 `EntityManager`가 아니라 공유 프록시가 들어 있다. 공유 프록시가 현재 트랜잭션의 대상 `EntityManager`를 찾는 과정은 10장에서 설명한다.
 
 ## 9. TransactionInterceptor, JpaTransactionManager와 EntityManagerFactory
 
