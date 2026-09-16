@@ -445,6 +445,31 @@ new PurchaseOrder(...)
 
 `persist()`는 전달받은 새 객체 자체를 관리 상태로 만든다. 반면 `merge()`는 전달받은 객체의 상태를 관리 객체에 복사하고 그 관리 객체를 반환한다. Hibernate는 `merge()`를 처리하면서 필요하면 같은 ID의 행을 조회하며, 행이 없으면 `INSERT`, 있으면 `UPDATE`로 이어질 수 있다.
 
+현재처럼 `new`로 만든 비관리 객체를 전달하는 경우 두 메서드의 차이는 다음과 같다.
+
+```text
+persist 전
+entity → 비관리 객체 A
+
+persist 후
+entity → 관리 객체 A
+
+같은 객체 A가 영속성 컨텍스트의 관리 대상이 된다.
+```
+
+```text
+merge 전
+entity → 비관리 객체 A
+
+merge 후
+entity  → 비관리 객체 A
+managed → 관리 객체 B
+             ↑
+       A의 필드 값을 복사
+
+merge()는 관리 객체 B를 반환한다.
+```
+
 ```text
 Spring Data의 isNew()
 → Version·ID 값만 확인
@@ -457,11 +482,20 @@ Hibernate의 merge()
 → 행이 있으면 UPDATE 가능
 ```
 
+관리 객체는 영속성 컨텍스트가 열려 있는 동안 다음과 같은 기능을 제공받는다.
+
+- 필드 변경을 감지하여 flush 때 필요한 `UPDATE`를 자동으로 준비한다.
+- `@Version` 필드가 있으면 낙관적 락 검사와 버전 증가를 관리한다.
+- 생성 ID처럼 JPA 제공자가 생성하거나 반영하는 값을 관리 객체에서 사용할 수 있다.
+- 연관관계와 지연 로딩 프록시·컬렉션을 영속성 컨텍스트와 연결하여 사용할 수 있다.
+
 `merge()` 경로에서는 반환된 객체가 영속성 컨텍스트의 관리 객체이므로 `save()`의 반환값을 사용하는 것이 중요하다.
 
 ```java
 order = orderRepository.save(order);
 ```
+
+위 코드에서 `order`는 처음 만든 비관리 객체 A 대신 `merge()`가 반환한 관리 객체 B를 가리키게 된다.
 
 이때 `SimpleJpaRepository`의 `entityManager` 필드에는 특정 대상 `EntityManager`가 아니라 공유 프록시가 들어 있다. 공유 프록시가 현재 트랜잭션의 대상 `EntityManager`를 찾는 과정은 10장에서 설명한다.
 
