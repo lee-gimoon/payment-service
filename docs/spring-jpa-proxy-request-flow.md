@@ -32,6 +32,8 @@ Proxy
 
 프록시도 JVM 메모리에 존재하는 실제 Java 객체다. 따라서 이 문서에서는 프록시와 구분되는 안쪽 객체를 가리킬 때 `실제 객체`보다 `대상 객체(target)`라는 표현을 사용한다.
 
+특히 이 문서에서 **대상 `EntityManager`**란 **공유 `EntityManager` 프록시가 호출을 위임하는 실제 `EntityManager` 인스턴스**를 뜻한다. 추상적인 대상이나 설정 정보가 아니라, 트랜잭션을 시작할 때 `EntityManagerFactory`가 실제로 생성하는 Java 객체다.
+
 프록시가 적용되면 외부에 노출되는 프록시와 내부의 대상 객체는 서로 다른 Java 객체다.
 
 `OrderService`는 기본적으로 singleton scope의 빈이다. Spring은 실제 `OrderService` 대상 객체를 생성하고 의존성을 주입하며 초기화한다. 트랜잭션 AOP가 적용되면 해당 빈의 외부 노출 객체는 대상 객체를 감싼 싱글톤 프록시가 된다.
@@ -99,6 +101,7 @@ OrderController 객체
                                                → 공유 EntityManager 프록시
                                                     └─ 호출 시점에 대상을 찾음
                                                          → 현재 트랜잭션의 대상 EntityManager
+                                                           (공유 프록시가 호출을 위임하는 실제 EntityManager 인스턴스)
 ```
 
 여기서 대상 `EntityManager`는 싱글톤 서비스나 Repository 필드에 고정되어 있지 않다. 트랜잭션이 시작될 때 준비되어 현재 실행 문맥에 연결되고, 공유 `EntityManager` 프록시가 호출 시점에 찾아 사용한다.
@@ -527,7 +530,9 @@ OrderService AOP 프록시
   ↓ TransactionInterceptor가 @Transactional 설정 확인
 JpaTransactionManager
   ├─ 대상 EntityManager A 생성
-  ├─ JPA·Hibernate 트랜잭션 시작
+  │    └─ 공유 프록시가 호출을 위임하는 실제 EntityManager 인스턴스
+  ├─ 대상 EntityManager를 통해 트랜잭션 시작
+  │    └─ JPA 구현체인 Hibernate가 JDBC·DB 트랜잭션과 연결
   └─ 현재 스레드에 EntityManagerHolder로 등록
        ↓
 TransactionInterceptor가 대상 호출을 계속 진행
@@ -631,8 +636,11 @@ EntityManagerFactory.createEntityManager()
   ↓
 대상 EntityManager A 생성
   ↓
-JPA·Hibernate 트랜잭션 시작
+대상 EntityManager A를 통해 트랜잭션 시작
+  └─ JPA 구현체인 Hibernate가 JDBC·DB 트랜잭션과 연결
 ```
+
+여기서 `대상 EntityManager A`는 추상적인 대상을 뜻하지 않는다. `EntityManagerFactory`가 생성했으며, 이후 공유 `EntityManager` 프록시가 `persist()`나 `merge()` 호출을 실제로 넘겨주는 `EntityManager` 인스턴스다.
 
 `EntityManagerFactory`는 애플리케이션에서 보통 하나를 장기간 공유해도 되는 스레드 안전한 팩토리다. 반면 이 팩토리가 만드는 대상 `EntityManager`는 스레드 안전하지 않으므로 트랜잭션 같은 작업 단위별로 분리한다.
 
