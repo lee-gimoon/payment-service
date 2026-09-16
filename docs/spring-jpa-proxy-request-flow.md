@@ -118,7 +118,7 @@ OrderService AOP 프록시
   ├─ 호출 전: TransactionInterceptor
   │    └─ JpaTransactionManager
   │         ├─ EntityManagerFactory로 대상 EntityManager 준비
-  │         └─ 트랜잭션 시작 및 스레드 연결
+  │         └─ 트랜잭션 시작 및 현재 스레드의 트랜잭션 자원 저장소에 등록
   ├─ proceed: OrderService 대상 객체
   └─ 호출 후: JpaTransactionManager에 commit 또는 rollback 요청
   ↓
@@ -395,26 +395,91 @@ TransactionInterceptor
 JpaTransactionManager
 → 기존 트랜잭션 참여 여부 판단
 → 새 트랜잭션이면 대상 EntityManager 준비
-→ 스레드에 자원 연결
+→ TransactionSynchronizationManager에 EntityManagerHolder 등록
 → commit 또는 rollback
 
 EntityManagerFactory
 → 대상 EntityManager를 생성하는 스레드 안전한 팩토리
 ```
 
-새 트랜잭션이 필요한 경우의 핵심 관계는 다음과 같다.
+### 9.1 스레드의 전용 트랜잭션 자원 저장 공간
+
+Spring MVC에서는 일반적으로 하나의 요청을 하나의 스레드가 처리한다.
 
 ```text
-TransactionInterceptor
-  ↓ getTransaction()
+HTTP 요청 A
+→ http-nio-8080-exec-1 스레드
+
+HTTP 요청 B
+→ http-nio-8080-exec-2 스레드
+```
+
+Spring은 `TransactionSynchronizationManager`를 사용하여 스레드별 트랜잭션 자원을 관리한다. 내부 구조를 아주 단순화하면 스레드마다 별도의 자원 Map을 제공하는 다음과 같은 형태다.
+
+```java
+ThreadLocal<Map<Object, Object>> resources;
+```
+
+대상 `EntityManager`가 생성되면 바로 저장하는 대신 `EntityManagerHolder`로 감싸고, 그것을 만든 `EntityManagerFactory`를 키로 하여 현재 스레드의 자원 저장소에 등록한다.
+
+```text
+현재 스레드: http-nio-8080-exec-1
+
+TransactionSynchronizationManager의 트랜잭션 자원 저장소
+└─ EntityManagerFactory
+     → EntityManagerHolder
+          → 대상 EntityManager A
+```
+
+따라서 같은 `TransactionSynchronizationManager`를 사용하더라도 요청을 처리하는 스레드가 다르면 서로 다른 자원 Map과 대상 `EntityManager`를 사용한다.
+
+```text
+요청 A / Thread A
+└─ EntityManagerFactory → EntityManagerHolder → 대상 EntityManager A
+
+요청 B / Thread B
+└─ EntityManagerFactory → EntityManagerHolder → 대상 EntityManager B
+```
+
+이것은 대상 `EntityManager`를 `OrderService` 프록시나 인터셉터 체인 안에 넣는다는 뜻이 아니다. 프록시의 트랜잭션 처리 과정에서 `JpaTransactionManager`가 별도의 스레드별 자원 저장소에 등록하는 것이다.
+
+### 9.2 대상 EntityManager 생성과 바인딩 과정
+
+새 트랜잭션이 필요한 경우에는 다음 순서로 대상 `EntityManager`가 준비된다.
+
+```text
+1. OrderController가 OrderService 트랜잭션 프록시를 호출한다.
+
+2. TransactionInterceptor가 @Transactional 설정을 읽고
+   JpaTransactionManager에 트랜잭션 시작을 요청한다.
+
+3. JpaTransactionManager가 EntityManagerFactory.createEntityManager()를 호출한다.
+
+4. EntityManagerFactory가 대상 EntityManager를 생성한다.
+
+5. JpaTransactionManager가 대상 EntityManager로 JPA·Hibernate 트랜잭션을 시작한다.
+   이 과정에서 필요하면 JDBC Connection도 준비된다.
+
+6. 같은 요청에서 Repository가 찾아 쓸 수 있도록 대상 EntityManager를
+   EntityManagerHolder로 감싸 현재 스레드의 트랜잭션 자원 저장소에 등록한다.
+```
+
+```text
+OrderService 트랜잭션 프록시
+  ↓ TransactionInterceptor
 JpaTransactionManager
   ↓ createEntityManager()
 EntityManagerFactory
   ↓
 대상 EntityManager 생성
   ↓
-트랜잭션 시작 및 현재 스레드에 연결
+JPA·Hibernate 트랜잭션 시작
+  ↓
+TransactionSynchronizationManager
+  └─ EntityManagerFactory → EntityManagerHolder → 대상 EntityManager
 ```
+
+이처럼 대상 `EntityManager`를 현재 스레드의 트랜잭션 자원 저장소에 등록하는 단계를 흔히 "현재 스레드에 바인딩한다"고 표현한다. 여기서 바인딩은 같은 스레드에서 나중에 실행되는 공유 `EntityManager` 프록시가 대상 객체를 찾아 사용할 수 있게 등록한다는 뜻이다.
 
 `EntityManagerFactory`는 애플리케이션에서 보통 하나를 장기간 공유해도 되는 스레드 안전한 객체다. 반면 이 팩토리가 만드는 대상 `EntityManager`는 스레드 안전하지 않으며 작업 단위별로 분리해야 한다.
 
@@ -454,11 +519,13 @@ private EntityManager entityManager; // 자동 주입되지 않음
 
 `EntityManagerFactory.createEntityManager()`로 대상 `EntityManager`를 직접 만들 수도 있지만, 그 경우 생성·트랜잭션·종료와 스레드 간 공유 방지를 개발자가 관리해야 한다. 일반적인 Spring 애플리케이션에서는 컨테이너 관리 공유 프록시를 사용한다.
 
-트랜잭션이 시작되면 `JpaTransactionManager`가 대상 `EntityManager`를 준비하고 현재 스레드에 연결한다. 공유 프록시는 메서드가 호출될 때 그 객체를 찾아 위임한다.
+트랜잭션이 시작되면 `JpaTransactionManager`가 대상 `EntityManager`를 준비하고 `EntityManagerHolder`로 감싸 현재 스레드의 `TransactionSynchronizationManager`에 등록한다. 공유 프록시는 메서드가 호출될 때 `EntityManagerFactory`를 키로 그 Holder를 찾아 대상 `EntityManager`에 위임한다.
 
 ```text
 entityManagerProxy.merge(order)
-  ↓ 현재 스레드의 트랜잭션 자원 조회
+  ↓ TransactionSynchronizationManager.getResource(EntityManagerFactory)
+EntityManagerHolder
+  ↓ getEntityManager()
 대상 EntityManager.merge(order)
 ```
 
@@ -524,7 +591,8 @@ Hibernate Session
 
 4. 기존 트랜잭션이 없으므로 EntityManagerFactory로 대상 EntityManager를 만든다.
 
-5. JPA·DB 트랜잭션을 시작하고 대상 EntityManager를 현재 스레드에 연결한다.
+5. JPA·DB 트랜잭션을 시작하고 대상 EntityManager를 EntityManagerHolder로 감싸
+   현재 스레드의 TransactionSynchronizationManager에 등록한다.
 
 6. OrderService 대상 객체의 create()를 호출한다.
 
@@ -533,7 +601,8 @@ Hibernate Session
 
 8. SimpleJpaRepository가 공유 EntityManager 프록시를 호출한다.
 
-9. 공유 EntityManager 프록시가 현재 스레드에 연결된 대상 EntityManager를 찾는다.
+9. 공유 EntityManager 프록시가 EntityManagerFactory를 키로 현재 스레드의
+   EntityManagerHolder를 조회하여 대상 EntityManager를 얻는다.
 
 10. 대상 EntityManager가 영속성 컨텍스트를 조작한다.
 
@@ -545,7 +614,7 @@ Hibernate Session
 
 14. JDBC Connection의 DB 트랜잭션을 commit한다.
 
-15. 스레드에서 자원을 해제하고 대상 EntityManager를 닫는다.
+15. 현재 스레드에서 EntityManagerHolder를 제거하고 대상 EntityManager를 닫는다.
 ```
 
 마지막 정리 단계는 일반적인 트랜잭션 범위를 기준으로 설명한 것이다. OSIV가 요청 범위의 `EntityManager`를 먼저 연결한 경우에는 트랜잭션 종료가 아니라 요청 종료 시점에 닫힐 수 있다.
@@ -558,6 +627,7 @@ sequenceDiagram
     participant SP as OrderService AOP Proxy
     participant TM as JpaTransactionManager
     participant EMF as EntityManagerFactory
+    participant TSM as Thread Transaction Resources
     participant S as OrderService Target
     participant RP as OrderRepository Proxy
     participant R as SimpleJpaRepository
@@ -570,12 +640,15 @@ sequenceDiagram
     SP->>TM: getTransaction(@Transactional 설정)
     TM->>EMF: createEntityManager()
     EMF-->>TM: 대상 EntityManager
-    TM->>EM: 트랜잭션 시작 및 스레드 연결
+    TM->>EM: 트랜잭션 시작
+    TM->>TSM: EMF → EntityManagerHolder(EM) 등록
     SP->>S: create()
     S->>RP: save(order)
     RP->>R: 기존 트랜잭션에 참여 후 save(order)
     R->>EP: merge(order)
-    EP->>EM: 현재 트랜잭션 대상으로 위임
+    EP->>TSM: EntityManagerFactory로 Holder 조회
+    TSM-->>EP: 대상 EntityManager 반환
+    EP->>EM: merge(order) 위임
     EM->>PC: 관리 객체 조회·상태 복사
     PC-->>EM: 관리 상태 객체
     EM-->>R: managed order
@@ -584,7 +657,8 @@ sequenceDiagram
     SP->>TM: commit 요청
     TM->>EM: flush 및 commit
     EM->>DB: SELECT, INSERT/UPDATE, JDBC commit
-    TM->>EM: 스레드 연결 해제 및 close
+    TM->>TSM: EntityManagerHolder 제거
+    TM->>EM: close
     SP-->>C: OrderResponse
 ```
 
