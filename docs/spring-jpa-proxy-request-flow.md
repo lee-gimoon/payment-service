@@ -502,221 +502,11 @@ order = orderRepository.save(order);
 
 위 코드에서 `order`는 처음 만든 비관리 객체 A 대신 `merge()`가 반환한 관리 객체 B를 가리키게 된다.
 
-이때 `SimpleJpaRepository`의 `entityManager` 필드에는 특정 대상 `EntityManager`가 아니라 공유 프록시가 들어 있다. 공유 프록시가 현재 트랜잭션의 대상 `EntityManager`를 찾는 과정은 10장에서 설명한다.
+이때 `SimpleJpaRepository`의 `entityManager` 필드에는 특정 대상 `EntityManager`가 아니라 공유 프록시가 들어 있다. 공유 프록시가 현재 트랜잭션의 대상 `EntityManager`를 찾는 과정은 9.5절에서 설명한다.
 
-## 9. TransactionInterceptor, JpaTransactionManager와 EntityManagerFactory
+## 9. EntityManager 프록시와 대상 EntityManager의 전체 흐름
 
-서비스 AOP 프록시가 혼자 트랜잭션의 모든 작업을 처리하는 것은 아니다. 각 인프라 객체의 역할은 다음과 같이 나뉜다.
-
-```text
-OrderService AOP 프록시
-→ 호출을 가로채고 인터셉터 체인을 실행
-
-TransactionInterceptor
-→ @Transactional 설정을 읽고 트랜잭션 실행 절차를 적용
-
-JpaTransactionManager
-→ 기존 트랜잭션 참여 여부 판단
-→ 새 트랜잭션이면 대상 EntityManager 준비
-→ TransactionSynchronizationManager에 EntityManagerHolder 등록
-→ commit 또는 rollback
-
-EntityManagerFactory
-→ 대상 EntityManager를 생성하는 스레드 안전한 팩토리
-```
-
-### 9.1 스레드의 전용 트랜잭션 자원 저장 공간
-
-Spring MVC에서는 일반적으로 하나의 요청을 하나의 스레드가 처리한다.
-
-```text
-HTTP 요청 A
-→ http-nio-8080-exec-1 스레드
-
-HTTP 요청 B
-→ http-nio-8080-exec-2 스레드
-```
-
-Spring은 `TransactionSynchronizationManager`를 사용하여 스레드별 트랜잭션 자원을 관리한다. 내부 구조를 아주 단순화하면 스레드마다 별도의 자원 Map을 제공하는 다음과 같은 형태다.
-
-```java
-ThreadLocal<Map<Object, Object>> resources;
-```
-
-대상 `EntityManager`가 생성되면 바로 저장하는 대신 `EntityManagerHolder`로 감싸고, 그것을 만든 `EntityManagerFactory`를 키로 하여 현재 스레드의 자원 저장소에 등록한다.
-
-```text
-현재 스레드: http-nio-8080-exec-1
-
-TransactionSynchronizationManager의 트랜잭션 자원 저장소
-└─ EntityManagerFactory
-     → EntityManagerHolder
-          → 대상 EntityManager A
-```
-
-따라서 같은 `TransactionSynchronizationManager`를 사용하더라도 요청을 처리하는 스레드가 다르면 서로 다른 자원 Map과 대상 `EntityManager`를 사용한다.
-
-```text
-요청 A / Thread A
-└─ EntityManagerFactory → EntityManagerHolder → 대상 EntityManager A
-
-요청 B / Thread B
-└─ EntityManagerFactory → EntityManagerHolder → 대상 EntityManager B
-```
-
-이것은 대상 `EntityManager`를 `OrderService` 프록시나 인터셉터 체인 안에 넣는다는 뜻이 아니다. 프록시의 트랜잭션 처리 과정에서 `JpaTransactionManager`가 별도의 스레드별 자원 저장소에 등록하는 것이다.
-
-### 9.2 대상 EntityManager 생성과 바인딩 과정
-
-공유 `EntityManager` 프록시는 이 시점에 새로 만드는 객체가 아니다. 애플리케이션 초기화 과정에서 이미 만들어져 `SimpleJpaRepository`에 주입되어 있다. 새 트랜잭션을 시작할 때 준비하는 것은 프록시가 호출을 위임할 대상 `EntityManager`다.
-
-```text
-OrderController
-  ↓
-OrderService AOP 프록시
-  ↓ TransactionInterceptor
-JpaTransactionManager
-  ↓ 현재 스레드에 기존 트랜잭션 자원이 있는지 확인
-기존 트랜잭션 자원 없음
-  ↓
-EntityManagerFactory.createEntityManager()
-  ↓
-대상 EntityManager 생성
-  ↓
-JPA·Hibernate 트랜잭션 시작
-  ↓
-TransactionSynchronizationManager에 등록
-  └─ EntityManagerFactory → EntityManagerHolder → 대상 EntityManager
-```
-
-이처럼 대상 `EntityManager`를 현재 스레드의 트랜잭션 자원 저장소에 등록하는 단계를 흔히 "현재 스레드에 바인딩한다"고 표현한다. 여기서 바인딩은 같은 스레드에서 나중에 실행되는 공유 `EntityManager` 프록시가 대상 객체를 찾아 사용할 수 있게 등록한다는 뜻이다.
-
-`EntityManagerFactory`는 애플리케이션에서 보통 하나를 장기간 공유해도 되는 스레드 안전한 객체다. 반면 이 팩토리가 만드는 대상 `EntityManager`는 스레드 안전하지 않으며 작업 단위별로 분리해야 한다.
-
-기존 트랜잭션이 있다면 기본 `REQUIRED`는 대상 `EntityManager`를 새로 만들지 않고 기존 트랜잭션의 자원에 참여한다.
-
-## 10. 공유 EntityManager 프록시: 현재 대상 EntityManager를 찾는다
-
-공유 `EntityManager` 프록시는 애플리케이션 초기화 과정에서 만들어져 `SimpleJpaRepository`의 `entityManager` 필드에 주입된다. 프록시는 특정 대상 `EntityManager`를 고정해서 보관하지 않고, `EntityManagerFactory` 참조를 사용하여 호출 시점의 대상을 찾는다.
-
-```text
-애플리케이션 시작
-  ↓
-EntityManagerFactory 준비
-  ↓
-공유 EntityManager 프록시 생성
-  ↓
-SimpleJpaRepository.entityManager 필드에 주입
-```
-
-이후 `SimpleJpaRepository`가 `persist()`, `merge()`, `find()` 같은 메서드를 호출하면 공유 프록시가 현재 스레드의 트랜잭션 자원 저장소를 조회한다.
-
-```text
-SimpleJpaRepository
-  ↓ entityManager.persist(entity) 또는 merge(entity)
-공유 EntityManager 프록시
-  ↓ TransactionSynchronizationManager.getResource(EntityManagerFactory)
-EntityManagerHolder
-  ↓ getEntityManager()
-현재 트랜잭션의 대상 EntityManager
-  ↓
-동일한 persist() 또는 merge() 호출을 전달
-```
-
-즉, `JpaTransactionManager`는 대상 `EntityManager`를 생성하고 등록하며, 공유 `EntityManager` 프록시는 등록된 대상을 찾아 호출을 라우팅한다.
-
-```text
-JpaTransactionManager
-→ 대상 EntityManager 생성·트랜잭션 시작·스레드 등록
-
-공유 EntityManager 프록시
-→ 현재 스레드에 등록된 대상 EntityManager 검색·호출 위임
-
-대상 EntityManager
-→ 영속성 컨텍스트를 사용하여 실제 JPA 작업 수행
-```
-
-같은 공유 프록시를 여러 요청이 함께 사용하지만, 스레드별 자원 저장소가 다르므로 실제 대상 `EntityManager`는 분리된다.
-
-```text
-같은 공유 EntityManager 프록시
-  ├─ Thread A / Transaction A → 대상 EntityManager A
-  └─ Thread B / Transaction B → 대상 EntityManager B
-```
-
-`@PersistenceContext`는 특정 대상 `EntityManager`를 고정해서 주입하라는 뜻이 아니다.
-
-```java
-@PersistenceContext
-private EntityManager entityManager;
-```
-
-의미는 다음과 같다.
-
-```text
-현재 영속성 컨텍스트에 접근할 수 있는
-컨테이너 관리 EntityManager 참조를 주입해라.
-```
-
-현재 프로젝트의 `OrderService`가 `@PersistenceContext`를 직접 사용하지는 않는다. Spring Data JPA가 `SimpleJpaRepository`를 만들면서 같은 역할의 공유 `EntityManager` 프록시를 내부에 넣는다.
-
-아무 주입 표시도 없는 필드에 대상 `EntityManager`가 자동으로 들어가는 것은 아니다.
-
-```java
-private EntityManager entityManager; // 자동 주입되지 않음
-```
-
-`EntityManagerFactory.createEntityManager()`로 대상 `EntityManager`를 직접 만들 수도 있지만, 그 경우 생성·트랜잭션·종료와 스레드 간 공유 방지를 개발자가 관리해야 한다. 일반적인 Spring 애플리케이션에서는 컨테이너 관리 공유 프록시를 사용한다.
-
-## 11. 대상 EntityManager와 영속성 컨텍스트
-
-대상 `EntityManager`는 영속성 컨텍스트를 조작하는 JPA API이자 관리자다.
-
-```text
-대상 EntityManager
-  ↓ 관리
-영속성 컨텍스트
-  ├─ 현재 관리 중인 엔티티
-  ├─ 엔티티 ID와 Java 객체의 대응
-  ├─ 변경 감지용 상태
-  └─ flush 시 반영할 변경 사항
-```
-
-주요 메서드와 영속성 컨텍스트의 관계는 다음과 같다.
-
-```text
-find()
-→ 영속성 컨텍스트에서 먼저 찾고, 없으면 DB 조회 후 관리
-
-persist()
-→ 새 엔티티를 관리 상태로 등록
-
-merge()
-→ 전달받은 상태를 관리 상태 객체에 복사하고 그 객체를 반환
-
-remove()
-→ 관리 엔티티를 삭제 대상으로 표시
-
-flush()
-→ 영속성 컨텍스트의 변경 사항을 SQL로 DB에 반영
-
-clear() / close()
-→ 관리하던 엔티티를 분리 상태로 전환
-```
-
-Hibernate를 JPA 구현체로 사용하면 대상 `EntityManager` 구현은 Hibernate `Session` 계열 객체다.
-
-```text
-JPA EntityManager 인터페이스
-  ↓ Hibernate 구현
-Hibernate Session
-  ↓ 내부 상태
-영속성 컨텍스트
-```
-
-## 12. 애플리케이션 준비부터 트랜잭션 종료까지
-
-앞의 내용을 하나의 흐름으로 합치면 다음과 같다. 공유 `EntityManager` 프록시는 애플리케이션 초기화 때 준비되고, 대상 `EntityManager`는 요청의 트랜잭션이 시작될 때 준비된다는 차이가 핵심이다.
+먼저 애플리케이션 시작부터 트랜잭션 종료까지의 흐름을 한 번에 보면 다음과 같다. 공유 `EntityManager` 프록시는 애플리케이션 초기화 때 준비되고, 실제 JPA 작업을 수행하는 대상 `EntityManager`는 트랜잭션이 시작될 때 준비된다는 차이가 핵심이다. 아래 HTTP 요청 구간은 기존 트랜잭션이 없는 상태에서 `OrderService.create()`를 외부 호출하는 경우를 기준으로 한다.
 
 ```text
 애플리케이션 시작
@@ -774,11 +564,208 @@ DB 트랜잭션 commit
 대상 EntityManager A close
 ```
 
-현재 `PurchaseOrder`는 8장에서 설명한 새 엔티티 판정 규칙 때문에 `merge()` 경로를 사용한다. 기존 트랜잭션이 있다면 기본 `REQUIRED`는 대상 `EntityManager`를 새로 만들지 않고 현재 스레드에 이미 등록된 자원에 참여한다.
+현재 `PurchaseOrder`는 8장에서 설명한 새 엔티티 판정 규칙 때문에 `merge()` 경로를 사용한다. 이제 위 흐름을 위에서부터 나누어 살펴본다.
+
+### 9.1 흐름에 참여하는 객체의 역할
+
+서비스 AOP 프록시가 혼자 트랜잭션의 모든 작업을 처리하는 것은 아니다. 각 객체의 역할은 다음과 같이 나뉜다.
+
+```text
+OrderService AOP 프록시
+→ 호출을 가로채고 인터셉터 체인을 실행
+
+TransactionInterceptor
+→ @Transactional 설정을 읽고 트랜잭션 실행 절차를 적용
+
+JpaTransactionManager
+→ 기존 트랜잭션 참여 여부 판단
+→ 새 트랜잭션이면 대상 EntityManager 준비
+→ TransactionSynchronizationManager에 EntityManagerHolder 등록
+→ commit 또는 rollback
+
+EntityManagerFactory
+→ 대상 EntityManager를 생성하는 스레드 안전한 팩토리
+
+공유 EntityManager 프록시
+→ 현재 실행 문맥의 대상 EntityManager를 찾아 호출을 위임
+
+대상 EntityManager
+→ 영속성 컨텍스트를 사용하여 실제 JPA 작업 수행
+```
+
+### 9.2 애플리케이션 시작: 공유 EntityManager 프록시 준비
+
+애플리케이션이 시작되면 `EntityManagerFactory`와 공유 `EntityManager` 프록시가 준비된다. Spring Data JPA는 이 공유 프록시를 `SimpleJpaRepository`의 `entityManager` 필드에 넣는다.
+
+```text
+EntityManagerFactory 준비
+  ↓
+공유 EntityManager 프록시 생성
+  ↓
+SimpleJpaRepository.entityManager 필드에 주입
+```
+
+이때 만들어지는 공유 프록시는 특정 대상 `EntityManager`를 고정해서 보관하지 않는다. 여러 요청이 하나의 프록시를 함께 사용하며, 실제 메서드가 호출되는 시점에 현재 실행 문맥에 맞는 대상을 찾는다.
+
+`@PersistenceContext`로 애플리케이션 코드에 `EntityManager`를 주입받을 때도 일반적으로 같은 성격의 컨테이너 관리 공유 프록시가 주입된다.
+
+```java
+@PersistenceContext
+private EntityManager entityManager;
+```
+
+이는 특정 대상 `EntityManager`를 고정해서 넣으라는 뜻이 아니라, 현재 영속성 컨텍스트에 접근할 수 있는 컨테이너 관리 참조를 넣으라는 뜻이다. 현재 프로젝트의 `OrderService`는 이를 직접 사용하지 않지만, Spring Data JPA가 `SimpleJpaRepository` 내부에서 사용한다.
+
+### 9.3 HTTP 요청과 트랜잭션 시작: 대상 EntityManager 준비
+
+HTTP 요청이 들어와 `OrderService` AOP 프록시를 호출하면 `TransactionInterceptor`가 `@Transactional` 설정을 읽는다. 기본 전파 속성 `REQUIRED`에서 현재 스레드에 참여할 기존 트랜잭션이 없다면 `JpaTransactionManager`가 새 트랜잭션을 시작한다.
+
+```text
+OrderController
+  ↓
+OrderService AOP 프록시
+  ↓ TransactionInterceptor
+JpaTransactionManager
+  ↓ 기존 트랜잭션 자원이 없는지 확인
+EntityManagerFactory.createEntityManager()
+  ↓
+대상 EntityManager A 생성
+  ↓
+JPA·Hibernate 트랜잭션 시작
+```
+
+`EntityManagerFactory`는 애플리케이션에서 보통 하나를 장기간 공유해도 되는 스레드 안전한 팩토리다. 반면 이 팩토리가 만드는 대상 `EntityManager`는 스레드 안전하지 않으므로 트랜잭션 같은 작업 단위별로 분리한다.
+
+기존 트랜잭션이 있다면 `REQUIRED`는 대상 `EntityManager`를 새로 만들지 않고 기존 트랜잭션과 그 자원에 참여한다.
+
+### 9.4 현재 스레드의 트랜잭션 자원 저장소에 바인딩
+
+Spring MVC에서는 일반적으로 하나의 요청을 하나의 스레드가 처리한다.
+
+```text
+HTTP 요청 A → http-nio-8080-exec-1 스레드
+HTTP 요청 B → http-nio-8080-exec-2 스레드
+```
+
+Spring은 `TransactionSynchronizationManager`를 사용하여 스레드별 트랜잭션 자원을 관리한다. 내부 구조를 단순화하면 다음과 같이 스레드마다 별도의 자원 Map이 있는 형태다.
+
+```java
+ThreadLocal<Map<Object, Object>> resources;
+```
+
+`JpaTransactionManager`는 생성한 대상 `EntityManager`를 `EntityManagerHolder`로 감싼 다음, `EntityManagerFactory`를 키로 현재 스레드의 자원 저장소에 등록한다.
+
+```text
+현재 스레드: http-nio-8080-exec-1
+
+TransactionSynchronizationManager의 자원 저장소
+└─ EntityManagerFactory
+     → EntityManagerHolder
+          → 대상 EntityManager A
+```
+
+이 등록 과정을 흔히 **대상 `EntityManager`를 현재 스레드에 바인딩한다**고 표현한다. 서비스 프록시 안에 `EntityManager`를 넣는다는 뜻이 아니라, 같은 스레드에서 실행될 공유 프록시가 나중에 찾을 수 있는 별도의 저장소에 등록한다는 뜻이다.
+
+### 9.5 Repository 호출: 공유 EntityManager 프록시의 라우팅
+
+트랜잭션 준비가 끝나면 `TransactionInterceptor`가 `OrderService` 대상 메서드 호출을 계속 진행한다. `OrderService`가 `orderRepository.save(order)`를 호출하면 Repository 프록시는 기존 트랜잭션에 참여하고 `SimpleJpaRepository.save()`로 위임한다.
+
+`SimpleJpaRepository`가 자신의 `entityManager` 필드에서 `persist()` 또는 `merge()`를 호출하면 실제로 먼저 호출되는 객체는 공유 `EntityManager` 프록시다. 프록시는 다음 순서로 현재 대상을 찾는다.
+
+```text
+SimpleJpaRepository
+  ↓ entityManager.persist(entity) 또는 merge(entity)
+공유 EntityManager 프록시
+  ↓ TransactionSynchronizationManager.getResource(EntityManagerFactory)
+EntityManagerHolder
+  ↓ getEntityManager()
+현재 트랜잭션의 대상 EntityManager A
+  ↓
+동일한 persist() 또는 merge() 호출을 전달
+```
+
+즉, 여기서 **라우팅**은 공유 프록시가 요청을 직접 처리하는 것이 아니라 현재 스레드에 등록된 대상 `EntityManager`를 찾아 똑같은 메서드 호출을 넘기는 것을 뜻한다.
+
+```text
+JpaTransactionManager
+→ 대상 EntityManager 생성·트랜잭션 시작·현재 스레드에 등록
+
+공유 EntityManager 프록시
+→ 현재 스레드에 등록된 대상 EntityManager 검색·호출 위임
+
+대상 EntityManager
+→ 전달받은 실제 JPA 작업 수행
+```
+
+### 9.6 대상 EntityManager와 영속성 컨텍스트
+
+공유 프록시가 찾은 대상 `EntityManager`가 실제 `persist()`, `merge()`, `find()` 같은 JPA 작업을 수행한다. 대상 `EntityManager`는 영속성 컨텍스트를 조작하는 JPA API이자 관리자다.
+
+```text
+대상 EntityManager
+  ↓ 관리
+영속성 컨텍스트
+  ├─ 현재 관리 중인 엔티티
+  ├─ 엔티티 ID와 Java 객체의 대응
+  ├─ 변경 감지용 상태
+  └─ flush 시 반영할 변경 사항
+```
+
+주요 메서드의 의미는 다음과 같다.
+
+```text
+find()
+→ 영속성 컨텍스트에서 먼저 찾고, 없으면 DB 조회 후 관리
+
+persist()
+→ 새 엔티티를 관리 상태로 등록
+
+merge()
+→ 전달받은 상태를 관리 상태 객체에 복사하고 그 객체를 반환
+
+remove()
+→ 관리 엔티티를 삭제 대상으로 표시
+
+flush()
+→ 영속성 컨텍스트의 변경 사항을 SQL로 DB에 반영
+
+clear() / close()
+→ 관리하던 엔티티를 분리 상태로 전환
+```
+
+Hibernate를 JPA 구현체로 사용하면 대상 `EntityManager`의 실제 구현은 Hibernate `Session` 계열 객체다.
+
+```text
+JPA EntityManager 인터페이스
+  ↓ Hibernate 구현
+Hibernate Session
+  ↓ 내부 상태
+영속성 컨텍스트
+```
+
+### 9.7 정상 반환부터 commit과 종료까지
+
+`OrderService` 대상 메서드가 정상 반환하면 `TransactionInterceptor`가 `JpaTransactionManager`에 commit을 요청한다. Hibernate는 보통 commit 직전에 flush하여 필요한 SQL을 만들고 JDBC를 통해 DB에 실행한다. DB commit이 성공하면 최종 저장이 확정된다.
+
+```text
+OrderService 대상 메서드 정상 반환
+  ↓
+TransactionInterceptor가 commit 요청
+  ↓
+Hibernate flush
+  ↓ INSERT 또는 UPDATE SQL을 JDBC로 실행
+DB 트랜잭션 commit
+  ↓
+현재 스레드에서 EntityManagerHolder 제거
+  ↓
+대상 EntityManager close
+```
 
 현재 프로젝트는 OSIV를 비활성화했으므로 일반적인 서비스 트랜잭션에서는 트랜잭션 종료 과정에서 대상 `EntityManager`가 닫힌다. OSIV가 활성화된 애플리케이션에서는 요청 시작 때 연결된 대상 `EntityManager`가 요청 종료 시점에 닫힐 수 있다.
 
-## 13. 요청이 겹쳐도 안전한 이유
+`EntityManagerFactory.createEntityManager()`로 대상 `EntityManager`를 직접 만들 수도 있지만, 그 경우 생성·트랜잭션·종료와 스레드 간 공유 방지를 개발자가 관리해야 한다. 일반적인 Spring 애플리케이션에서는 컨테이너가 관리하는 공유 프록시를 사용한다.
+
+## 10. 요청이 겹쳐도 안전한 이유
 
 컨트롤러, 서비스 프록시, 서비스 프록시가 참조하는 하나의 대상 객체, Repository 프록시와 공유 `EntityManager` 프록시는 여러 요청이 함께 사용할 수 있다.
 
@@ -815,7 +802,7 @@ public class BadService {
 }
 ```
 
-## 14. 트랜잭션이 없을 때 EntityManager 프록시
+## 11. 트랜잭션이 없을 때 EntityManager 프록시
 
 `@Transactional`이 없는 메서드에서도 주입된 `EntityManager`는 계속 공유 프록시다. 프록시가 대상 객체로 교체되는 것이 아니다.
 
@@ -833,7 +820,7 @@ public class BadService {
 
 트랜잭션과 요청에 연결된 대상 `EntityManager`가 모두 없다면 조회 작업에서 임시 `EntityManager`를 사용할 수 있다. `persist()`, `remove()`, `flush()` 등 트랜잭션이 필요한 작업은 `TransactionRequiredException`이 발생할 수 있다.
 
-## 15. 프록시를 구분하는 기준
+## 12. 프록시를 구분하는 기준
 
 세 프록시의 차이를 가장 짧게 정리하면 다음과 같다.
 
@@ -864,7 +851,7 @@ Repository 프록시
 → Hibernate lazy proxy, @Lazy 의존성
 ```
 
-## 16. 흔한 오해 정리
+## 13. 흔한 오해 정리
 
 ### Service 프록시와 대상 객체가 각각 별도의 빈으로 등록된다
 
@@ -894,7 +881,7 @@ Repository 프록시
 
 아니다. 인터페이스를 실행 가능한 객체로 구현하고 CRUD, 파생 쿼리, `@Query`, 사용자 구현을 적절한 실행기로 연결하는 것이 핵심 역할이다.
 
-## 17. 코드에서 직접 확인하는 방법
+## 14. 코드에서 직접 확인하는 방법
 
 빈의 런타임 클래스를 출력하면 프록시 여부를 확인할 수 있다.
 
@@ -921,7 +908,7 @@ AopUtils.isCglibProxy(orderService);
 
 프록시 객체의 클래스 이름은 구현 세부사항이므로 비즈니스 로직에서 분기 조건으로 사용하지 않는다. 학습과 디버깅 목적으로만 확인한다.
 
-## 18. 추천 학습 순서
+## 15. 추천 학습 순서
 
 1. 이 문서의 전체 흐름과 객체별 역할을 익힌다.
 2. `OrderService.create()`에 중단점을 걸어 트랜잭션 안에서 호출되는지 확인한다.
