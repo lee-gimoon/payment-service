@@ -32,19 +32,40 @@ Proxy
 
 프록시도 JVM 메모리에 존재하는 실제 Java 객체다. 따라서 이 문서에서는 프록시와 구분되는 안쪽 객체를 가리킬 때 `실제 객체`보다 `대상 객체(target)`라는 표현을 사용한다.
 
-프록시가 적용되면 외부에 노출되는 프록시와 안쪽 대상은 서로 다른 객체다. 이 예에서는 프록시 자체가 Spring Bean으로 노출되는 싱글톤이고, 대상 객체도 Spring이 생명주기를 관리한다.
+프록시가 적용되면 외부에 노출되는 프록시와 내부의 대상 객체는 서로 다른 Java 객체다.
+
+`OrderService`는 기본적으로 singleton scope의 빈이다. Spring은 실제 `OrderService` 대상 객체를 생성하고 의존성을 주입하며 초기화한다. 트랜잭션 AOP가 적용되면 해당 빈의 외부 노출 객체는 대상 객체를 감싼 싱글톤 프록시가 된다.
+
+대상 객체가 별도의 이름을 가진 두 번째 빈으로 등록되는 것은 아니다. 일반적인 자동 프록시 생성에서는 프록시가 사용하는 `SingletonTargetSource`가 동일한 대상 객체를 보관하고 호출을 위임한다.
 
 ```text
-OrderService 트랜잭션 프록시
-→ Spring Bean
-→ Singleton
-→ Proxy
+BeanDefinition
+└─ orderService (singleton scope)
 
-OrderService 대상 객체
-→ Spring이 생성하고 관리
-→ 일반적으로 한 개
-→ Proxy가 아님
+Spring Singleton Registry
+└─ "orderService" ───────────────┐
+                                  ▼
+                     트랜잭션 프록시 객체
+                                  │
+                                  │ SingletonTargetSource
+                                  ▼
+                     실제 OrderService 대상 객체
 ```
+
+따라서 `orderService`를 기준으로 세면 BeanDefinition, 빈 이름, Singleton Registry 등록 항목은 각각 하나다. 하지만 JVM에 존재하는 Java 인스턴스를 기준으로 세면 프록시 객체 하나와 대상 객체 하나, 총 두 개다. 대상 객체도 Spring이 생성하고 초기화·소멸 생명주기를 관리하지만, 별도의 빈 이름으로 조회할 수 있는 독립적인 두 번째 빈은 아니다.
+
+```text
+컨테이너에 두 개의 독립적인 빈이 등록됨
+├─ orderServiceProxy
+└─ orderServiceTarget
+→ 아님
+
+컨테이너에 하나의 빈이 프록시로 등록·노출됨
+└─ orderService → 프록시 → 대상 객체
+→ 맞음
+```
+
+`applicationContext.getBean("orderService")`로 조회하거나 다른 빈에 `OrderService`를 주입하면 대상 객체가 아니라 프록시가 전달된다.
 
 `@Service`, `@Component`, `@Controller`는 우선 클래스를 Spring Bean으로 등록한다. 이 어노테이션 자체가 프록시를 만드는 것은 아니다. 트랜잭션, 캐시, 비동기, 보안 등의 부가 기능이 필요할 때 프록시가 추가된다.
 
@@ -139,7 +160,7 @@ Hibernate 지연 로딩 프록시는 모든 조회에서 반드시 나타나는 
 | 객체 또는 계층 | 호출되거나 사용되는 객체 | 위임 대상 또는 내부 상태 | 역할 | 일반적인 수명 |
 | --- | --- | --- | --- | --- |
 | Controller | `OrderController` 객체 | 자신의 요청 처리 메서드 | HTTP 요청을 서비스 호출로 변환 | 애플리케이션 동안 싱글톤 |
-| Service AOP | `OrderService` 프록시 | `OrderService` 대상 객체 | 트랜잭션 등 메서드 앞뒤의 부가 기능 | 프록시와 대상 모두 보통 싱글톤 |
+| Service AOP | `OrderService` 프록시 | `OrderService` 대상 객체 | 트랜잭션 등 메서드 앞뒤의 부가 기능 | 프록시는 싱글톤 빈으로 노출되고 동일한 대상 인스턴스를 계속 사용 |
 | 트랜잭션 처리 | 프록시 내부의 `TransactionInterceptor` | `JpaTransactionManager` | 트랜잭션 속성을 읽고 시작·참여·완료를 요청 | 보통 싱글톤 인프라 |
 | 트랜잭션 관리자 | `JpaTransactionManager` | `EntityManagerFactory`, 현재 트랜잭션 자원 | 대상 `EntityManager` 준비, 바인딩, commit·rollback | 보통 싱글톤 |
 | Repository | `OrderRepository` 프록시 | `SimpleJpaRepository`, 쿼리 실행기, 사용자 구현 | 인터페이스 구현 및 메서드별 실행 전략 선택 | 보통 싱글톤 |
@@ -569,12 +590,12 @@ sequenceDiagram
 
 ## 13. 요청이 겹쳐도 안전한 이유
 
-컨트롤러, 서비스 프록시, 서비스 대상 객체, Repository 프록시와 공유 `EntityManager` 프록시는 여러 요청이 함께 사용하는 싱글톤일 수 있다.
+컨트롤러, 서비스 프록시, 서비스 프록시가 참조하는 하나의 대상 객체, Repository 프록시와 공유 `EntityManager` 프록시는 여러 요청이 함께 사용할 수 있다.
 
 ```text
 공유되는 객체
 → Controller
-→ Service 프록시와 Service 대상 객체
+→ Service 프록시와 프록시가 참조하는 동일한 Service 대상 객체
 → Repository 프록시
 → 공유 EntityManager 프록시
 ```
@@ -654,6 +675,10 @@ Repository 프록시
 ```
 
 ## 16. 흔한 오해 정리
+
+### Service 프록시와 대상 객체가 각각 별도의 빈으로 등록된다
+
+아니다. 일반적인 자동 프록시 생성에서는 `orderService`라는 BeanDefinition과 빈 이름, Singleton Registry 등록 항목이 각각 하나이며, 외부에는 프록시가 빈으로 노출된다. 프록시가 호출을 위임하기 위한 대상 객체까지 포함하면 실제 Java 객체는 두 개지만, 대상 객체가 별도의 이름을 가진 두 번째 빈으로 등록되는 것은 아니다.
 
 ### `@Service`이면 항상 프록시다
 
