@@ -396,14 +396,17 @@ JPA의 `EntityManager`에는 `save()`라는 메서드가 없다. `save()`는 Spr
 ```text
 repository.save(entity)
     ↓
-Spring Data가 객체의 정보로 새 엔티티인지 판정
-    ├─ 새 엔티티
+Spring Data가 객체의 Version·ID로 새 엔티티 여부를 판정
+    ├─ 새 엔티티(isNew(entity) == true)
     │    → EntityManager.persist(entity)
-    │    → flush 또는 commit 때 INSERT
+    │    → flush 때 INSERT
+    │         └─ 보통 commit 직전에 자동 flush
     │
-    └─ 기존 엔티티
+    └─ 기존 엔티티(isNew(entity) == false)
          → EntityManager.merge(entity)
-         → flush 또는 commit 때 INSERT 또는 UPDATE
+         → 필요하면 같은 ID의 DB 행 확인
+         → flush 때 INSERT 또는 UPDATE
+              └─ 보통 commit 직전에 자동 flush
 ```
 
 `save()`는 개념적으로 다음과 같다.
