@@ -407,6 +407,11 @@ Spring Data가 객체의 Version·ID로 새 엔티티 여부를 판정
          → 필요하면 같은 ID의 DB 행 확인
          → flush 때 INSERT 또는 UPDATE
               └─ 보통 commit 직전에 자동 flush
+
+결론
+→ save()가 persist() 또는 merge()를 호출해 저장 상태를 준비한다.
+→ flush 시점에 Hibernate가 실제 INSERT 또는 UPDATE SQL을 만들어 JDBC로 DB에 실행한다.
+→ 트랜잭션이 commit되어야 최종 저장이 확정된다.
 ```
 
 `save()`는 개념적으로 다음과 같다.
