@@ -509,7 +509,7 @@ order = orderRepository.save(order);
 
 ## 9. EntityManager 프록시와 대상 EntityManager의 전체 흐름
 
-먼저 애플리케이션 시작부터 트랜잭션 종료까지의 흐름을 한 번에 보면 다음과 같다. 공유 `EntityManager` 프록시는 애플리케이션 초기화 때 준비되고, 실제 JPA 작업을 수행하는 대상 `EntityManager`는 트랜잭션이 시작될 때 준비된다는 차이가 핵심이다. 아래 HTTP 요청 구간은 기존 트랜잭션이 없는 상태에서 `OrderService.create()`를 외부 호출하는 경우를 기준으로 한다.
+먼저 애플리케이션 시작부터 트랜잭션 종료까지의 흐름을 한 번에 보면 다음과 같다. 공유 `EntityManager` 프록시는 애플리케이션 초기화 때 준비되고, 실제 JPA 작업을 수행하는 대상 `EntityManager`는 트랜잭션이 시작될 때 준비된다는 차이가 핵심이다. 아래 HTTP 요청 구간은 기존 트랜잭션이 없는 상태에서 `OrderService.create()`를 외부 호출하는 경우를 기준으로 하며, 내부 클래스와 메서드 이름은 현재 프로젝트가 사용하는 Spring ORM 7.0.9를 기준으로 한다.
 
 ```text
 애플리케이션 시작
@@ -529,12 +529,20 @@ OrderController
 OrderService AOP 프록시
   ↓ TransactionInterceptor가 @Transactional 설정 확인
 JpaTransactionManager
+  ↓ TransactionSynchronizationManager에서 기존 자원 확인
+기존 EntityManagerHolder 없음
+  ↓
+JpaTransactionManager.doBegin()
   ├─ 대상 EntityManager A 생성
   │    └─ 공유 프록시가 호출을 위임하는 실제 EntityManager 인스턴스
-  ├─ 대상 EntityManager를 통해 트랜잭션 시작
-  │    └─ JPA 구현체인 Hibernate가 JDBC·DB 트랜잭션과 연결
-  └─ 현재 스레드에 EntityManagerHolder로 등록
-       ↓
+  ├─ EntityManagerHolder A 생성
+  │    └─ 대상 EntityManager A 보관
+  ├─ JpaDialect.beginTransaction(대상 EntityManager A, ...)
+  │    └─ Hibernate가 JDBC·DB 트랜잭션과 연결
+  │         (JDBC Connection 획득은 필요한 시점까지 지연될 수 있음)
+  └─ TransactionSynchronizationManager.bindResource(
+         EntityManagerFactory, EntityManagerHolder A)
+       ↓ 현재 요청 처리 스레드의 자원 Map에 등록
 TransactionInterceptor가 대상 호출을 계속 진행
   ↓
 OrderService 대상 객체
@@ -542,13 +550,22 @@ OrderService 대상 객체
 OrderRepository 프록시
   ↓ 기존 트랜잭션에 참여하고 기본 CRUD 구현으로 위임
 SimpleJpaRepository.save(order)
-  ↓ entityManager.persist(order) 또는 merge(order)
+  ↓ isNew(order) == false
+entityManager.merge(order)
+  ↓ entityManager 필드가 가리키는 객체
 공유 EntityManager 프록시
-  ↓ EntityManagerFactory를 키로 현재 스레드의 자원 조회
-EntityManagerHolder
-  ↓ getEntityManager()
+  ↓ JDK 프록시의 호출 처리기가 merge(order)를 가로챔
+SharedEntityManagerInvocationHandler.invoke()
+  ↓ EntityManagerFactoryUtils.doGetTransactionalEntityManager(
+       EntityManagerFactory, ...)
+EntityManagerFactoryUtils
+  ↓ TransactionSynchronizationManager.getResource(EntityManagerFactory)
+현재 스레드의 자원 Map
+  ↓ 같은 EntityManagerFactory 키로 조회
+EntityManagerHolder A
+  ↓ EntityManagerHolder.getEntityManager()
 대상 EntityManager A
-  ↓ 실제 persist() 또는 merge() 실행
+  ↓ 동일한 merge(order) 호출을 실제로 실행
 영속성 컨텍스트
   ↓ 엔티티 상태 관리 및 변경 사항 기록
 
@@ -556,20 +573,24 @@ EntityManagerHolder
 
 OrderService 대상 메서드 정상 반환
   ↓
-TransactionInterceptor가 JpaTransactionManager에 commit 요청
+TransactionInterceptor가 JpaTransactionManager.commit(status) 요청
   ↓
-Hibernate가 flush하여 필요한 INSERT 또는 UPDATE SQL 생성
+JpaTransactionManager.doCommit()
+  ↓ EntityManagerHolder A에서 대상 EntityManager A 획득
+대상 EntityManager A의 트랜잭션에 commit() 호출
   ↓
+Hibernate가 commit 직전에 flush
+  ↓ 필요한 INSERT 또는 UPDATE SQL 생성
 JDBC가 SQL을 PostgreSQL에 실행
   ↓
 DB 트랜잭션 commit
   ↓
-현재 스레드에서 EntityManagerHolder 제거
-  ↓
-대상 EntityManager A close
+JpaTransactionManager.doCleanupAfterCompletion()
+  ├─ TransactionSynchronizationManager에서 EntityManagerHolder A 제거
+  └─ 대상 EntityManager A close
 ```
 
-현재 `PurchaseOrder`는 8장에서 설명한 새 엔티티 판정 규칙 때문에 `merge()` 경로를 사용한다. 이제 위 흐름을 위에서부터 나누어 살펴본다.
+현재 `PurchaseOrder`는 8장에서 설명한 새 엔티티 판정 규칙 때문에 `merge()` 경로를 사용한다. 위 그림은 공유 `EntityManager` 프록시의 라우팅과 직접 관련된 경로를 중심으로 나타냈으며, JDBC `ConnectionHolder` 같은 부가 자원의 등록은 생략했다. 이제 위 흐름을 위에서부터 나누어 살펴본다.
 
 ### 9.1 흐름에 참여하는 객체의 역할
 
@@ -629,15 +650,22 @@ HTTP 요청이 들어와 `OrderService` AOP 프록시를 호출하면 `Transacti
 OrderController
   ↓
 OrderService AOP 프록시
-  ↓ TransactionInterceptor
-JpaTransactionManager
-  ↓ 기존 트랜잭션 자원이 없는지 확인
-EntityManagerFactory.createEntityManager()
+  ↓ TransactionInterceptor가 트랜잭션 요청
+JpaTransactionManager.getTransaction(...)
+  ↓ 내부에서 호출
+JpaTransactionManager.doGetTransaction()
+  ↓ TransactionSynchronizationManager.getResource(EntityManagerFactory)
+기존 EntityManagerHolder 없음
   ↓
-대상 EntityManager A 생성
-  ↓
-대상 EntityManager A를 통해 트랜잭션 시작
-  └─ JPA 구현체인 Hibernate가 JDBC·DB 트랜잭션과 연결
+JpaTransactionManager.doBegin()
+  ├─ createEntityManagerForTransaction()
+  │    └─ 대상 EntityManager A 생성
+  ├─ new EntityManagerHolder(대상 EntityManager A)
+  ├─ JpaDialect.beginTransaction(대상 EntityManager A, ...)
+  │    └─ Hibernate가 JDBC·DB 트랜잭션과 연결
+  │         (JDBC Connection 획득은 필요한 시점까지 지연될 수 있음)
+  └─ TransactionSynchronizationManager.bindResource(
+         EntityManagerFactory, EntityManagerHolder A)
 ```
 
 여기서 `대상 EntityManager A`는 추상적인 대상을 뜻하지 않는다. `EntityManagerFactory`가 생성했으며, 이후 공유 `EntityManager` 프록시가 `persist()`나 `merge()` 호출을 실제로 넘겨주는 `EntityManager` 인스턴스다.
@@ -661,7 +689,7 @@ Spring은 `TransactionSynchronizationManager`를 사용하여 스레드별 트�
 ThreadLocal<Map<Object, Object>> resources;
 ```
 
-`JpaTransactionManager`는 생성한 대상 `EntityManager`를 `EntityManagerHolder`로 감싼 다음, `EntityManagerFactory`를 키로 현재 스레드의 자원 저장소에 등록한다.
+`JpaTransactionManager`는 생성한 대상 `EntityManager`를 `EntityManagerHolder`로 감싼 다음, `TransactionSynchronizationManager.bindResource()`를 호출하여 `EntityManagerFactory`를 키로 현재 스레드의 자원 저장소에 등록한다.
 
 ```text
 현재 스레드: http-nio-8080-exec-1
@@ -678,21 +706,36 @@ TransactionSynchronizationManager의 자원 저장소
 
 트랜잭션 준비가 끝나면 `TransactionInterceptor`가 `OrderService` 대상 메서드 호출을 계속 진행한다. `OrderService`가 `orderRepository.save(order)`를 호출하면 Repository 프록시는 기존 트랜잭션에 참여하고 `SimpleJpaRepository.save()`로 위임한다.
 
-`SimpleJpaRepository`가 자신의 `entityManager` 필드에서 `persist()` 또는 `merge()`를 호출하면 실제로 먼저 호출되는 객체는 공유 `EntityManager` 프록시다. 프록시는 다음 순서로 현재 대상을 찾는다.
+`SimpleJpaRepository`가 자신의 `entityManager` 필드에서 `persist()` 또는 `merge()`를 호출하면 실제로 먼저 호출되는 객체는 공유 `EntityManager` 프록시다. 이 프록시는 `SharedEntityManagerCreator`가 만든 JDK 동적 프록시이며, 내부 호출 처리기가 다음 순서로 현재 대상을 찾는다.
 
 ```text
 SimpleJpaRepository
   ↓ entityManager.persist(entity) 또는 merge(entity)
 공유 EntityManager 프록시
+  ↓ 메서드 호출을 가로챔
+SharedEntityManagerCreator.SharedEntityManagerInvocationHandler.invoke()
+  ↓ EntityManagerFactoryUtils.doGetTransactionalEntityManager(
+       EntityManagerFactory, properties, true)
+EntityManagerFactoryUtils
   ↓ TransactionSynchronizationManager.getResource(EntityManagerFactory)
-EntityManagerHolder
-  ↓ getEntityManager()
+현재 스레드의 자원 Map
+  ↓ 같은 EntityManagerFactory 키로 조회
+EntityManagerHolder A
+  ↓ EntityManagerHolder.getEntityManager()
 현재 트랜잭션의 대상 EntityManager A
-  ↓
-동일한 persist() 또는 merge() 호출을 전달
+  ↓ invocation handler가 동일한 메서드를 대상에 호출
+대상 EntityManager A.persist(entity) 또는 merge(entity)
 ```
 
-즉, 여기서 **라우팅**은 공유 프록시가 요청을 직접 처리하는 것이 아니라 현재 스레드에 등록된 대상 `EntityManager`를 찾아 똑같은 메서드 호출을 넘기는 것을 뜻한다.
+공유 프록시는 대상 `EntityManager`를 필드에 보관하지 않고, 대상을 찾을 때 사용할 `EntityManagerFactory` 참조를 가지고 있다. `JpaTransactionManager`가 등록할 때 사용한 것과 동일한 `EntityManagerFactory`를 키로 전달하기 때문에 현재 스레드의 `EntityManagerHolder A`를 찾을 수 있다. Holder에서 대상 `EntityManager A`를 꺼낸 호출 처리기는 원래 받은 것과 동일한 `persist()` 또는 `merge()` 호출을 그 대상에 실행한다.
+
+즉, 여기서 **라우팅**은 다음 세 단계다.
+
+1. 공유 프록시가 `EntityManagerFactoryUtils`에 `EntityManagerFactory`를 전달한다.
+2. `EntityManagerFactoryUtils`가 현재 스레드에서 그 팩토리 키에 해당하는 `EntityManagerHolder`를 찾는다.
+3. Holder 안의 대상 `EntityManager`를 꺼내 원래 메서드 호출을 그대로 넘긴다.
+
+이 트랜잭션 흐름에서는 `JpaTransactionManager`가 Holder를 먼저 등록했으므로 같은 대상 `EntityManager A`를 찾는다. 등록된 Holder가 없는 경우의 동작은 11장에서 별도로 설명한다.
 
 ```text
 JpaTransactionManager
@@ -758,15 +801,21 @@ Hibernate Session
 ```text
 OrderService 대상 메서드 정상 반환
   ↓
-TransactionInterceptor가 commit 요청
+TransactionInterceptor가 JpaTransactionManager.commit(status) 요청
   ↓
-Hibernate flush
-  ↓ INSERT 또는 UPDATE SQL을 JDBC로 실행
+JpaTransactionManager.doCommit()
+  ↓ EntityManagerHolder에서 대상 EntityManager 획득
+대상 EntityManager의 트랜잭션에 commit() 호출
+  ↓
+Hibernate가 commit 직전에 flush
+  ↓ 필요한 INSERT 또는 UPDATE SQL 생성
+JDBC가 SQL을 DB에 실행
+  ↓
 DB 트랜잭션 commit
   ↓
-현재 스레드에서 EntityManagerHolder 제거
-  ↓
-대상 EntityManager close
+JpaTransactionManager.doCleanupAfterCompletion()
+  ├─ 현재 스레드에서 EntityManagerHolder 제거
+  └─ 대상 EntityManager close
 ```
 
 현재 프로젝트는 OSIV를 비활성화했으므로 일반적인 서비스 트랜잭션에서는 트랜잭션 종료 과정에서 대상 `EntityManager`가 닫힌다. OSIV가 활성화된 애플리케이션에서는 요청 시작 때 연결된 대상 `EntityManager`가 요청 종료 시점에 닫힐 수 있다.
