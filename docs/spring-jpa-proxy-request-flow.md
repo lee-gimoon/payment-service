@@ -237,33 +237,64 @@ OrderService 대상 객체
 프록시 안의 `TransactionInterceptor`가 하는 일은 개념적으로 다음과 같다.
 
 ```java
-TransactionStatus status = transactionManager.getTransaction(settings);
+// 1. @Transactional 설정을 바탕으로 새 트랜잭션을 시작하거나 기존 트랜잭션에 참여한다.
+TransactionStatus status =
+        transactionManager.getTransaction(settings);
 
 try {
+    // 2. 실제 OrderService 대상 객체의 메서드를 실행한다.
     Object result = targetOrderService.create();
+
+    // 3. 대상 메서드가 정상적으로 끝났으면 커밋을 요청한다.
     transactionManager.commit(status);
+
     return result;
 } catch (Throwable exception) {
+    // 4. 예외 종류와 @Transactional의 롤백 규칙을 확인한다.
     if (rollbackRules.requireRollback(exception)) {
         transactionManager.rollback(status);
     } else {
         transactionManager.commit(status);
     }
+
+    // 5. 트랜잭션을 정리한 뒤 예외를 호출자에게 다시 전달한다.
     throw exception;
 }
 ```
 
-기본 롤백 규칙에서는 `RuntimeException`과 `Error`가 롤백 대상이다. 체크 예외까지 롤백하려면 `rollbackFor` 같은 설정이 필요하다. 또한 기존 트랜잭션에 참여한 상태라면 위의 `commit()` 호출이 새로운 물리적 커밋을 발생시키는 것은 아니며, 최종 커밋은 바깥쪽 트랜잭션 경계가 담당한다.
+여기서 `settings`는 전파 속성, 격리 수준, 제한 시간, 읽기 전용 여부, 롤백 규칙 같은 `@Transactional` 설정을 뜻한다. `getTransaction(settings)`이 항상 새 트랜잭션을 만드는 것은 아니다.
 
 기본 전파 속성은 `REQUIRED`다.
 
 ```text
 기존 트랜잭션 없음
-→ 새 트랜잭션 시작
+→ 새 물리적 트랜잭션 시작
+→ 이 메서드의 종료 과정에서 실제 commit 또는 rollback 수행
 
 기존 트랜잭션 있음
-→ 기존 트랜잭션 참여
+→ 새 트랜잭션을 만들지 않고 기존 물리적 트랜잭션에 참여
+→ 이 메서드가 정상 종료되어도 즉시 DB commit하지 않음
+→ 가장 바깥쪽 트랜잭션 경계에서 최종 commit 또는 rollback 수행
 ```
+
+따라서 위 코드의 `commit(status)`는 무조건 즉시 DB에 물리적 커밋을 실행하라는 뜻이 아니라, 현재 트랜잭션 참여 구간이 정상적으로 끝났음을 트랜잭션 관리자에게 알리는 요청이다. 이 메서드가 새 트랜잭션을 시작했다면 실제 커밋으로 이어지고, 기존 트랜잭션에 참여했다면 최종 완료는 바깥쪽 트랜잭션 경계가 담당한다.
+
+기본 롤백 규칙은 다음과 같다.
+
+```text
+대상 메서드 정상 반환
+→ commit 요청
+
+RuntimeException 또는 Error 발생
+→ rollback 요청
+→ 예외를 호출자에게 다시 전달
+
+체크 예외 발생
+→ 기본적으로 commit 요청
+→ 예외는 호출자에게 다시 전달
+```
+
+체크 예외도 롤백하려면 `@Transactional(rollbackFor = SomeCheckedException.class)`처럼 `rollbackFor`를 설정한다. 기존 트랜잭션에 참여한 메서드에서 롤백을 요청한 경우에는 공유 중인 물리적 트랜잭션이 rollback-only 상태가 되어, 바깥쪽 트랜잭션 경계에서 최종적으로 롤백될 수 있다.
 
 서비스 프록시는 보통 여러 서비스 대상 객체 중 하나를 고르는 라우터가 아니다. 동일한 대상 객체를 호출하되, 적용할 인터셉터 파이프라인을 고른다.
 
