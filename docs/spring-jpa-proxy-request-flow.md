@@ -97,6 +97,8 @@ OrderController 객체
                                      → SimpleJpaRepository
                                           └─ entityManager 필드
                                                → 공유 EntityManager 프록시
+                                                    └─ 호출 시점에 대상을 찾음
+                                                         → 현재 트랜잭션의 대상 EntityManager
 ```
 
 여기서 대상 `EntityManager`는 싱글톤 서비스나 Repository 필드에 고정되어 있지 않다. 트랜잭션이 시작될 때 준비되어 현재 실행 문맥에 연결되고, 공유 `EntityManager` 프록시가 호출 시점에 찾아 사용한다.
