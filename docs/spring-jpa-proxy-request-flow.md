@@ -531,7 +531,7 @@ OrderService AOP 프록시
 JpaTransactionManager
   ↓ TransactionSynchronizationManager에서 기존 자원 확인
 기존 EntityManagerHolder 없음
-  ↓
+  ↓ 새 트랜잭션을 시작해야 하므로 대상 EntityManager 생성 필요
 JpaTransactionManager.doBegin()
   ├─ 대상 EntityManager A 생성
   │    └─ 공유 프록시가 호출을 위임하는 실제 EntityManager 인스턴스
@@ -543,9 +543,15 @@ JpaTransactionManager.doBegin()
   └─ TransactionSynchronizationManager.bindResource(
          EntityManagerFactory, EntityManagerHolder A)
        ↓ 현재 요청 처리 스레드의 자원 Map에 등록
+
+여기까지가 OrderService.create() 대상 메서드 본문 실행 전
+→ 대상 EntityManager A는 이미 생성·등록된 상태
+→ orderRepository.save(order)가 EntityManager를 생성하는 것이 아님
+
+       ↓
 TransactionInterceptor가 대상 호출을 계속 진행
   ↓
-OrderService 대상 객체
+OrderService 대상 객체의 create() 본문 실행 시작
   ↓ orderRepository.save(order)
 OrderRepository 프록시
   ↓ 기존 트랜잭션에 참여하고 기본 CRUD 구현으로 위임
@@ -561,10 +567,10 @@ SharedEntityManagerInvocationHandler.invoke()
 EntityManagerFactoryUtils
   ↓ TransactionSynchronizationManager.getResource(EntityManagerFactory)
 현재 스레드의 자원 Map
-  ↓ 같은 EntityManagerFactory 키로 조회
+  ↓ 같은 EntityManagerFactory 키로 앞서 등록한 Holder 조회
 EntityManagerHolder A
   ↓ EntityManagerHolder.getEntityManager()
-대상 EntityManager A
+앞서 생성해 둔 대상 EntityManager A
   ↓ 동일한 merge(order) 호출을 실제로 실행
 영속성 컨텍스트
   ↓ 엔티티 상태 관리 및 변경 사항 기록
@@ -669,6 +675,23 @@ JpaTransactionManager.doBegin()
 ```
 
 여기서 `대상 EntityManager A`는 추상적인 대상을 뜻하지 않는다. `EntityManagerFactory`가 생성했으며, 이후 공유 `EntityManager` 프록시가 `persist()`나 `merge()` 호출을 실제로 넘겨주는 `EntityManager` 인스턴스다.
+
+현재 프로젝트에서 정확한 생성 시점은 **`OrderService.create()` 대상 메서드 본문에 진입하기 전**이다. `TransactionInterceptor`가 새 트랜잭션이 필요하다고 판단하고, 현재 스레드에서 기존 `EntityManagerHolder`를 찾지 못했을 때 `JpaTransactionManager.doBegin()`이 대상 `EntityManager`를 생성한다.
+
+```text
+대상 EntityManager 생성 트리거
+→ 새 트랜잭션을 시작해야 함
+→ 현재 스레드에 재사용할 EntityManagerHolder가 없음
+
+대상 EntityManager 생성 시점
+→ OrderService.create() 본문 실행 전
+→ new PurchaseOrder(...) 실행 전
+→ orderRepository.save(order) 호출 전
+```
+
+따라서 현재 흐름에서 `save()`는 대상 `EntityManager`를 생성하지 않는다. `save()` 안에서 호출되는 공유 `EntityManager` 프록시가 앞서 생성·등록된 대상 `EntityManager A`를 찾아 사용한다.
+
+단, 바깥 서비스 트랜잭션이 없다면 Repository 프록시가 `save()`의 트랜잭션을 시작하면서 대상 `EntityManager`를 생성할 수 있다. 이 경우에도 `SimpleJpaRepository.save()`의 본문에 들어가기 전에 생성된다. 공통 기준은 `save()` 호출 자체가 아니라 **새 트랜잭션을 시작하는 경계**다.
 
 `EntityManagerFactory`는 애플리케이션에서 보통 하나를 장기간 공유해도 되는 스레드 안전한 팩토리다. 반면 이 팩토리가 만드는 대상 `EntityManager`는 스레드 안전하지 않으므로 트랜잭션 같은 작업 단위별로 분리한다.
 
