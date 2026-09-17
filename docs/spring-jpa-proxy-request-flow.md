@@ -611,14 +611,24 @@ OrderController
   ↓ create()에 @Transactional이 있는 것을 확인
 TransactionInterceptor.invoke(MethodInvocation)
   ↓ create()에 선언된 @Transactional 설정을 읽어 해석
-전파 방식, 격리 수준, 읽기 전용 여부, 롤백 규칙 등 준비
-  ↓ 해석한 설정으로 트랜잭션 시작 또는 참여 요청
-JpaTransactionManager
+TransactionAttribute 준비
+  ├─ propagation = REQUIRED
+  ├─ isolation = DEFAULT
+  ├─ readOnly = false
+  └─ 롤백 규칙 등
+  ↓ 이 규칙을 인자로 트랜잭션 시작 또는 참여 요청
+JpaTransactionManager.getTransaction(TransactionDefinition)
+  └─ 실제 전달 객체: TransactionAttribute
+  ↓ JpaTransactionManager.doGetTransaction()
   ↓ 현재 실행 스레드의 자원 Map 조회
 TransactionSynchronizationManager.getResource(EntityManagerFactory)
   ↓ 같은 EntityManagerFactory 키에 연결된 Holder 확인
 EntityManagerHolder 없음
-  ↓ 전파 방식이 REQUIRED이고 참여할 활성 트랜잭션이 없으므로 새 트랜잭션 필요
+  ↓ JpaTransactionManager.isExistingTransaction(...) == false
+AbstractPlatformTransactionManager가 현재 상태에 전파 규칙 적용
+  ↓ propagation = REQUIRED + 활성 트랜잭션 없음
+새 트랜잭션 시작 결정
+  ↓
 JpaTransactionManager.doBegin()
   ├─ createEntityManagerForTransaction()
   │    └─ 대상 EntityManager A 생성
@@ -775,7 +785,23 @@ HTTP 요청으로 `OrderController`가 `orderService.create()`를 호출하면, 
 
 이때 `TransactionInterceptor.invoke(MethodInvocation)`가 실행된다. `MethodInvocation`은 `create()`라는 메서드 정보, 전달된 인자, 대상 객체와 다음 단계로 진행하는 `proceed()`를 담은 호출 정보 객체다. `TransactionInterceptor`는 `TransactionAttributeSource`를 통해 `create()`에 선언된 `@Transactional` 설정을 읽는다. Spring은 이 설정을 내부적으로 `TransactionAttribute`라는 객체로 표현하지만, 이는 Java 메서드에 별도의 속성이나 필드가 생긴다는 의미가 아니다.
 
-해석된 전파 방식·격리 수준·읽기 전용 여부·롤백 규칙 등을 사용하여 `TransactionInterceptor`가 `JpaTransactionManager.getTransaction(...)`을 호출한다. 기본 전파 방식 `REQUIRED`에서 현재 스레드에 참여할 기존 트랜잭션이 없다면 `JpaTransactionManager`가 새 트랜잭션을 시작한다.
+해석된 전파 방식·격리 수준·읽기 전용 여부·롤백 규칙 등은 `TransactionAttribute`에 담긴다. `TransactionAttribute`는 `TransactionDefinition`을 확장한 타입이므로 `getTransaction(TransactionDefinition)`에 전달할 수 있다. 이는 “현재 호출에서 어떤 트랜잭션 처리를 원하는가”라는 규칙이지, 새 트랜잭션을 만들어야 한다는 최종 결론은 아니다. 예를 들어 `REQUIRED`는 기존 활성 트랜잭션이 있으면 참여하고 없으면 새로 시작하라는 조건부 규칙이다.
+
+`TransactionInterceptor`는 이 규칙을 인자로 `JpaTransactionManager.getTransaction(...)`을 호출한다. 이 메서드의 공통 판단 절차는 상위 클래스인 `AbstractPlatformTransactionManager`에 구현되어 있다. 먼저 `JpaTransactionManager.doGetTransaction()`으로 현재 트랜잭션 상태를 수집하고, `isExistingTransaction(...)`으로 활성 트랜잭션인지 확인한 뒤, 그 결과에 전파 규칙을 적용한다.
+
+```text
+@Transactional 설정 해석
+→ 원하는 처리 규칙 파악
+  예: propagation = REQUIRED
+
+현재 실행 스레드의 트랜잭션 상태 조회
+→ 참여할 활성 트랜잭션이 있는지 파악
+
+처리 규칙 + 현재 상태
+→ 참여, 새로 시작, 트랜잭션 없이 실행 또는 예외 중 하나로 최종 결정
+```
+
+따라서 `REQUIRED`라는 사실은 `@Transactional`을 해석할 때 이미 알지만, 새 트랜잭션이 필요한지는 현재 상태까지 조회해야 결정할 수 있다. `REQUIRED + 활성 트랜잭션 없음`일 때 비로소 새 트랜잭션 시작이 결정된다. `SUPPORTS`라면 활성 트랜잭션이 없어도 새로 만들지 않으며, `MANDATORY`라면 예외가 발생한다.
 
 여기서 확인하는 **기존 자원**은 DB의 행이나 Repository 객체처럼 일반적인 의미의 자원이 아니다. 현재 실행 스레드에 이미 연결되어 있는 **같은 `EntityManagerFactory`의 `EntityManagerHolder`**를 뜻한다. `TransactionSynchronizationManager`는 스레드마다 자원 Map을 관리하며, JPA 트랜잭션에서는 `EntityManagerFactory`를 키로 사용하고 대상 `EntityManager`를 담은 `EntityManagerHolder`를 값으로 등록한다.
 
@@ -799,16 +825,25 @@ create()에 @Transactional이 있으므로 TransactionInterceptor를 통해 호�
   ↓
 TransactionInterceptor.invoke(MethodInvocation)
   ↓ create()에 선언된 @Transactional 설정을 읽어 해석
-전파 방식, 격리 수준, 읽기 전용 여부, 롤백 규칙 등 준비
-  ↓ 해석한 설정을 인자로 트랜잭션 시작 또는 참여 요청
-JpaTransactionManager.getTransaction(...)
-  ↓ 내부에서 호출
+TransactionAttribute 준비
+  ├─ propagation = REQUIRED
+  ├─ isolation = DEFAULT
+  ├─ readOnly = false
+  └─ 롤백 규칙 등
+  ↓ 이 규칙을 인자로 트랜잭션 시작 또는 참여 요청
+JpaTransactionManager.getTransaction(TransactionDefinition)
+  └─ 실제 전달 객체: TransactionAttribute
+  ↓ 현재 트랜잭션 상태 수집
 JpaTransactionManager.doGetTransaction()
   ↓ 현재 실행 스레드의 자원 Map 조회
 TransactionSynchronizationManager.getResource(EntityManagerFactory)
   ↓ 같은 EntityManagerFactory 키에 연결된 Holder 확인
 EntityManagerHolder 없음
-  ↓ 전파 방식이 REQUIRED이고 참여할 활성 트랜잭션이 없으므로 새 트랜잭션 필요
+  ↓ JpaTransactionManager.isExistingTransaction(...) == false
+AbstractPlatformTransactionManager가 현재 상태에 전파 규칙 적용
+  ↓ propagation = REQUIRED + 활성 트랜잭션 없음
+새 트랜잭션 시작 결정
+  ↓
 JpaTransactionManager.doBegin()
   ├─ createEntityManagerForTransaction()
   │    └─ 대상 EntityManager A 생성
@@ -828,13 +863,41 @@ JpaTransactionManager.doBegin()
 
 `EntityManagerHolder`가 조회됐다는 사실만으로 활성 트랜잭션이 있다고 단정하지는 않는다. `JpaTransactionManager`는 Holder가 실제로 활성 트랜잭션을 나타내는지도 확인한다. 현재 프로젝트처럼 OSIV가 비활성화된 일반적인 서비스 트랜잭션 흐름에서는 같은 `EntityManagerFactory`의 활성 Holder를 발견하면 기존 트랜잭션에 참여한다. 위 그림처럼 Holder가 없고 전파 방식이 `REQUIRED`이면 새 트랜잭션을 시작한다. `SUPPORTS`처럼 트랜잭션이 없어도 실행할 수 있는 전파 방식은 Holder가 없다는 이유만으로 새 트랜잭션을 만들지 않는다.
 
-여기서 `대상 EntityManager A`는 추상적인 대상을 뜻하지 않는다. `EntityManagerFactory`가 생성했으며, 이후 공유 `EntityManager` 프록시가 `persist()`나 `merge()` 호출을 실제로 넘겨주는 `EntityManager` 인스턴스다.
+새 JPA 트랜잭션을 시작할 때 대상 `EntityManager`를 먼저 만드는 이유는 현재 프로젝트의 `JpaTransactionManager`가 **JPA의 리소스 로컬 트랜잭션**을 관리하기 때문이다. JPA 트랜잭션은 독립된 전역 객체에서 시작하는 것이 아니라, 대상 `EntityManager`에서 `EntityTransaction`을 얻어 시작한다.
 
-현재 프로젝트에서 정확한 생성 시점은 **`OrderService.create()` 대상 메서드 본문에 진입하기 전**이다. `TransactionInterceptor`가 새 트랜잭션이 필요하다고 판단하고, 현재 스레드에서 기존 `EntityManagerHolder`를 찾지 못했을 때 `JpaTransactionManager.doBegin()`이 대상 `EntityManager`를 생성한다.
+```java
+EntityTransaction transaction = entityManager.getTransaction();
+transaction.begin();
+```
+
+현재 Hibernate 환경에서 관계를 단순화하면 다음과 같다.
+
+```text
+JpaTransactionManager
+  ↓ 트랜잭션에 사용할 작업 단위 준비
+대상 EntityManager
+  ├─ 영속성 컨텍스트
+  │    ├─ 관리 엔티티와 동일성
+  │    ├─ 변경 감지
+  │    └─ 쓰기 지연 작업
+  └─ getTransaction()
+       ↓
+     EntityTransaction
+       ↓ Hibernate 구현
+     Hibernate 트랜잭션
+       ↓ 필요 시
+     JDBC Connection과 DB 트랜잭션
+```
+
+따라서 `JpaTransactionManager.doBegin()`은 트랜잭션에 사용할 대상 `EntityManager`가 없다면 먼저 생성하고, 그 객체의 `getTransaction().begin()`을 호출한다. 이후 대상 `EntityManager`를 Holder에 넣어 현재 스레드에 등록한다. Repository의 공유 `EntityManager` 프록시는 이 Holder를 찾아 같은 대상 `EntityManager`로 호출을 보내므로, 서비스 트랜잭션 안의 JPA 작업들이 같은 영속성 컨텍스트와 트랜잭션을 사용한다.
+
+여기서 `대상 EntityManager A`는 추상적인 대상을 뜻하지 않는다. `EntityManagerFactory`가 생성했으며, 이후 공유 `EntityManager` 프록시가 `persist()`나 `merge()` 호출을 실제로 넘겨주는 `EntityManager` 인스턴스다. 다만 `EntityManager`와 트랜잭션이 언제나 일대일이라는 뜻은 아니다. 대상 `EntityManager`가 활성 트랜잭션 없이 존재할 수도 있고, 미리 연결된 재사용 가능한 `EntityManager`가 있다면 그 객체에서 새 트랜잭션을 시작할 수도 있다. 현재 프로젝트는 OSIV가 비활성화되어 있고 이 흐름에는 미리 연결된 Holder가 없으므로, 새 트랜잭션을 시작하기 전에 새 대상 `EntityManager`를 만든다.
+
+현재 프로젝트에서 정확한 생성 시점은 **`OrderService.create()` 대상 메서드 본문에 진입하기 전**이다. `AbstractPlatformTransactionManager`가 전파 규칙과 현재 트랜잭션 상태를 결합하여 새 트랜잭션이 필요하다고 결정하고, 현재 스레드에 재사용할 `EntityManagerHolder`가 없을 때 `JpaTransactionManager.doBegin()`이 대상 `EntityManager`를 생성한다.
 
 ```text
 대상 EntityManager 생성 트리거
-→ 새 트랜잭션을 시작해야 함
+→ 전파 규칙과 현재 상태를 확인한 결과 새 트랜잭션을 시작해야 함
 → 현재 스레드에 재사용할 EntityManagerHolder가 없음
 
 대상 EntityManager 생성 시점
