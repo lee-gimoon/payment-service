@@ -630,38 +630,43 @@ AbstractPlatformTransactionManager가 현재 상태에 전파 규칙 적용
 새 트랜잭션 시작 결정
   ↓
 JpaTransactionManager.doBegin()
-  ↓
-createEntityManagerForTransaction()
-  ↓
-대상 EntityManager A 생성 (이 EntityManager의 getTransaction().begin()으로 JPA 트랜잭션을 시작하고 영속성 컨텍스트를 관리하기 위해)
-  └─ 공유 프록시가 이후 호출을 위임할 실제 EntityManager 인스턴스
-  ↓
-new EntityManagerHolder(대상 EntityManager A)
-  └─ 대상 EntityManager A 보관
-  ↓
-HibernateJpaDialect.beginTransaction(대상 EntityManager A, 트랜잭션 설정)
-  ├─ 제한 시간과 필요한 격리 수준·읽기 전용 설정 준비
-  ├─ EntityManager.getTransaction().begin()
-  └─ Hibernate의 JPA 트랜잭션 시작
-       물리적 JDBC Connection은 설정에 따라 여기서 획득되거나
-       이후 실제 JDBC 접근 시점까지 획득이 지연될 수 있음
-  ↓
-JpaTransactionManager가 트랜잭션 정보와 readOnly 상태를 보관하고
-설정된 경우 EntityManagerHolder A에 제한 시간을 기록
-  ↓
-[조건부] DataSource가 설정되어 있고 JDBC ConnectionHandle을 얻을 수 있는 경우
-  ↓
-ConnectionHolder 생성
-  ↓
-TransactionSynchronizationManager.bindResource(DataSource, ConnectionHolder)
-  └─ 직접 JDBC 접근도 현재 JPA 트랜잭션의 Connection을 공유하기 위한 등록
-  ↓
-TransactionSynchronizationManager.bindResource(
-    EntityManagerFactory, EntityManagerHolder A)
-  └─ 현재 실행 스레드의 자원 Map에 등록
-       공유 EntityManager 프록시가 대상 EntityManager A를 찾기 위한 등록
-  ↓
-EntityManagerHolder A를 현재 트랜잭션과 동기화된 상태로 표시
+  └─ 내부 실행 흐름
+       ↓
+     createEntityManagerForTransaction()
+       ↓
+     대상 EntityManager A 생성 (이 EntityManager의 getTransaction().begin()으로 JPA 트랜잭션을 시작하고 영속성 컨텍스트를 관리하기 위해)
+       └─ 공유 프록시가 이후 호출을 위임할 실제 EntityManager 인스턴스
+       ↓
+     new EntityManagerHolder(대상 EntityManager A)
+       ├─ 대상 EntityManager A 보관
+       └─ JpaTransactionObject에 새 Holder로 기록
+       ↓ Holder에서 대상 EntityManager A 획득
+     JpaTransactionManager가 HibernateJpaDialect에 트랜잭션 시작을 위임
+       ↓
+     HibernateJpaDialect.beginTransaction(대상 EntityManager A, 트랜잭션 설정)
+       ├─ 제한 시간 설정
+       ├─ 필요한 경우 JDBC Connection을 획득하여 격리 수준·읽기 전용 설정 준비
+       │    (필요하지 않으면 물리적 Connection 획득이 이후 JDBC 접근까지 지연될 수 있음)
+       ├─ EntityManager.getTransaction().begin()
+       ├─ Hibernate 트랜잭션 시작 후 FlushMode·읽기 전용 상태 조정
+       └─ SessionTransactionData 반환
+            ↓ JpaTransactionManager.doBegin()으로 복귀
+     반환된 TransactionData와 readOnly 상태를 JpaTransactionObject에 보관
+       └─ 제한 시간이 설정됐다면 EntityManagerHolder A에도 기록
+       ↓
+     [조건부 JDBC 공유: DataSource가 설정되어 있고 ConnectionHandle을 얻을 수 있는 경우]
+       ├─ ConnectionHolder 생성
+       └─ TransactionSynchronizationManager.bindResource(DataSource, ConnectionHolder)
+            └─ 직접 JDBC 접근도 현재 JPA 트랜잭션의 Connection을 공유하기 위한 등록
+       ↓
+     TransactionSynchronizationManager.bindResource(
+         EntityManagerFactory, EntityManagerHolder A)
+       └─ 현재 실행 스레드의 자원 Map에 등록
+            공유 EntityManager 프록시가 대상 EntityManager A를 찾기 위한 등록
+       ↓
+     EntityManagerHolder A를 현재 트랜잭션과 동기화된 상태로 표시
+       ↓
+     JpaTransactionManager.doBegin() 완료
 
 여기까지가 OrderService.create() 대상 메서드 본문 실행 전
 → 대상 EntityManager A는 이미 생성·등록된 상태
@@ -718,7 +723,7 @@ JpaTransactionManager.doCleanupAfterCompletion()
   └─ 새로 만든 대상 EntityManager A close
 ```
 
-현재 `PurchaseOrder`는 8장에서 설명한 새 엔티티 판정 규칙 때문에 `merge()` 경로를 사용한다. 위 그림은 공유 `EntityManager` 프록시의 라우팅과 직접 관련된 경로를 중심으로 나타냈다. JDBC `ConnectionHolder` 등록은 `DataSource`가 설정되어 있고 JPA Dialect가 JDBC `ConnectionHandle`을 제공할 때 수행되는 조건부 단계이므로 세부 구조는 생략했다. 이제 위 흐름을 위에서부터 나누어 살펴본다.
+현재 `PurchaseOrder`는 8장에서 설명한 새 엔티티 판정 규칙 때문에 `merge()` 경로를 사용한다. 위 그림은 공유 `EntityManager` 프록시의 라우팅과 직접 관련된 경로를 중심으로 나타냈다. JDBC `ConnectionHolder` 등록은 `DataSource`가 설정되어 있고 JPA Dialect가 JDBC `ConnectionHandle`을 제공할 때 수행되는 조건부 단계다. 공유 `EntityManager` 프록시의 라우팅에는 `EntityManagerHolder` 등록이 핵심이며, `ConnectionHolder`는 직접 JDBC 접근에도 같은 트랜잭션의 Connection을 노출하기 위한 별도 등록이다. 이제 위 흐름을 위에서부터 나누어 살펴본다.
 
 ### 9.1 흐름에 참여하는 객체의 역할
 
@@ -863,38 +868,43 @@ AbstractPlatformTransactionManager가 현재 상태에 전파 규칙 적용
 새 트랜잭션 시작 결정
   ↓
 JpaTransactionManager.doBegin()
-  ↓
-createEntityManagerForTransaction()
-  ↓
-대상 EntityManager A 생성 (이 EntityManager의 getTransaction().begin()으로 JPA 트랜잭션을 시작하고 영속성 컨텍스트를 관리하기 위해)
-  └─ 공유 프록시가 이후 호출을 위임할 실제 EntityManager 인스턴스
-  ↓
-new EntityManagerHolder(대상 EntityManager A)
-  └─ 대상 EntityManager A 보관
-  ↓
-HibernateJpaDialect.beginTransaction(대상 EntityManager A, 트랜잭션 설정)
-  ├─ 제한 시간과 필요한 격리 수준·읽기 전용 설정 준비
-  ├─ EntityManager.getTransaction().begin()
-  └─ Hibernate의 JPA 트랜잭션 시작
-       물리적 JDBC Connection은 설정에 따라 여기서 획득되거나
-       이후 실제 JDBC 접근 시점까지 획득이 지연될 수 있음
-  ↓
-JpaTransactionManager가 트랜잭션 정보와 readOnly 상태를 보관하고
-설정된 경우 EntityManagerHolder A에 제한 시간을 기록
-  ↓
-[조건부] DataSource가 설정되어 있고 JDBC ConnectionHandle을 얻을 수 있는 경우
-  ↓
-ConnectionHolder 생성
-  ↓
-TransactionSynchronizationManager.bindResource(DataSource, ConnectionHolder)
-  └─ 직접 JDBC 접근도 현재 JPA 트랜잭션의 Connection을 공유하기 위한 등록
-  ↓
-TransactionSynchronizationManager.bindResource(
-    EntityManagerFactory, EntityManagerHolder A)
-  └─ 현재 실행 스레드의 자원 Map에 등록
-       공유 EntityManager 프록시가 대상 EntityManager A를 찾기 위한 등록
-  ↓
-EntityManagerHolder A를 현재 트랜잭션과 동기화된 상태로 표시
+  └─ 내부 실행 흐름
+       ↓
+     createEntityManagerForTransaction()
+       ↓
+     대상 EntityManager A 생성 (이 EntityManager의 getTransaction().begin()으로 JPA 트랜잭션을 시작하고 영속성 컨텍스트를 관리하기 위해)
+       └─ 공유 프록시가 이후 호출을 위임할 실제 EntityManager 인스턴스
+       ↓
+     new EntityManagerHolder(대상 EntityManager A)
+       ├─ 대상 EntityManager A 보관
+       └─ JpaTransactionObject에 새 Holder로 기록
+       ↓ Holder에서 대상 EntityManager A 획득
+     JpaTransactionManager가 HibernateJpaDialect에 트랜잭션 시작을 위임
+       ↓
+     HibernateJpaDialect.beginTransaction(대상 EntityManager A, 트랜잭션 설정)
+       ├─ 제한 시간 설정
+       ├─ 필요한 경우 JDBC Connection을 획득하여 격리 수준·읽기 전용 설정 준비
+       │    (필요하지 않으면 물리적 Connection 획득이 이후 JDBC 접근까지 지연될 수 있음)
+       ├─ EntityManager.getTransaction().begin()
+       ├─ Hibernate 트랜잭션 시작 후 FlushMode·읽기 전용 상태 조정
+       └─ SessionTransactionData 반환
+            ↓ JpaTransactionManager.doBegin()으로 복귀
+     반환된 TransactionData와 readOnly 상태를 JpaTransactionObject에 보관
+       └─ 제한 시간이 설정됐다면 EntityManagerHolder A에도 기록
+       ↓
+     [조건부 JDBC 공유: DataSource가 설정되어 있고 ConnectionHandle을 얻을 수 있는 경우]
+       ├─ ConnectionHolder 생성
+       └─ TransactionSynchronizationManager.bindResource(DataSource, ConnectionHolder)
+            └─ 직접 JDBC 접근도 현재 JPA 트랜잭션의 Connection을 공유하기 위한 등록
+       ↓
+     TransactionSynchronizationManager.bindResource(
+         EntityManagerFactory, EntityManagerHolder A)
+       └─ 현재 실행 스레드의 자원 Map에 등록
+            공유 EntityManager 프록시가 대상 EntityManager A를 찾기 위한 등록
+       ↓
+     EntityManagerHolder A를 현재 트랜잭션과 동기화된 상태로 표시
+       ↓
+     JpaTransactionManager.doBegin() 완료
 ```
 
 `EntityManagerHolder`가 조회됐다는 사실만으로 활성 트랜잭션이 있다고 단정하지는 않는다. `JpaTransactionManager`는 Holder가 실제로 활성 트랜잭션을 나타내는지도 확인한다. 현재 프로젝트처럼 OSIV가 비활성화된 일반적인 서비스 트랜잭션 흐름에서는 같은 `EntityManagerFactory`의 활성 Holder를 발견하면 기존 트랜잭션에 참여한다. 위 그림처럼 Holder가 없고 전파 방식이 `REQUIRED`이면 새 트랜잭션을 시작한다. `SUPPORTS`처럼 트랜잭션이 없어도 실행할 수 있는 전파 방식은 Holder가 없다는 이유만으로 새 트랜잭션을 만들지 않는다.
