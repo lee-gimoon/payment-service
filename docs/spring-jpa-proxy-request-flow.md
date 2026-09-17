@@ -227,7 +227,28 @@ public class OrderService {
 }
 ```
 
-이 프로젝트에서는 트랜잭션 기능이 활성화되어 있다. Spring은 적용 가능한 `@Transactional` 메서드를 발견하면 `OrderService` 호출을 가로챌 AOP 프록시를 만든다.
+이 프로젝트에서는 트랜잭션 기능이 활성화되어 있다. Spring은 적용 가능한 `@Transactional` 메서드를 발견하면 `OrderService` 호출을 가로챌 AOP 프록시를 만든다. 이 과정은 HTTP 요청이 들어올 때가 아니라 애플리케이션 초기화 중에 일어난다.
+
+### 5.1 애플리케이션 초기화: 프록시를 만들어 주입하는 시점
+
+현재 프로젝트처럼 순환 참조가 없는 일반적인 경우의 핵심 순서는 다음과 같다.
+
+```text
+OrderService 대상 객체 생성
+  ↓
+대상 객체에 OrderRepository 프록시 등 의존성 주입
+  ↓
+Spring의 자동 프록시 생성기가 트랜잭션 Advisor 적용 가능 여부 검사
+  └─ OrderService의 @Transactional 메서드 메타데이터 확인
+  ↓
+OrderService 대상 객체를 감싼 AOP 프록시 생성
+  ↓
+Spring Bean으로 외부에 노출되는 최종 참조가 프록시로 결정됨
+  ↓
+OrderController.orderService에 그 프록시 주입
+```
+
+따라서 `OrderController`에 `OrderService` 프록시를 주입하려면, Spring이 먼저 `OrderService`가 트랜잭션 Advisor의 적용 대상인지 확인해야 한다. 이 판단과 프록시 생성은 `OrderService`가 스스로 하는 일이 아니라 Spring의 Bean 후처리 및 자동 프록시 생성 인프라가 수행한다. 반면 `OrderService` 대상 객체 자신의 생성자 의존성은 대상 객체가 프록시로 감싸지기 전에 주입된다.
 
 ```text
 OrderController.orderService
@@ -236,6 +257,10 @@ OrderService AOP 프록시
   ↓ 항상 위임하는 대상
 OrderService 대상 객체
 ```
+
+### 5.2 메서드 호출: 이미 만들어진 프록시가 트랜잭션을 적용하는 시점
+
+HTTP 요청 시점에는 프록시 적용 대상을 처음 판별하거나 프록시를 새로 만들지 않는다. 컨트롤러에 이미 주입되어 있던 프록시가 호출을 가로채고, `TransactionInterceptor`가 이번에 호출된 메서드의 트랜잭션 속성을 조회한다. 초기화 과정의 적용 가능 여부 검사에서 분석한 메타데이터가 캐시되어 재사용될 수 있다.
 
 프록시 안의 `TransactionInterceptor`가 하는 일은 개념적으로 다음과 같다.
 
@@ -519,6 +544,13 @@ EntityManagerFactory 준비
 공유 EntityManager 프록시 생성
   ↓
 SimpleJpaRepository.entityManager 필드에 주입
+  ↓
+OrderService 대상 객체 생성 및 OrderRepository 프록시 주입
+  ↓
+Spring이 @Transactional 메서드 메타데이터를 확인하여
+OrderService 대상 객체를 감싼 AOP 프록시 생성
+  ↓
+OrderController.orderService에 AOP 프록시 주입
 
 ────────────────────────────────────────
 
@@ -526,8 +558,8 @@ HTTP 요청 시작
   ↓
 OrderController
   ↓
-OrderService AOP 프록시
-  ↓ TransactionInterceptor가 @Transactional 설정 확인
+이미 주입되어 있던 OrderService AOP 프록시
+  ↓ TransactionInterceptor가 호출된 메서드의 트랜잭션 속성 조회
 JpaTransactionManager
   ↓ TransactionSynchronizationManager에서 기존 자원 확인
 기존 EntityManagerHolder 없음
@@ -650,7 +682,7 @@ private EntityManager entityManager;
 
 ### 9.3 HTTP 요청과 트랜잭션 시작: 대상 EntityManager 준비
 
-HTTP 요청이 들어와 `OrderService` AOP 프록시를 호출하면 `TransactionInterceptor`가 `@Transactional` 설정을 읽는다. 기본 전파 속성 `REQUIRED`에서 현재 스레드에 참여할 기존 트랜잭션이 없다면 `JpaTransactionManager`가 새 트랜잭션을 시작한다.
+HTTP 요청이 들어와 이미 만들어져 있던 `OrderService` AOP 프록시를 호출하면 `TransactionInterceptor`가 호출된 메서드의 `@Transactional` 속성을 조회한다. 이것은 프록시를 만들지 말지 처음 판단하는 단계가 아니라, 전파 속성·격리 수준·읽기 전용 여부·롤백 규칙 등 이번 호출에 적용할 트랜잭션 정보를 얻는 단계다. 기본 전파 속성 `REQUIRED`에서 현재 스레드에 참여할 기존 트랜잭션이 없다면 `JpaTransactionManager`가 새 트랜잭션을 시작한다.
 
 ```text
 OrderController
