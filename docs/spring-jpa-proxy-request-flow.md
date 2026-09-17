@@ -166,7 +166,7 @@ Hibernate 지연 로딩 프록시는 모든 조회에서 반드시 나타나는 
 | --- | --- | --- | --- | --- |
 | Controller | `OrderController` 객체 | 자신의 요청 처리 메서드 | HTTP 요청을 서비스 호출로 변환 | 애플리케이션 동안 싱글톤 |
 | Service AOP | `OrderService` 프록시 | `OrderService` 대상 객체 | 트랜잭션 등 메서드 앞뒤의 부가 기능 | 프록시는 싱글톤 빈으로 노출되고 동일한 대상 인스턴스를 계속 사용 |
-| 트랜잭션 처리 | 프록시 내부의 `TransactionInterceptor` | `JpaTransactionManager` | 트랜잭션 속성을 읽고 시작·참여·완료를 요청 | 보통 싱글톤 인프라 |
+| 트랜잭션 처리 | 프록시 내부의 `TransactionInterceptor` | `JpaTransactionManager` | 호출된 메서드의 `@Transactional` 설정을 해석하고 시작·참여·완료를 요청 | 보통 싱글톤 인프라 |
 | 트랜잭션 관리자 | `JpaTransactionManager` | `EntityManagerFactory`, 현재 트랜잭션 자원 | 대상 `EntityManager` 준비, 바인딩, commit·rollback | 보통 싱글톤 |
 | Repository | `OrderRepository` 프록시 | `SimpleJpaRepository`, 쿼리 실행기, 사용자 구현 | 인터페이스 구현 및 메서드별 실행 전략 선택 | 보통 싱글톤 |
 | JPA 팩토리 | `EntityManagerFactory` | Hibernate 팩토리 구현 | 대상 `EntityManager` 생성 | 애플리케이션 동안 싱글톤, 스레드 안전 |
@@ -260,48 +260,68 @@ OrderService 대상 객체
 
 ### 5.2 메서드 호출: 이미 만들어진 프록시가 트랜잭션을 적용하는 시점
 
-HTTP 요청 시점에는 프록시 적용 대상을 처음 판별하거나 프록시를 새로 만들지 않는다. 컨트롤러에 이미 주입되어 있던 프록시가 호출을 가로채고, 호출된 메서드에 적용할 인터셉터 체인을 실행한다. 그 체인에 포함된 `TransactionInterceptor`가 실행되면 `TransactionAttributeSource`를 통해 이번에 호출된 메서드의 트랜잭션 속성을 조회한다. 초기화 과정의 적용 가능 여부 검사에서 분석한 메타데이터가 캐시되어 재사용될 수 있다.
+HTTP 요청 시점에는 프록시를 새로 만들지 않는다. 컨트롤러가 `orderService.create()`를 호출하면 그 호출은 실제 `OrderService` 대상 객체보다 먼저 컨트롤러에 주입되어 있던 프록시에 도착한다. 프록시는 호출된 메서드가 `create()`라는 정보를 얻고, 이 호출에 트랜잭션 기능이 필요한지 확인한다. `create()`에는 `@Transactional`이 있으므로 프록시는 `TransactionInterceptor`를 거쳐 실제 대상 메서드로 진행한다.
+
+Spring AOP에서 **인터셉터**는 실제 메서드 호출 앞뒤에서 부가 기능을 수행하는 객체다. 로깅·보안·트랜잭션처럼 여러 인터셉터가 적용되면 프록시는 이들을 정해진 순서대로 실행한다. 이 순서 목록을 **인터셉터 체인**이라고 한다. 따라서 “`create()`에 인터셉터 체인을 적용한다”는 말은 `create()`의 코드를 변경한다는 뜻이 아니라, **이번 `create()` 호출을 어떤 인터셉터들을 거쳐 대상 객체로 보낼지 결정한다**는 뜻이다. 현재 흐름에서 핵심 인터셉터는 `TransactionInterceptor`다.
+
+`TransactionInterceptor.invoke(...)`의 `invoke()`는 `OrderService`의 메서드가 아니다. `TransactionInterceptor`가 Spring AOP의 `MethodInterceptor`로서 메서드 호출을 전달받을 때 실행되는 진입 메서드다. 인자로 받는 `MethodInvocation`에는 호출된 메서드, 인자, 대상 객체와 다음 단계로 진행하기 위한 `proceed()`가 들어 있다.
+
+또한 “`create()`의 트랜잭션 속성”은 Java 메서드에 별도의 필드가 생긴다는 뜻이 아니다. `TransactionAttributeSource`가 `create()`에 선언된 `@Transactional`을 읽고, 전파 방식·격리 수준·제한 시간·읽기 전용 여부·롤백 규칙을 Spring 내부의 `TransactionAttribute` 설정 객체로 정리한다는 뜻이다. 아무 옵션 없이 `@Transactional`만 선언해도 `REQUIRED`, 기본 격리 수준, `readOnly = false` 같은 기본 설정이 만들어진다. 이 분석 결과는 캐시되어 재사용될 수 있다.
 
 ```text
 OrderController가 orderService.create() 호출
   ↓
-OrderService AOP 프록시가 create() 호출을 가로챔
-  ↓ create()에 적용할 인터셉터 체인 실행
-TransactionInterceptor.invoke()
-  ↓ TransactionAttributeSource에서 create()의 트랜잭션 속성 조회
-TransactionAttribute
-  └─ 전파 속성, 격리 수준, 제한 시간, 읽기 전용 여부, 롤백 규칙 등
+호출이 실제 OrderService 대상 객체보다 먼저 AOP 프록시에 도착
+  ↓ 프록시가 호출된 메서드가 create()임을 확인
+create()에 @Transactional이 있으므로 TransactionInterceptor를 통해 호출 처리
+  ↓
+TransactionInterceptor.invoke(MethodInvocation)
+  ↓ create()에 선언된 @Transactional 설정을 읽어 해석
+전파 방식, 격리 수준, 제한 시간, 읽기 전용 여부, 롤백 규칙 준비
+  ↓
+JpaTransactionManager에 트랜잭션 시작 또는 참여 요청
+  ↓
+MethodInvocation.proceed()
+  ↓
+실제 OrderService 대상 객체의 create() 실행
 ```
 
 프록시 안의 `TransactionInterceptor`가 하는 일은 개념적으로 다음과 같다.
 
 ```java
-// 1. @Transactional 설정을 바탕으로 새 트랜잭션을 시작하거나 기존 트랜잭션에 참여한다.
-TransactionStatus status =
-        transactionManager.getTransaction(settings);
+public Object invoke(MethodInvocation invocation) {
+    // 1. 프록시가 가로챈 호출에서 OrderService.create() 메서드 정보를 얻는다.
+    Method method = invocation.getMethod();
 
-try {
-    // 2. 실제 OrderService 대상 객체의 메서드를 실행한다.
-    Object result = targetOrderService.create();
+    // 2. create()의 @Transactional을 Spring 내부 트랜잭션 설정으로 해석한다.
+    TransactionAttribute settings =
+            transactionAttributeSource.getTransactionAttribute(method, OrderService.class);
 
-    // 3. 대상 메서드가 정상적으로 끝났으면 커밋을 요청한다.
-    transactionManager.commit(status);
+    // 3. 설정을 바탕으로 새 트랜잭션을 시작하거나 기존 트랜잭션에 참여한다.
+    TransactionStatus status = transactionManager.getTransaction(settings);
 
-    return result;
-} catch (Throwable exception) {
-    // 4. 예외 종류와 @Transactional의 롤백 규칙을 확인한다.
-    if (rollbackRules.requireRollback(exception)) {
-        transactionManager.rollback(status);
-    } else {
+    try {
+        // 4. 다음 인터셉터 또는 실제 OrderService 대상 객체의 create()로 진행한다.
+        Object result = invocation.proceed();
+
+        // 5. 대상 메서드가 정상적으로 끝났으면 커밋을 요청한다.
         transactionManager.commit(status);
-    }
+        return result;
+    } catch (Throwable exception) {
+        // 6. 예외 종류와 @Transactional의 롤백 규칙을 확인한다.
+        if (settings.rollbackOn(exception)) {
+            transactionManager.rollback(status);
+        } else {
+            transactionManager.commit(status);
+        }
 
-    // 5. 트랜잭션을 정리한 뒤 예외를 호출자에게 다시 전달한다.
-    throw exception;
+        // 7. 트랜잭션을 정리한 뒤 예외를 호출자에게 다시 전달한다.
+        throw exception;
+    }
 }
 ```
 
-여기서 `settings`는 전파 속성, 격리 수준, 제한 시간, 읽기 전용 여부, 롤백 규칙 같은 `@Transactional` 설정을 뜻한다. `getTransaction(settings)`이 항상 새 트랜잭션을 만드는 것은 아니다.
+위 코드는 실제 내부 구현을 단순화한 의사 코드다. `settings`는 전파 속성, 격리 수준, 제한 시간, 읽기 전용 여부, 롤백 규칙 같은 `@Transactional` 설정을 뜻한다. `getTransaction(settings)`이 항상 새 트랜잭션을 만드는 것은 아니다.
 
 기본 전파 속성은 `REQUIRED`다.
 
@@ -586,13 +606,13 @@ OrderController.orderService에 AOP 프록시 주입
 HTTP 요청 시작
   ↓
 OrderController
-  ↓
-이미 주입되어 있던 OrderService AOP 프록시가 create() 호출을 가로챔
-  ↓ create()에 적용할 인터셉터 체인 실행
-TransactionInterceptor.invoke()
-  ↓ TransactionAttributeSource에서 create()의 트랜잭션 속성 조회
-TransactionAttribute
-  ↓ 트랜잭션 속성을 사용하여 getTransaction(...) 요청
+  ↓ orderService.create() 호출
+호출이 실제 OrderService 대상 객체보다 먼저 AOP 프록시에 도착
+  ↓ create()에 @Transactional이 있는 것을 확인
+TransactionInterceptor.invoke(MethodInvocation)
+  ↓ create()에 선언된 @Transactional 설정을 읽어 해석
+전파 방식, 격리 수준, 읽기 전용 여부, 롤백 규칙 등 준비
+  ↓ 해석한 설정으로 트랜잭션 시작 또는 참여 요청
 JpaTransactionManager
   ↓ TransactionSynchronizationManager에서 기존 자원 확인
 기존 EntityManagerHolder 없음
@@ -669,15 +689,17 @@ JpaTransactionManager.doCleanupAfterCompletion()
 
 ```text
 OrderService AOP 프록시
-→ 호출을 가로채고 인터셉터 체인을 실행
+→ 실제 대상 객체보다 먼저 메서드 호출을 받음
+→ 호출된 메서드에 필요한 인터셉터를 순서대로 실행
 
 TransactionInterceptor
-→ TransactionAttributeSource에서 호출된 메서드의 트랜잭션 속성을 얻음
-→ 그 속성을 사용하여 트랜잭션 실행 절차를 적용
+→ invoke(MethodInvocation)에서 가로챈 메서드 호출을 전달받음
+→ 호출된 메서드의 @Transactional 설정을 사용하여 트랜잭션 실행 절차를 적용
 
 TransactionAttributeSource
-→ 메서드와 대상 클래스를 기준으로 @Transactional 메타데이터 조회
-→ 전파 속성, 격리 수준, 제한 시간, 읽기 전용 여부, 롤백 규칙 등을 TransactionAttribute로 반환
+→ 메서드와 대상 클래스를 기준으로 @Transactional 설정을 찾음
+→ 전파 방식, 격리 수준, 제한 시간, 읽기 전용 여부, 롤백 규칙을
+  Spring 내부의 TransactionAttribute 설정 객체로 정리하여 반환
 
 JpaTransactionManager
 → 기존 트랜잭션 참여 여부 판단
@@ -740,17 +762,23 @@ private EntityManager entityManager;
 
 ### 9.3 HTTP 요청과 트랜잭션 시작: 대상 EntityManager 준비
 
-HTTP 요청이 들어와 이미 만들어져 있던 `OrderService` AOP 프록시의 `create()`를 호출하면 프록시가 그 호출을 가로채고, `create()`에 적용할 인터셉터 체인을 실행한다. 그 과정에서 `TransactionInterceptor.invoke()`가 호출되고, `TransactionAttributeSource`를 통해 `create()`의 `@Transactional` 메타데이터를 `TransactionAttribute`로 얻는다. 이것은 프록시를 만들지 말지 처음 판단하는 단계가 아니라, 전파 속성·격리 수준·읽기 전용 여부·롤백 규칙 등 이번 호출에 적용할 트랜잭션 정보를 얻는 단계다. `TransactionInterceptor`는 이 정보를 사용하여 `JpaTransactionManager.getTransaction(...)`을 호출한다. 기본 전파 속성 `REQUIRED`에서 현재 스레드에 참여할 기존 트랜잭션이 없다면 `JpaTransactionManager`가 새 트랜잭션을 시작한다.
+HTTP 요청으로 `OrderController`가 `orderService.create()`를 호출하면, 호출은 실제 `OrderService` 대상 객체보다 먼저 이미 주입되어 있던 AOP 프록시에 도착한다. 프록시는 호출된 메서드가 `create()`임을 확인한다. `create()`에는 `@Transactional`이 있으므로 프록시는 `TransactionInterceptor`를 거쳐 호출을 진행한다.
+
+이때 `TransactionInterceptor.invoke(MethodInvocation)`가 실행된다. `MethodInvocation`은 `create()`라는 메서드 정보, 전달된 인자, 대상 객체와 다음 단계로 진행하는 `proceed()`를 담은 호출 정보 객체다. `TransactionInterceptor`는 `TransactionAttributeSource`를 통해 `create()`에 선언된 `@Transactional` 설정을 읽는다. Spring은 이 설정을 내부적으로 `TransactionAttribute`라는 객체로 표현하지만, 이는 Java 메서드에 별도의 속성이나 필드가 생긴다는 의미가 아니다.
+
+해석된 전파 방식·격리 수준·읽기 전용 여부·롤백 규칙 등을 사용하여 `TransactionInterceptor`가 `JpaTransactionManager.getTransaction(...)`을 호출한다. 기본 전파 방식 `REQUIRED`에서 현재 스레드에 참여할 기존 트랜잭션이 없다면 `JpaTransactionManager`가 새 트랜잭션을 시작한다.
 
 ```text
 OrderController
   ↓ orderService.create() 호출
-OrderService AOP 프록시가 create() 호출을 가로챔
-  ↓ create()에 적용할 인터셉터 체인 실행
-TransactionInterceptor.invoke()
-  ↓ TransactionAttributeSource에서 create()의 트랜잭션 속성 조회
-TransactionAttribute
-  ↓ 트랜잭션 속성을 인자로 트랜잭션 요청
+호출이 실제 OrderService 대상 객체보다 먼저 AOP 프록시에 도착
+  ↓ 프록시가 호출된 메서드가 create()임을 확인
+create()에 @Transactional이 있으므로 TransactionInterceptor를 통해 호출 처리
+  ↓
+TransactionInterceptor.invoke(MethodInvocation)
+  ↓ create()에 선언된 @Transactional 설정을 읽어 해석
+전파 방식, 격리 수준, 읽기 전용 여부, 롤백 규칙 등 준비
+  ↓ 해석한 설정을 인자로 트랜잭션 시작 또는 참여 요청
 JpaTransactionManager.getTransaction(...)
   ↓ 내부에서 호출
 JpaTransactionManager.doGetTransaction()
