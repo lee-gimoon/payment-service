@@ -614,9 +614,11 @@ TransactionInterceptor.invoke(MethodInvocation)
 전파 방식, 격리 수준, 읽기 전용 여부, 롤백 규칙 등 준비
   ↓ 해석한 설정으로 트랜잭션 시작 또는 참여 요청
 JpaTransactionManager
-  ↓ TransactionSynchronizationManager에서 기존 자원 확인
-기존 EntityManagerHolder 없음
-  ↓ 새 트랜잭션을 시작해야 하므로 대상 EntityManager 생성 필요
+  ↓ 현재 실행 스레드의 자원 Map 조회
+TransactionSynchronizationManager.getResource(EntityManagerFactory)
+  ↓ 같은 EntityManagerFactory 키에 연결된 Holder 확인
+EntityManagerHolder 없음
+  ↓ 참여할 기존 JPA 트랜잭션 자원이 없으므로 새 트랜잭션 필요
 JpaTransactionManager.doBegin()
   ├─ 대상 EntityManager A 생성
   │    └─ 공유 프록시가 호출을 위임하는 실제 EntityManager 인스턴스
@@ -768,6 +770,19 @@ HTTP 요청으로 `OrderController`가 `orderService.create()`를 호출하면, 
 
 해석된 전파 방식·격리 수준·읽기 전용 여부·롤백 규칙 등을 사용하여 `TransactionInterceptor`가 `JpaTransactionManager.getTransaction(...)`을 호출한다. 기본 전파 방식 `REQUIRED`에서 현재 스레드에 참여할 기존 트랜잭션이 없다면 `JpaTransactionManager`가 새 트랜잭션을 시작한다.
 
+여기서 확인하는 **기존 자원**은 DB의 행이나 Repository 객체처럼 일반적인 의미의 자원이 아니다. 현재 실행 스레드에 이미 연결되어 있는 **같은 `EntityManagerFactory`의 `EntityManagerHolder`**를 뜻한다. `TransactionSynchronizationManager`는 스레드마다 자원 Map을 관리하며, JPA 트랜잭션에서는 `EntityManagerFactory`를 키로 사용하고 대상 `EntityManager`를 담은 `EntityManagerHolder`를 값으로 등록한다.
+
+```text
+현재 실행 스레드의 자원 Map
+
+key: EntityManagerFactory
+  ↓
+value: EntityManagerHolder
+         └─ 대상 EntityManager
+```
+
+바깥쪽 트랜잭션이 먼저 시작되었다면 이 Map에 Holder가 이미 등록되어 있을 수 있다. 기본 전파 방식 `REQUIRED`는 그 Holder가 나타내는 활성 트랜잭션에 참여하여 같은 대상 `EntityManager`와 영속성 컨텍스트를 사용한다. 최초 트랜잭션 호출처럼 Holder가 없다면 새 대상 `EntityManager`와 Holder를 준비한다.
+
 ```text
 OrderController
   ↓ orderService.create() 호출
@@ -782,9 +797,11 @@ TransactionInterceptor.invoke(MethodInvocation)
 JpaTransactionManager.getTransaction(...)
   ↓ 내부에서 호출
 JpaTransactionManager.doGetTransaction()
-  ↓ TransactionSynchronizationManager.getResource(EntityManagerFactory)
-기존 EntityManagerHolder 없음
-  ↓
+  ↓ 현재 실행 스레드의 자원 Map 조회
+TransactionSynchronizationManager.getResource(EntityManagerFactory)
+  ↓ 같은 EntityManagerFactory 키에 연결된 Holder 확인
+EntityManagerHolder 없음
+  ↓ 참여할 기존 JPA 트랜잭션 자원이 없으므로 새 트랜잭션 필요
 JpaTransactionManager.doBegin()
   ├─ createEntityManagerForTransaction()
   │    └─ 대상 EntityManager A 생성
@@ -795,6 +812,8 @@ JpaTransactionManager.doBegin()
   └─ TransactionSynchronizationManager.bindResource(
          EntityManagerFactory, EntityManagerHolder A)
 ```
+
+`EntityManagerHolder`가 조회됐다는 사실만으로 활성 트랜잭션이 있다고 단정하지는 않는다. `JpaTransactionManager`는 Holder가 실제로 활성 트랜잭션을 나타내는지도 확인한다. 현재 프로젝트처럼 OSIV가 비활성화된 일반적인 서비스 트랜잭션 흐름에서는 같은 `EntityManagerFactory`의 활성 Holder를 발견하면 기존 트랜잭션에 참여하고, 위 그림처럼 Holder가 없으면 새 트랜잭션을 시작한다.
 
 여기서 `대상 EntityManager A`는 추상적인 대상을 뜻하지 않는다. `EntityManagerFactory`가 생성했으며, 이후 공유 `EntityManager` 프록시가 `persist()`나 `merge()` 호출을 실제로 넘겨주는 `EntityManager` 인스턴스다.
 
@@ -817,7 +836,7 @@ JpaTransactionManager.doBegin()
 
 `EntityManagerFactory`는 애플리케이션에서 보통 하나를 장기간 공유해도 되는 스레드 안전한 팩토리다. 반면 이 팩토리가 만드는 대상 `EntityManager`는 스레드 안전하지 않으므로 트랜잭션 같은 작업 단위별로 분리한다.
 
-기존 트랜잭션이 있다면 `REQUIRED`는 대상 `EntityManager`를 새로 만들지 않고 기존 트랜잭션과 그 자원에 참여한다.
+같은 `EntityManagerFactory`를 사용하는 활성 트랜잭션이 현재 스레드에 이미 연결되어 있다면 `REQUIRED`는 대상 `EntityManager`를 새로 만들지 않는다. 기존 `EntityManagerHolder`가 보관한 대상 `EntityManager`와 영속성 컨텍스트를 사용하여 그 트랜잭션에 참여한다.
 
 ### 9.4 현재 스레드의 트랜잭션 자원 저장소에 바인딩
 
