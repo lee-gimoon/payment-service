@@ -378,6 +378,16 @@ new OrderRepository(); // 불가능
 
 Spring Data JPA는 애플리케이션 초기화 과정에서 `OrderRepository`를 구현하는 프록시 객체를 만든다. 이 프록시 자체가 Spring Bean으로 서비스 대상 객체에 주입된다.
 
+이 생성은 모든 애플리케이션에서 무조건 일어나는 것이 아니다. 이 프로젝트에는 `spring-boot-starter-data-jpa` 의존성과 `@SpringBootApplication`이 있어 Spring Data JPA 자동 설정이 활성화된다. 그리고 애플리케이션 시작 클래스의 하위 패키지인 Repository 검색 범위 안에 다음 인터페이스가 있기 때문에 `OrderRepository` 빈이 만들어진다.
+
+```java
+public interface OrderRepository
+        extends JpaRepository<PurchaseOrder, String> {
+}
+```
+
+Spring Data JPA는 `JpaRepository`를 통해 `Repository` 계층을 상속한 `OrderRepository`를 발견하여 Repository 빈 정의를 등록한다. 그 빈을 만들 때 `JpaRepositoryFactoryBean`과 `JpaRepositoryFactory`가 Repository 프록시 및 기본 구현체 `SimpleJpaRepository`를 준비한다. 따라서 이 인터페이스가 없다면 `OrderRepository` 프록시와 그 프록시가 사용할 `SimpleJpaRepository`도 생성되지 않는다. 반대로 Spring Data JPA가 없는 일반 Java 애플리케이션에서는 인터페이스만 선언해도 구현체가 자동 생성되지는 않는다.
+
 ```text
 OrderService 대상 객체의 orderRepository
   ↓ 참조하는 객체
@@ -530,7 +540,7 @@ order = orderRepository.save(order);
 
 위 코드에서 `order`는 처음 만든 비관리 객체 A 대신 `merge()`가 반환한 관리 객체 B를 가리키게 된다.
 
-이때 `SimpleJpaRepository`의 `entityManager` 필드에는 특정 대상 `EntityManager`가 아니라 공유 프록시가 들어 있다. 공유 프록시가 현재 트랜잭션의 대상 `EntityManager`를 찾는 과정은 9.5절에서 설명한다.
+이때 `SimpleJpaRepository`의 `entityManager` 필드는 특정 대상 `EntityManager`가 아니라 공유 프록시의 참조를 보관한다. 이 참조를 필드에 직접 주입하는 것은 아니다. Spring Data JPA의 Repository 팩토리가 `SimpleJpaRepository`를 생성하면서 공유 프록시를 생성자로 전달하고, 생성자가 그 참조를 필드에 저장한다. 공유 프록시가 현재 트랜잭션의 대상 `EntityManager`를 찾는 과정은 9.5절에서 설명한다.
 
 ## 9. EntityManager 프록시와 대상 EntityManager의 전체 흐름
 
@@ -539,11 +549,19 @@ order = orderRepository.save(order);
 ```text
 애플리케이션 시작
   ↓
+Spring Data JPA가 OrderRepository extends JpaRepository 발견
+  ↓ OrderRepository용 Repository 빈 정의 등록
 EntityManagerFactory 준비
   ↓
 공유 EntityManager 프록시 생성
   ↓
-SimpleJpaRepository.entityManager 필드에 주입
+JpaRepositoryFactoryBean이 공유 EntityManager 프록시를 전달받음
+  ↓
+JpaRepositoryFactory가 SimpleJpaRepository 생성
+  ↓ 생성자 인자로 공유 EntityManager 프록시 전달
+SimpleJpaRepository.entityManager 필드가 그 참조를 보관
+  ↓
+OrderRepository 프록시 생성 및 Spring Bean으로 노출
   ↓
 OrderService 대상 객체 생성 및 OrderRepository 프록시 주입
   ↓
@@ -659,17 +677,37 @@ EntityManagerFactory
 
 ### 9.2 애플리케이션 시작: 공유 EntityManager 프록시 준비
 
-애플리케이션이 시작되면 `EntityManagerFactory`와 공유 `EntityManager` 프록시가 준비된다. Spring Data JPA는 이 공유 프록시를 `SimpleJpaRepository`의 `entityManager` 필드에 넣는다.
+애플리케이션이 시작되면 먼저 Repository 설정 단계에서 `OrderRepository` 인터페이스가 검색되어 Repository 빈 정의가 등록된다. 이후 빈을 실제로 만드는 과정에서 `EntityManagerFactory`와 공유 `EntityManager` 프록시가 준비된다.
+
+공유 프록시가 `SimpleJpaRepository`의 필드에 직접 주입되는 것은 아니다. `JpaRepositoryFactoryBean`이 컨테이너 관리 `EntityManager` 참조인 공유 프록시를 전달받고, 여기서 만든 `JpaRepositoryFactory`가 `SimpleJpaRepository`를 생성할 때 생성자 인자로 넘긴다. `SimpleJpaRepository` 생성자가 그 참조를 자신의 `entityManager` 필드에 저장한다.
 
 ```text
+Repository 설정 및 검색
+  ↓
+OrderRepository extends JpaRepository 발견
+  ↓
+OrderRepository용 JpaRepositoryFactoryBean 빈 정의 등록
+
+빈 생성
+  ↓
 EntityManagerFactory 준비
   ↓
 공유 EntityManager 프록시 생성
   ↓
-SimpleJpaRepository.entityManager 필드에 주입
+JpaRepositoryFactoryBean이 공유 프록시를 전달받음
+  ↓
+JpaRepositoryFactory 생성
+  ↓
+SimpleJpaRepository 생성
+  ↓ 생성자 인자로 공유 프록시 전달
+SimpleJpaRepository.entityManager 필드가 공유 프록시 참조를 보관
+  ↓
+OrderRepository 프록시 생성 및 Spring Bean으로 노출
 ```
 
 이때 만들어지는 공유 프록시는 특정 대상 `EntityManager`를 고정해서 보관하지 않는다. 여러 요청이 하나의 프록시를 함께 사용하며, 실제 메서드가 호출되는 시점에 현재 실행 문맥에 맞는 대상을 찾는다.
+
+`OrderRepository` 프록시와 `SimpleJpaRepository`는 `OrderRepository` 인터페이스 선언 때문에 준비된다. 공유 `EntityManager` 프록시는 JPA 인프라가 제공하는 컨테이너 관리 참조이므로 Repository 외에도 `@PersistenceContext` 같은 다른 주입 지점에서 사용될 수 있다.
 
 `@PersistenceContext`로 애플리케이션 코드에 `EntityManager`를 주입받을 때도 일반적으로 같은 성격의 컨테이너 관리 공유 프록시가 주입된다.
 
