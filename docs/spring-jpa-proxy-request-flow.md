@@ -631,7 +631,7 @@ AbstractPlatformTransactionManager가 현재 상태에 전파 규칙 적용
   ↓
 JpaTransactionManager.doBegin()
   ├─ createEntityManagerForTransaction()
-  │    └─ 대상 EntityManager A 생성
+  │    └─ 대상 EntityManager A 생성 (새 JPA 트랜잭션을 시작하고 영속성 컨텍스트를 관리하기 위해)
   │         공유 프록시가 이후 호출을 위임할 실제 EntityManager 인스턴스
   ├─ new EntityManagerHolder(대상 EntityManager A)
   │    └─ 대상 EntityManager A 보관
@@ -846,7 +846,7 @@ AbstractPlatformTransactionManager가 현재 상태에 전파 규칙 적용
   ↓
 JpaTransactionManager.doBegin()
   ├─ createEntityManagerForTransaction()
-  │    └─ 대상 EntityManager A 생성
+  │    └─ 대상 EntityManager A 생성 (새 JPA 트랜잭션을 시작하고 영속성 컨텍스트를 관리하기 위해)
   │         공유 프록시가 이후 호출을 위임할 실제 EntityManager 인스턴스
   ├─ new EntityManagerHolder(대상 EntityManager A)
   │    └─ 대상 EntityManager A 보관
