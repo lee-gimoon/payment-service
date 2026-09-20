@@ -73,24 +73,31 @@ Spring Data JPA
 
 ```text
 Spring Data JPA
+├─ 소스 폴더: <STACK>\spring-data-jpa-main, <STACK>\spring-data-commons
 └─ Repository 인터페이스를 프록시와 SimpleJpaRepository에 연결
 
 JPA
+├─ 소스 폴더: <STACK>\persistence-main
 └─ EntityManager 등의 표준 인터페이스만 정의
 
 Hibernate
+├─ 소스 폴더: <STACK>\hibernate-orm
 └─ EntityManager의 실제 구현체 SessionImpl, SQL 생성과 영속성 컨텍스트 담당
 
 JDBC
+├─ 소스 폴더: <STACK>\jdk\src\java.sql
 └─ DataSource, Connection, PreparedStatement 등의 Java 표준 인터페이스
 
 HikariCP
+├─ 소스 폴더: <STACK>\HikariCP
 └─ JDBC Connection과 PreparedStatement를 감싸는 풀 프록시
 
 pgjdbc
+├─ 소스 폴더: <STACK>\pgjdbc
 └─ JDBC 인터페이스를 PostgreSQL 프로토콜로 구현한 실제 드라이버
 
 PostgreSQL
+├─ 소스 폴더: <STACK>\postgres (현재 없음)
 └─ SQL을 파싱·계획·실행하고 데이터와 WAL을 저장하는 서버
 ```
 
