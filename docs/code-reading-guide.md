@@ -21,6 +21,8 @@ return OrderResponse.of(order, null);
 
 React의 [tossPayments.ts](../frontend/src/payments/tossPayments.ts)가 공식 `@tosspayments/tosspayments-sdk` 패키지로 토스 결제창을 엽니다.
 
+여기서 React와 토스 JS SDK의 역할은 구분됩니다. React는 버튼과 주문 상태를 관리하고, 브라우저 안에서 실행되는 SDK는 React가 넘긴 값으로 토스 결제창 요청을 만듭니다. SDK는 별도 서버가 아니며 시크릿 키도 사용하지 않습니다.
+
 ```typescript
 const tossPayments = await loadTossPayments(clientKey);
 const payment = tossPayments.payment({ customerKey: ANONYMOUS });

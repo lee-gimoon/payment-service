@@ -16,6 +16,7 @@
 sequenceDiagram
     actor User as 사용자
     participant React
+    participant SDK as 토스 JS SDK<br/>(브라우저)
     participant Server as Spring Boot
     participant DB as PostgreSQL
     participant Toss as 토스페이먼츠
@@ -24,7 +25,8 @@ sequenceDiagram
     React->>Server: POST /orders
     Server->>DB: 주문번호·금액 저장
     Server-->>React: orderId, amount
-    React->>Toss: SDK requestPayment()
+    React->>SDK: requestPayment(orderId, amount, URLs)
+    SDK->>Toss: 결제창 요청
     Toss->>User: 카드·간편결제 인증
     Toss-->>React: successUrl (paymentKey, orderId, amount)
     React->>Server: POST /payments/confirm
@@ -34,6 +36,8 @@ sequenceDiagram
     Server->>DB: 승인 완료 저장
     Server-->>React: SUCCEEDED
 ```
+
+토스 JS SDK는 별도로 배포하는 서버가 아니라 React와 같은 브라우저에서 실행되는 라이브러리입니다. React가 전달한 결제 정보를 토스 형식으로 요청하고 결제창을 여는 역할이 분명하므로 흐름에서는 별도 참여자로 표시했습니다.
 
 **successUrl에 도착한 것은 인증 성공입니다.** 서버가 승인 API의 결과를 확인하고 저장해야 결제 완료입니다. 인증에 실패하면 failUrl로 돌아와 오류를 표시하며 승인 API를 호출하지 않습니다.
 

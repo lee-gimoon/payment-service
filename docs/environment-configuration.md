@@ -7,6 +7,7 @@
 | 구성 요소 | 실행 위치 | 역할 |
 |---|---|---|
 | React 클라이언트 | 로컬 Vite 개발 서버 | React 화면 제공 및 API 요청 전달 |
+| 토스 JS SDK | 사용자 브라우저의 React 번들 | 결제 요청을 토스에 전달하고 결제창 실행 |
 | Spring Boot 서버 | 로컬 Windows JVM | 주문·결제 REST API 처리 |
 | PostgreSQL | Docker 컨테이너 | 주문·결제 데이터 저장 |
 | pgAdmin | Docker 컨테이너 | PostgreSQL을 관리하는 웹 화면 제공 |
@@ -219,17 +220,20 @@ volumes:
 
 ```text
 브라우저의 React 클라이언트
+  ├─ 토스 JS SDK ── requestPayment ──▶ 토스페이먼츠 결제창
   │
   └─ Vite 개발 서버 127.0.0.1:5173
              │ API 프록시
              ▼
        Spring Boot 127.0.0.1:8080
-             │ application.yml의 datasource 설정
-             ▼
-       localhost:5432
+             ├─ 승인·조회 API ──▶ 토스페이먼츠 API
              │
-             ▼
-       Docker PostgreSQL
+             └─ application.yml의 datasource 설정
+                         ▼
+                   localhost:5432
+                         │
+                         ▼
+                   Docker PostgreSQL
 
 브라우저의 pgAdmin 화면
   │
