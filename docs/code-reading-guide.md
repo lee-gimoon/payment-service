@@ -29,7 +29,7 @@ const payment = tossPayments.payment({ customerKey: ANONYMOUS });
 await payment.requestPayment({ /* 주문번호·금액·successUrl·failUrl */ });
 ```
 
-`ANONYMOUS`는 비회원 구매자이고, `orderId`는 주문번호입니다. `method: "CARD"` 통합결제창에서는 카드와 간편결제를 선택할 수 있습니다. 인증을 끝내면 토스가 브라우저에 `paymentKey`, `orderId`, `amount`를 돌려줍니다.
+`ANONYMOUS`는 비회원 구매자이고, `orderId`는 주문번호입니다. `method: "CARD"` 통합결제창에서는 카드와 간편결제를 선택할 수 있습니다. 인증에 성공하면 토스가 브라우저를 `successUrl`로 이동시키며 `paymentKey`, `orderId`, `amount`를 쿼리 파라미터로 전달합니다. 실패하면 `failUrl`로 이동시키며 `code`, `message`를 전달합니다.
 
 인증은 토스 결제창에서 진행합니다. 이 단계가 끝났다고 서버의 결제 승인까지 완료된 것은 아닙니다. [paymentRedirect.ts](../frontend/src/payments/paymentRedirect.ts)가 복귀 URL을 읽고, [PaymentResultPage.tsx](../frontend/src/pages/PaymentResultPage.tsx)가 승인 요청을 보냅니다. 인증 실패 시에는 URL의 오류 코드·메시지를 표시하며 승인을 요청하지 않습니다.
 
@@ -64,7 +64,7 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 | --- | --- | --- |
 | 1 | [OrderController](../src/main/java/com/example/payment/order/OrderController.java) | 요청 URL과 서비스 호출 |
 | 2 | [OrderService](../src/main/java/com/example/payment/order/OrderService.java) | 주문 객체 생성과 저장 |
-| 3 | [PaymentController](../src/main/java/com/example/payment/payment/PaymentController.java) | 인증 결과 JSON 받기 |
+| 3 | [PaymentController](../src/main/java/com/example/payment/payment/PaymentController.java) | 인증 성공 후 승인 요청 JSON 받기 |
 | 4 | [PaymentService](../src/main/java/com/example/payment/payment/PaymentService.java) | confirm()의 1~6번 |
 | 5 | [TossPaymentClient](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | confirm()의 HTTP 요청 |
 | 6 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java), [Payment](../src/main/java/com/example/payment/payment/Payment.java) | DB에 저장하는 필드 |

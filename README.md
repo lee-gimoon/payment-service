@@ -39,7 +39,9 @@ sequenceDiagram
 
 토스 JS SDK는 별도로 배포하는 서버가 아니라 React와 같은 브라우저에서 실행되는 라이브러리입니다. React가 전달한 결제 정보를 토스 형식으로 요청하고 결제창을 여는 역할이 분명하므로 흐름에서는 별도 참여자로 표시했습니다.
 
-**successUrl에 도착한 것은 인증 성공입니다.** 서버가 승인 API의 결과를 확인하고 저장해야 결제 완료입니다. 인증에 실패하면 failUrl로 돌아와 오류를 표시하며 승인 API를 호출하지 않습니다.
+사용자가 인증을 마치면 토스는 브라우저를 `successUrl` 또는 `failUrl`로 이동시킵니다. `successUrl`에는 최종 승인에 필요한 `paymentKey`, `orderId`, `amount`가 포함됩니다.
+
+**successUrl에 도착한 것은 결제수단 인증 성공이지 결제 완료가 아닙니다.** 서버가 승인 API의 결과를 확인하고 저장해야 결제 완료입니다. 인증에 실패하면 `failUrl`로 이동해 오류를 표시하며 승인 API를 호출하지 않습니다.
 
 서버는 브라우저의 금액을 DB의 주문 금액과 비교하고, 토스에는 DB의 금액으로 승인을 요청합니다. 클라이언트 키는 브라우저에서 사용하고 시크릿 키는 서버에만 둡니다.
 
@@ -92,15 +94,15 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 | POST | `/orders` | 서버가 정한 상품·금액으로 주문 생성 |
 | GET | `/orders/{orderId}` | DB에 저장된 주문·결제 조회 |
 | GET | `/payment-config` | 공개 클라이언트 키와 결제 가능 여부 |
-| POST | `/payments/confirm` | 인증 결과 검증 후 토스 승인 |
+| POST | `/payments/confirm` | 인증 성공 후 받은 값을 검증하고 토스에 최종 승인 요청 |
 | POST | `/payments/{orderId}/reconcile` | 불명확한 결과를 토스에서 다시 조회 |
 
-승인 요청은 다음 세 값을 받습니다. `paymentKey`는 실제 테스트 결제창의 인증 결과를 사용합니다.
+승인 요청은 다음 세 값을 받습니다. `paymentKey`는 인증 성공 후 `successUrl`로 받은 값을 사용합니다.
 
 ```json
 {
   "orderId": "서버가 생성한 주문번호",
-  "paymentKey": "토스 인증 결과로 받은 키",
+  "paymentKey": "successUrl로 받은 토스 결제 키",
   "amount": 10000
 }
 ```
