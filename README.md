@@ -1,338 +1,171 @@
 # Payment Service
 
-토스페이먼츠 결제 승인 흐름을 Spring Boot REST API와 React 클라이언트로 구현한 학습용 MVP입니다. 자바 초보자가 주문 생성 → 카드 인증 → 결제 승인 → 결과 조회를 따라갈 수 있도록 서비스 코드를 순서대로 구성했습니다. 먼저 [코드 읽는 순서](docs/code-reading-guide.md)를 참고하세요.
+토스페이먼츠의 기본 결제 흐름을 배우는 Spring Boot + React MVP입니다. **티셔츠 1장, 10,000원 주문 → 결제수단 인증 → 서버 승인 → 결과 조회**만 다룹니다.
 
-> 이 프로젝트는 로컬 개발과 학습을 위한 예제입니다. 인증과 주문별 접근 제어가 없으므로 그대로 운영 환경에 배포하지 마세요.
+먼저 [기본 결제 흐름](docs/payment-domain.md)을 읽고, [코드 읽는 순서](docs/code-reading-guide.md)대로 따라가세요.
 
-## 주요 기능
+## 어떤 토스 연동인가요?
 
-- 서버가 상품, 수량, 금액을 결정하는 주문 생성
-- 토스페이먼츠 테스트 API를 이용한 카드 결제 승인
-- 주문별 결제 1건 및 결제 키 유일성 보장
-- `Idempotency-Key`를 이용한 중복 승인 방지
-- 데이터베이스 트랜잭션과 외부 PG 호출 분리
-- 응답이 불명확하거나 중단된 결제의 수동 결과 재확인
-- React, TypeScript, React Router로 구성한 단일 페이지 테스트 결제 클라이언트
-- Swagger UI 기반 API 문서
-- PostgreSQL, pgAdmin을 포함한 Docker Compose 개발 환경
-- Testcontainers 기반 통합 테스트
+기존 구현에 맞춰 **SDK v2의 카드·간편결제 통합결제창**과 API 개별 연동 테스트 키를 사용합니다. 공식 문서에서는 이 제품을 **결제창(구버전)**이라고 부릅니다. SDK v1을 사용한다는 뜻은 아닙니다.
 
-## 기술 스택
+토스가 신규 연동에 권장하는 제품은 **주문서형·결제창형 결제(기존 결제위젯)**입니다. 이 MVP는 기존 결제창의 공식 가이드를 따르며, 두 제품의 SDK 메서드와 키를 섞지 않습니다. [현재 구현의 연동 가이드](https://docs.tosspayments.com/guides/v2/payment-window/integration), [신규 권장 제품](https://docs.tosspayments.com/guides/v2/payment-widget)
 
-| 구분 | 기술 |
-| --- | --- |
-| Language | Java 21 |
-| Framework | Spring Boot 4.1.1, Spring MVC, Spring Data JPA |
-| Frontend | React 19, React Router, TypeScript 7, Vite 8 |
-| Database | PostgreSQL 18, Flyway |
-| API documentation | OpenAPI 3, Swagger UI, springdoc-openapi |
-| Test | JUnit 5, Spring Boot Test, Testcontainers |
-| Local infrastructure | Docker Compose, pgAdmin 4 |
-| Payment gateway | Toss Payments API |
-
-## 아키텍처
-
-```mermaid
-flowchart TB
-    subgraph Frontend["Frontend"]
-        Browser["React SPA · 브라우저<br/>React Router · Toss SDK"]
-        Vite["Vite<br/>개발 서버 · API 프록시"]
-    end
-
-    subgraph Backend["Backend"]
-        API["Spring Boot<br/>주문 · 결제 서비스"]
-    end
-
-    subgraph Infrastructure["Docker Compose"]
-        DB[("PostgreSQL")]
-        Admin["pgAdmin"]
-    end
-
-    subgraph External["Toss Payments"]
-        Checkout["결제창 · 카드 인증"]
-        PaymentAPI["결제 REST API"]
-    end
-
-    Browser <-->|"화면 · API 요청/응답"| Vite
-    Vite <-->|"주문 · 결제 요청/응답"| API
-    API <-->|"데이터 저장 · 조회"| DB
-    Admin -.->|"DB 관리"| DB
-
-    Browser -->|"결제창 실행"| Checkout
-    Checkout -->|"인증 결과 · 화면 복귀"| Browser
-    API -->|"결제 승인 · 조회 요청"| PaymentAPI
-    PaymentAPI -->|"처리 결과 응답"| API
-```
-
-## 결제 흐름
+## 기본 결제 흐름
 
 ```mermaid
 sequenceDiagram
     actor User as 사용자
-    participant Client as React Client
+    participant React
     participant Server as Spring Boot
     participant DB as PostgreSQL
-    participant Checkout as Toss 결제창
-    participant Toss as Toss 결제 API
+    participant Toss as 토스페이먼츠
 
-    User->>Client: 주문 만들기
-    Client->>Server: POST /orders
-    Server->>DB: 주문번호와 결제 금액 저장
-    DB-->>Server: 저장 완료
-    Server-->>Client: orderId와 amount
-
-    User->>Client: 결제 버튼 클릭
-    Client->>Checkout: requestPayment(orderId, amount)
-    Checkout->>User: 카드 인증 요청
-    User->>Checkout: 카드 인증
-    Checkout-->>Client: 인증 결과와 함께 /payment/result로 이동
-
-    Client->>Server: POST /payments/confirm<br/>paymentKey, orderId, amount
-    Server->>DB: 주문 조회 · 금액 검증<br/>PROCESSING 저장
-    DB-->>Server: 트랜잭션 커밋
-    Server->>Toss: POST /v1/payments/confirm<br/>Idempotency-Key
-    Toss-->>Server: 승인 결과
-    Server->>DB: 최종 결제 상태 저장
-    DB-->>Server: 저장 완료
-    Server-->>Client: 주문과 결제 상태
+    User->>React: 주문 만들기
+    React->>Server: POST /orders
+    Server->>DB: 주문번호·금액 저장
+    Server-->>React: orderId, amount
+    React->>Toss: SDK requestPayment()
+    Toss->>User: 카드·간편결제 인증
+    Toss-->>React: successUrl (paymentKey, orderId, amount)
+    React->>Server: POST /payments/confirm
+    Server->>DB: 주문 금액 비교·paymentKey 저장
+    Server->>Toss: POST /v1/payments/confirm
+    Toss-->>Server: 승인 결과 (DONE)
+    Server->>DB: 승인 완료 저장
+    Server-->>React: SUCCEEDED
 ```
 
-현재 코드와 DB 컬럼은 [코드 읽는 순서](docs/code-reading-guide.md)에 정리했습니다. [이전 확장 설계](docs/payment-domain.md)는 이후 학습을 위한 참고 자료입니다.
+**successUrl에 도착한 것은 인증 성공입니다.** 서버가 승인 API의 결과를 확인하고 저장해야 결제 완료입니다. 인증에 실패하면 failUrl로 돌아와 오류를 표시하며 승인 API를 호출하지 않습니다.
 
-## 시작하기
+서버는 브라우저의 금액을 DB의 주문 금액과 비교하고, 토스에는 DB의 금액으로 승인을 요청합니다. 클라이언트 키는 브라우저에서 사용하고 시크릿 키는 서버에만 둡니다.
 
-### 사전 요구사항
+## 실행하기
 
-- Java 21
-- Node.js 20.19 이상과 npm
-- Docker Desktop 또는 Docker Engine과 Docker Compose
+준비: Java 21, Node.js 22.18 이상, npm, 실행 중인 Docker Desktop.
 
-### 1. 저장소 복제
-
-```powershell
-git clone https://github.com/lee-gimoon/payment-service.git
-cd payment-service
-```
-
-### 2. 로컬 인프라 실행
+### 1. PostgreSQL과 pgAdmin
 
 ```powershell
 docker compose up -d
 ```
 
-이 명령은 PostgreSQL과 pgAdmin을 실행합니다. 데이터는 Docker 볼륨에 보존되므로 `docker compose down` 후 다시 실행해도 유지됩니다.
+### 2. 토스 키 설정 후 백엔드 실행
 
-### 3. 토스페이먼츠 테스트 키 설정
-
-주문 생성과 조회만 확인할 때는 생략할 수 있습니다. 실제 결제 승인 흐름을 실행하려면 토스페이먼츠 개발자센터의 같은 테스트 상점에서 발급한 **API 개별 연동 키**를 설정하세요.
+토스 개발자센터에서 **같은 테스트 상점의 API 개별 연동 키**를 가져옵니다. 키를 설정한 터미널에서 서버를 실행하세요.
 
 ```powershell
 $env:TOSS_CLIENT_KEY = 'test_ck_로 시작하는 클라이언트 키'
 $env:TOSS_SECRET_KEY = 'test_sk_로 시작하는 시크릿 키'
-```
-
-macOS와 Linux에서는 다음과 같이 설정합니다.
-
-```bash
-export TOSS_CLIENT_KEY='test_ck_로 시작하는 클라이언트 키'
-export TOSS_SECRET_KEY='test_sk_로 시작하는 시크릿 키'
-```
-
-결제위젯 키인 `test_gck_`와 `test_gsk_`는 사용할 수 없습니다. 키를 소스 코드나 Git에 커밋하지 마세요.
-
-### 4. Spring Boot API 실행
-
-```bash
-./gradlew bootRun
-```
-
-Windows PowerShell에서는 다음 명령을 사용합니다.
-
-```powershell
 .\gradlew.bat bootRun
 ```
 
-### 5. React 클라이언트 실행
+macOS/Linux에서는 `export TOSS_CLIENT_KEY='...'`, `export TOSS_SECRET_KEY='...'`를 설정하고 `./gradlew bootRun`을 실행합니다.
 
-새 터미널에서 다음 명령을 실행합니다.
+키가 둘 다 없으면 주문 생성·조회만 가능합니다. 이 프로젝트는 개별 연동 테스트 키만 허용하므로 `live_` 키나 주문서형·결제창형용 `test_gck_`, `test_gsk_` 키를 넣으면 시작 시 검증에 실패합니다. 시크릿 키를 프런트엔드나 Git에 넣지 마세요.
+
+### 3. 다른 터미널에서 프런트엔드 실행
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Vite 개발 서버는 `/orders`, `/payments`, `/payment-config` 요청을 `127.0.0.1:8080`의 Spring Boot API로 전달합니다. Spring Boot와 Vite를 실행한 상태에서 다음 주소를 사용할 수 있습니다.
+| 화면 | 주소 |
+| --- | --- |
+| 테스트 스토어 | [127.0.0.1:5173](http://127.0.0.1:5173) |
+| Swagger UI | [127.0.0.1:8080/swagger-ui.html](http://127.0.0.1:8080/swagger-ui.html) |
+| pgAdmin | [127.0.0.1:5050](http://127.0.0.1:5050) |
 
-| 서비스 | 주소 | 설명 |
+pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입니다. Vite가 API 요청을 Spring Boot의 8080 포트로 전달합니다.
+
+스토어에서 주문을 만들고 테스트 결제를 진행하세요. 인증 후 바로 승인하며, 결과 화면과 주문 조회의 상태가 같은지 확인합니다. 개인 테스트 상점 키라면 개발자센터 결제내역도 함께 확인할 수 있습니다. 테스트 키로 진행한 결제는 실제 청구되지 않습니다.
+
+## API와 상태
+
+| Method | Endpoint | 역할 |
 | --- | --- | --- |
-| React Store | [http://127.0.0.1:5173](http://127.0.0.1:5173) | 결제 흐름을 확인하는 React 화면 |
-| Swagger UI | [http://127.0.0.1:8080/swagger-ui.html](http://127.0.0.1:8080/swagger-ui.html) | API 명세 확인 및 직접 호출 |
-| pgAdmin | [http://127.0.0.1:5050](http://127.0.0.1:5050) | PostgreSQL 관리 화면 |
+| POST | `/orders` | 서버가 정한 상품·금액으로 주문 생성 |
+| GET | `/orders/{orderId}` | DB에 저장된 주문·결제 조회 |
+| GET | `/payment-config` | 공개 클라이언트 키와 결제 가능 여부 |
+| POST | `/payments/confirm` | 인증 결과 검증 후 토스 승인 |
+| POST | `/payments/{orderId}/reconcile` | 불명확한 결과를 토스에서 다시 조회 |
 
-pgAdmin의 로컬 기본 로그인 정보는 다음과 같습니다.
-
-```text
-Email:    admin@payment-service.com
-Password: payment_admin_local
-```
-
-## API
-
-자세한 요청과 응답 스키마는 애플리케이션 실행 후 [Swagger UI](http://127.0.0.1:8080/swagger-ui.html)에서 확인할 수 있습니다.
-
-| Method | Endpoint | 설명 |
-| --- | --- | --- |
-| `POST` | `/orders` | 서버가 정한 상품과 금액으로 주문 생성 |
-| `GET` | `/orders/{orderId}` | 저장된 주문 및 결제 상태 조회 |
-| `GET` | `/payment-config` | 브라우저용 결제 가능 여부와 클라이언트 키 조회 |
-| `POST` | `/payments/confirm` | 결제창 인증 결과를 이용해 결제 승인 |
-| `POST` | `/payments/{orderId}/reconcile` | 처리 중이거나 결과가 불명확한 결제를 토스에서 조회 |
-
-주문 생성 및 조회 예시:
-
-```powershell
-$order = Invoke-RestMethod -Method Post http://127.0.0.1:8080/orders
-Invoke-RestMethod "http://127.0.0.1:8080/orders/$($order.orderId)"
-```
-
-결제 승인 요청 본문:
+승인 요청은 다음 세 값을 받습니다. `paymentKey`는 실제 테스트 결제창의 인증 결과를 사용합니다.
 
 ```json
 {
   "orderId": "서버가 생성한 주문번호",
-  "paymentKey": "결제창 인증으로 발급된 paymentKey",
+  "paymentKey": "토스 인증 결과로 받은 키",
   "amount": 10000
 }
 ```
 
-`paymentKey`는 토스페이먼츠 테스트 결제창의 카드 인증을 완료한 뒤 받은 실제 값을 사용해야 합니다.
-
-### 결제 상태
+아래는 **우리 서비스의 상태**입니다. 토스 원본 상태는 응답의 `pgStatus`에 따로 담습니다.
 
 | 상태 | 의미 |
 | --- | --- |
-| `READY` | 결제 승인 요청 전 |
-| `PROCESSING` | 승인 요청 정보를 저장했고 결과를 기다리는 중 |
-| `SUCCEEDED` | 승인 완료 결과 저장 |
-| `FAILED` | 명시적인 거절 또는 만료 확인 |
-| `UNKNOWN` | 통신 오류나 저장 실패 등으로 결과 재확인 필요 |
+| READY | 주문 생성 후, 서버 승인 요청 전 |
+| PROCESSING | 승인 요청 정보를 저장했고 처리 중 |
+| SUCCEEDED | 주문·키·금액·통화와 토스 DONE 결과를 확인하고 저장 |
+| FAILED | 명시적인 카드 거절 또는 토스 ABORTED·EXPIRED 확인 |
+| UNKNOWN | 통신 오류 등으로 결과 재확인 필요 |
 
-일반 오류 응답은 다음 형식입니다.
+승인·재확인 API는 완료 시 200, 처리 중·미확정 시 202, 확정 실패 시 422와 주문 본문을 반환합니다. 일반 입력 오류·없는 주문·충돌·설정 및 저장 장애는 `{code, message}` 형식으로 400·404·409·503을 반환합니다.
 
-```json
-{
-  "code": "INVALID_REQUEST",
-  "message": "요청 형식과 값을 확인해주세요."
-}
-```
+타임아웃은 실패로 단정하지 않습니다. 먼저 **저장된 결과 조회**, 필요하면 **PG 결과 재확인**을 누르세요. 재확인은 조회 API만 호출하며 새 승인을 요청하지 않습니다. 조회도 불명확하면 UNKNOWN으로 남습니다.
 
-주요 HTTP 상태 코드는 `400`, `404`, `409`, `422`, `503`입니다. 결제 결과가 불명확할 때는 재승인하지 않고 결과 재확인 API를 사용합니다.
+## MVP에서 지키는 규칙
 
-## 학습용 구현과 기본 검증
+- 비회원이므로 공식 SDK의 `ANONYMOUS`를 사용합니다.
+- 주문 금액과 `paymentKey`를 서버에 저장하고 승인 전후 정보를 검증합니다.
+- `CARD` 통합결제창의 카드·간편결제를 처리합니다. 간편결제는 계좌·포인트를 사용할 수도 있습니다.
+- 같은 승인 요청은 저장된 결과를 반환합니다. 다른 결제 키로 기존 주문의 결제를 교체하지 않습니다.
+- UUID 주문번호를 토스의 `Idempotency-Key`로 사용합니다.
+- 토스 [타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)에 따라 API 응답 대기는 60초로 설정합니다.
+- 토스 호출 전후의 DB 저장을 분리하고, 유일성 제약과 `@Version`으로 중복·동시 저장을 검사합니다.
 
-- `PaymentService.confirm()`에서 주문 조회, 금액 비교, 승인 정보 저장, 토스 호출, 결과 저장 순서로 진행합니다.
-- `PaymentTransactions`, 작업 ID, 처리 기한, 주문 조회 잠금과 공통 실행 함수는 제거했습니다.
-- 결제 정보를 먼저 커밋하고 토스를 호출합니다. HTTP 응답을 기다리는 동안 DB 잠금을 유지하지 않습니다.
-- 주문당 결제 한 행과 결제 키 유일성은 DB 제약으로 검사합니다.
-- UUID 주문번호를 토스의 `Idempotency-Key`로 보냅니다.
-- 요청한 주문번호·키·금액과 토스의 승인 결과가 일치하는지 확인합니다.
-- 타임아웃은 결제 실패로 단정하지 않습니다. PROCESSING과 UNKNOWN은 수동 PG 조회로 확인할 수 있습니다.
-- 동시에 도착한 결과는 JPA의 `@Version`으로 검사합니다. 충돌 응답을 받으면 저장된 결과를 다시 조회합니다.
-- 주문 생성 요청의 본문은 읽지 않습니다. 금액을 보내도 서버가 정한 10,000원으로 주문을 만듭니다.
+주문 테이블 5개 컬럼, 결제 테이블 8개 컬럼을 사용합니다. DB 마이그레이션과 상세 동작은 [코드 읽는 순서](docs/code-reading-guide.md)에 있습니다.
 
-DB는 주문 5개 컬럼, 결제 8개 컬럼입니다. V2 마이그레이션이 기존 행을 유지하면서 사용하지 않는 컬럼을 제거합니다. 원화는 API에서 KRW로 반환하고, 프론트의 `attemptId` 응답에는 결제가 있으면 주문번호를 재사용합니다.
-
-취소·환불·웹훅·자동 복구 배치·여러 결제 시도 관리는 이후 확장 범위입니다.
-
-## 환경변수
-
-| 변수 | 기본값 | 설명 |
-| --- | --- | --- |
-| `PAYMENT_DB_URL` | `jdbc:postgresql://localhost:5432/payment_service` | PostgreSQL JDBC URL |
-| `PAYMENT_DB_USERNAME` | `payment` | 데이터베이스 사용자 |
-| `PAYMENT_DB_PASSWORD` | `payment_local` | 로컬 데이터베이스 비밀번호 |
-| `TOSS_CLIENT_KEY` | 없음 | 토스페이먼츠 테스트 클라이언트 키 |
-| `TOSS_SECRET_KEY` | 없음 | 토스페이먼츠 테스트 시크릿 키 |
-| `PAYMENT_BIND_ADDRESS` | `127.0.0.1` | 애플리케이션 바인딩 주소 |
-| `PORT` | `8080` | 애플리케이션 포트 |
-| `PGADMIN_DEFAULT_EMAIL` | `admin@payment-service.com` | 최초 pgAdmin 관리자 이메일 |
-| `PGADMIN_DEFAULT_PASSWORD` | `payment_admin_local` | 최초 pgAdmin 관리자 비밀번호 |
-
-기본 계정과 비밀번호는 `127.0.0.1`에만 공개되는 로컬 개발 환경 전용입니다. 배포 환경에서는 별도 보안 값과 접근 제어를 사용해야 합니다.
+이 프로젝트는 로그인·주문 접근 권한이 없는 로컬 학습 예제입니다. 취소·환불·가상계좌·빌링·웹훅·자동 복구는 구현 범위에 포함하지 않습니다.
 
 ## 테스트
 
-### 백엔드
-
-Docker가 실행 중인 상태에서 다음 명령을 사용합니다.
-
-```bash
-./gradlew clean test bootJar
-```
-
-Windows PowerShell에서는 다음 명령을 사용합니다.
+Docker가 켜진 상태에서 백엔드 테스트와 실행 파일을 빌드합니다.
 
 ```powershell
-.\gradlew.bat clean test bootJar
+.\gradlew.bat test bootJar
 ```
 
-통합 테스트는 Testcontainers가 생성한 별도의 PostgreSQL 컨테이너를 사용하며 로컬 개발 데이터베이스와 분리됩니다. 테스트 PG 응답은 모의 구현을 사용하므로 실제 토스페이먼츠 키가 필요하지 않습니다.
-
-테스트 리포트는 `build/reports/tests/test/index.html`에 생성됩니다.
-
-### 프런트엔드
-
-다음 명령은 TypeScript 타입을 검사하고 배포용 React 파일을 생성합니다.
+통합 테스트는 Testcontainers의 별도 PostgreSQL을 사용합니다. 토스 응답은 모의 응답이며 실제 결제를 만들지 않습니다. 리포트는 `build/reports/tests/test/index.html`입니다.
 
 ```powershell
 cd frontend
+npm test
 npm run build
 ```
 
-## 프로젝트 구조
+프런트엔드는 Node 내장 테스트로 인증 복귀 URL 처리를 확인하고, TypeScript 검사와 Vite 빌드를 수행합니다. 실제 테스트 상점의 카드·간편결제 인증은 브라우저에서 별도로 확인해야 합니다.
 
-```text
-src/main/java/com/example/payment
-├── api/
-│   └── error/    # 공통 API 예외 및 오류 응답 처리
-├── config/       # 애플리케이션, Toss, OpenAPI 설정
-├── gateway/      # 토스페이먼츠 API 연동
-├── order/        # 주문 도메인과 API
-└── payment/      # 결제 승인, 상태 전이 및 재확인
+## 기술과 파일
 
-src/main/resources
-└── db/migration/ # Flyway 데이터베이스 마이그레이션
+Java 21 / Spring Boot 4.1.1 / JPA / PostgreSQL 18 / Flyway / React 19 / TypeScript 7 / Vite 8을 사용합니다.
 
-frontend/src
-├── api/          # Spring Boot REST API 호출
-├── components/   # 재사용 가능한 React 화면 컴포넌트
-├── lib/          # 날짜, 금액, 브라우저 저장소 도우미
-├── pages/        # 스토어 및 결제 결과 페이지
-├── payments/     # 토스 SDK 및 결제 리다이렉트 처리
-└── types/        # API 요청·응답 TypeScript 타입
-
-docker/pgadmin/   # pgAdmin 서버 및 비밀번호 파일
-docs/             # 상세 설계와 개발 환경 문서
-```
+- `order/`: 주문 생성·조회
+- `payment/`: 승인 흐름·저장·수동 재확인
+- `gateway/TossPaymentClient.java`: 토스 승인·조회 HTTP 호출
+- `frontend/src/payments/`: 공식 SDK 호출·복귀 URL 처리
+- `frontend/src/pages/`: 스토어·결제 결과 화면
 
 ## 문서
 
-- [코드 주석과 읽는 순서](docs/code-reading-guide.md)
-- [Spring MVC 요청이 JPA를 거쳐 DB까지 가는 객체와 프록시 흐름](docs/spring-jpa-proxy-request-flow.md)
-- [OrderRepository.save()가 DB까지 도달하는 전체 코드 경로](docs/spring-data-jpa-save-flow.md)
-- [결제 서비스 개발 계획과 도메인 설계](docs/payment-domain.md)
-- [로컬 개발 환경 구성](docs/environment-configuration.md)
-- [환경변수 설정 가이드](docs/environment-variables.md)
-- [토스페이먼츠 결제창 연동 가이드](https://docs.tosspayments.com/guides/v2/payment-window/integration)
-- [토스페이먼츠 API 명세](https://docs.tosspayments.com/reference)
+- [기본 결제 흐름과 MVP 범위](docs/payment-domain.md)
+- [코드 읽는 순서](docs/code-reading-guide.md)
+- [Java·JPA 개념](docs/java-jpa-notes.md)
+- [JPA에서 DB까지의 처리 경로](docs/jpa-database-pipeline.md)
+- [로컬 개발 환경](docs/environment-configuration.md)
+- [환경변수 설정](docs/environment-variables.md)
+- [토스 결제창 SDK](https://docs.tosspayments.com/sdk/v2/js/payment)
+- [토스 API 명세](https://docs.tosspayments.com/reference)
 
-## 로컬 환경 종료
-
-```powershell
-docker compose down
-```
-
-위 명령은 컨테이너와 네트워크만 제거하고 PostgreSQL 및 pgAdmin 볼륨은 유지합니다. `docker compose down -v`는 로컬 데이터까지 삭제하므로 주의하세요.
-
-문제가 발생하거나 개선을 제안하려면 [GitHub Issues](https://github.com/lee-gimoon/payment-service/issues)를 이용해주세요.
+종료할 때 Spring Boot와 Vite 터미널에서 Ctrl+C를 누르고 `docker compose down`을 실행합니다. Docker 볼륨에 DB 데이터가 유지됩니다.

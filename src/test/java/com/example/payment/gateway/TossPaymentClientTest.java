@@ -102,20 +102,31 @@ class TossPaymentClientTest {
     }
 
     /** 승인 요청의 명시적인 카드사 거절은 FAILED로 변환하는지 확인한다. */
-    @Test
-    void explicitCardDeclineIsFailed() {
-        server.expect(requestTo(BASE + "/confirm")).andRespond(withStatus(HttpStatus.BAD_REQUEST)
-                .contentType(MediaType.APPLICATION_JSON).body("{\"code\":\"REJECT_CARD_COMPANY\"}"));
-        assertThat(gateway.confirm(PAYMENT, 10_000)).isEqualTo(PaymentResult.failed("REJECT_CARD_COMPANY"));
+    @ParameterizedTest
+    @CsvSource({"403,REJECT_CARD_COMPANY", "400,INVALID_REJECT_CARD", "400,INVALID_STOPPED_CARD"})
+    void explicitCardDeclineIsFailed(int status, String code) {
+        server.expect(requestTo(BASE + "/confirm")).andRespond(withStatus(HttpStatus.valueOf(status))
+                .contentType(MediaType.APPLICATION_JSON).body("{\"code\":\"" + code + "\"}"));
+        assertThat(gateway.confirm(PAYMENT, 10_000)).isEqualTo(PaymentResult.failed(code));
     }
 
     /** 중복 처리·설정·서버 오류 등 승인 여부를 확정할 수 없는 오류를 UNKNOWN으로 유지하는지 확인한다. */
     @ParameterizedTest
-    @CsvSource({"400,ALREADY_PROCESSED_PAYMENT", "409,IDEMPOTENT_REQUEST_PROCESSING", "401,UNAUTHORIZED_KEY", "500,REJECT_CARD_COMPANY", "429,TOO_MANY_REQUESTS", "400,UNKNOWN_NEW_ERROR"})
+    @CsvSource({"400,ALREADY_PROCESSED_PAYMENT", "409,IDEMPOTENT_REQUEST_PROCESSING", "401,UNAUTHORIZED_KEY", "500,REJECT_CARD_COMPANY", "429,TOO_MANY_REQUESTS", "400,UNKNOWN_NEW_ERROR", "404,NOT_FOUND_PAYMENT_SESSION"})
     void ambiguousErrorsStayUnknown(int status, String code) {
         server.expect(requestTo(BASE + "/confirm")).andRespond(withStatus(HttpStatus.valueOf(status))
                 .contentType(MediaType.APPLICATION_JSON).body("{\"code\":\"" + code + "\"}"));
-        assertThat(gateway.confirm(PAYMENT, 10_000).status()).isEqualTo(PaymentStatus.UNKNOWN);
+        assertThat(gateway.confirm(PAYMENT, 10_000)).isEqualTo(PaymentResult.unknown(code));
+    }
+
+    /** CARD 결제창의 간편결제는 카드·계좌·포인트를 사용할 수 있으므로 card 객체를 강제하지 않는다. */
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "{\"amount\":10000}"})
+    void easyPayApprovalSucceedsWithOrWithoutCard(String card) {
+        String response = DONE.replace("카드", "간편결제")
+                .replace("\"futureField\":\"ignored\"", "\"card\":" + card);
+        server.expect(requestTo(BASE + "/confirm")).andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        assertThat(gateway.confirm(PAYMENT, 10_000).status()).isEqualTo(PaymentStatus.SUCCEEDED);
     }
 
     /** 응답 타임아웃을 카드 거절로 간주하지 않고 통신 오류에 따른 UNKNOWN으로 처리하는지 확인한다. */

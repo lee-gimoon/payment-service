@@ -29,7 +29,7 @@ export function CheckoutCard({
 
   const configMessage = paymentConfig
     ? paymentConfig.enabled
-      ? "테스트 카드 결제를 사용할 수 있습니다."
+      ? "테스트 카드·간편결제를 사용할 수 있습니다."
       : "테스트 결제 준비 중입니다. 주문 생성과 결과 조회는 사용할 수 있습니다."
     : "결제 설정을 확인하고 있습니다.";
 

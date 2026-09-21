@@ -12,11 +12,11 @@ public record OrderResponse(String orderId, String productName, int quantity, lo
     public static OrderResponse of(PurchaseOrder order, Payment payment) {
         PaymentResponse paymentResponse;
         if (payment == null) {
-            paymentResponse = new PaymentResponse(PaymentStatus.READY, null, null, null, null, null,
+            paymentResponse = new PaymentResponse(PaymentStatus.READY, null, null, null, null,
                     "결제 대기 중입니다.", false);
         } else {
             paymentResponse = new PaymentResponse(
-                    payment.getStatus(), payment.getOrderId(), payment.getPgStatus(),
+                    payment.getStatus(), payment.getPgStatus(),
                     payment.getApprovedAt(), payment.getCheckedAt(), payment.getErrorCode(),
                     message(payment.getStatus()), payment.canReconcile());
         }
@@ -34,7 +34,7 @@ public record OrderResponse(String orderId, String productName, int quantity, lo
         };
     }
 
-    /** 프론트가 결제 기록의 존재를 확인하는 attemptId에는 주문번호를 재사용한다. paymentKey는 공개하지 않는다. */
-    public record PaymentResponse(PaymentStatus status, String attemptId, String pgStatus, Instant approvedAt,
+    /** 결제 상태와 결과만 반환한다. 토스 paymentKey는 서버에 보관한다. */
+    public record PaymentResponse(PaymentStatus status, String pgStatus, Instant approvedAt,
                                   Instant checkedAt, String errorCode, String message, boolean canReconcile) {}
 }

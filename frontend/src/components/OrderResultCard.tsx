@@ -51,6 +51,12 @@ export function OrderResultCard({
           <dt>결과 확인 시각</dt>
           <dd>{formatDateTime(order.payment.checkedAt)}</dd>
         </div>
+        {order.payment.errorCode && (
+          <div>
+            <dt>오류 코드</dt>
+            <dd>{order.payment.errorCode}</dd>
+          </div>
+        )}
       </dl>
 
       <div className="actions">

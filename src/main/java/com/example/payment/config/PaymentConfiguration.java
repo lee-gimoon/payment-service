@@ -12,7 +12,7 @@ import org.springframework.web.client.RestClient;
 @Configuration
 @EnableConfigurationProperties(TossProperties.class)
 public class PaymentConfiguration {
-    /** 토스 주소, 시크릿 키 인증, 연결 3초·응답 10초 제한을 한 번 설정한다. */
+    /** 토스 주소, 시크릿 키 인증, 연결 3초·응답 60초 제한을 한 번 설정한다. */
     @Bean
     public RestClient tossRestClient(RestClient.Builder builder, TossProperties properties) {
         HttpClient httpClient = HttpClient.newBuilder()
@@ -20,7 +20,8 @@ public class PaymentConfiguration {
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
-        factory.setReadTimeout(Duration.ofSeconds(10));
+        // 토스 공식 타임아웃 가이드의 결제 API 권장값이다.
+        factory.setReadTimeout(Duration.ofSeconds(60));
         return builder.baseUrl("https://api.tosspayments.com")
                 .requestFactory(factory)
                 .defaultHeaders(headers -> headers.setBasicAuth(properties.secretKey(), ""))

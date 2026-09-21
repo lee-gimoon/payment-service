@@ -2,8 +2,9 @@
 import type { ConfirmPaymentCommand } from "../types/payment";
 import {
   readSessionValue,
+  removeSessionValue,
   writeSessionValue
-} from "../lib/storage";
+} from "../lib/storage.ts";
 
 /** 결제창에서 돌아온 인증 결과 구분이다. success만으로 최종 결제 성공을 의미하지는 않는다. */
 export type PaymentRedirectFlow = "success" | "fail" | null;
@@ -14,6 +15,8 @@ export interface PaymentRedirectState {
   flow: PaymentRedirectFlow;
   confirmation: ConfirmPaymentCommand | null;
   storageKey: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
 }
 
 const ORDER_ID_PATTERN = /^[a-zA-Z0-9_-]{6,64}$/;
@@ -71,8 +74,16 @@ export function readPaymentRedirect(): PaymentRedirectState {
   const flow: PaymentRedirectFlow =
     rawFlow === "success" || rawFlow === "fail" ? rawFlow : null;
   const storageKey = orderId ? `pendingConfirmation:${orderId}` : null;
+  // URL은 신뢰할 수 없으므로 안내에만 쓰고, 서버의 결제 상태는 변경하지 않는다.
+  const errorCode = flow === "fail" ? parameters.get("code")?.slice(0, 80) ?? null : null;
+  const errorMessage = flow === "fail" ? parameters.get("message")?.slice(0, 300) ?? null : null;
 
   let confirmation: ConfirmPaymentCommand | null = null;
+
+  if (flow === "fail" && storageKey) {
+    // 실패 화면을 새로고침해도 예전 인증 정보로 승인을 요청하지 않는다.
+    removeSessionValue(storageKey);
+  }
 
   if (flow === "success" && orderId && storageKey) {
     const paymentKey = parameters.get("paymentKey");
@@ -100,5 +111,5 @@ export function readPaymentRedirect(): PaymentRedirectState {
     : "/payment/result";
   window.history.replaceState(null, "", safeUrl);
 
-  return { orderId, flow, confirmation, storageKey };
+  return { orderId, flow, confirmation, storageKey, errorCode, errorMessage };
 }

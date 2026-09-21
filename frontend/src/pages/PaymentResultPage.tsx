@@ -37,7 +37,7 @@ export function PaymentResultPage() {
   );
   const [title, setTitle] = useState("결제 결과를 확인하고 있습니다.");
   const [message, setMessage] = useState(
-    "카드 인증 후 서버에서 최종 승인 결과를 확인합니다."
+    "결제수단 인증 후 서버에서 최종 승인 결과를 확인합니다."
   );
   const [error, setError] = useState("");
   // 화면용 상태: true이면 JSX의 disabled={busy} 때문에 결과 조회와 재확인 버튼이 비활성화된다.
@@ -58,7 +58,7 @@ export function PaymentResultPage() {
     setError("");
     writeLocalValue(LAST_ORDER_ID_KEY, nextOrder.orderId);
 
-    if (nextOrder.payment.attemptId) {
+    if (nextOrder.payment.status !== "READY") {
       setConfirmation(null);
       if (redirect.storageKey) {
         removeSessionValue(redirect.storageKey);
@@ -110,24 +110,30 @@ export function PaymentResultPage() {
      */
     async function initializeResult() {
       try {
-        if (!redirect.orderId) {
-          throw new Error("주문번호가 없습니다. 스토어에서 주문번호로 조회해주세요.");
-        }
-
         if (redirect.flow === "fail") {
-          const failedOrder = await getOrder(redirect.orderId);
+          const failedOrder = redirect.orderId ? await getOrder(redirect.orderId) : null;
           if (!active) {
             return;
           }
 
-          showOrder(failedOrder);
-          if (failedOrder.payment.status === "READY") {
-            setTitle("카드 인증이 완료되지 않았습니다");
+          if (failedOrder) {
+            showOrder(failedOrder);
+          }
+          if (!failedOrder || failedOrder.payment.status === "READY") {
+            setTitle("결제수단 인증이 완료되지 않았습니다");
             setMessage(
-              "결제창에서 인증이 취소되었거나 실패했습니다. 스토어로 돌아가 다시 진행할 수 있습니다."
+              redirect.errorMessage || "결제창에서 인증이 취소되었거나 실패했습니다. 스토어로 돌아가 다시 진행할 수 있습니다."
             );
+            setError(redirect.errorCode || "");
           }
           return;
+        }
+
+        if (!redirect.orderId) {
+          throw new Error("주문번호가 없습니다. 스토어에서 주문번호로 조회해주세요.");
+        }
+        if (redirect.flow === "success" && !redirect.confirmation) {
+          throw new Error("인증 결과의 결제 키 또는 금액이 올바르지 않습니다. 주문 결과를 조회해주세요.");
         }
 
         const loadedOrder = redirect.confirmation
@@ -217,6 +223,12 @@ export function PaymentResultPage() {
             <dt>승인 시각</dt>
             <dd>{formatDateTime(order?.payment.approvedAt ?? null)}</dd>
           </div>
+          {order?.payment.errorCode && (
+            <div>
+              <dt>오류 코드</dt>
+              <dd>{order.payment.errorCode}</dd>
+            </div>
+          )}
         </dl>
 
         <div className="actions">

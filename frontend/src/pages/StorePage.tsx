@@ -186,7 +186,7 @@ export function StorePage() {
   }
 
   return (
-    <AppShell footerText="주문 → 카드 인증 → 결제 승인 → 결과 확인">
+    <AppShell footerText="주문 → 결제수단 인증 → 결제 승인 → 결과 확인">
       <section className="intro">
         <p className="eyebrow">작은 주문, 완전한 결제 경험</p>
         <h1>

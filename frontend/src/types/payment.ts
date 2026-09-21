@@ -11,7 +11,6 @@ export type PaymentStatus =
 /** 주문 응답에 포함된 결제 요약이다. PG 원본 상태, 확인 시각, 재확인 가능 여부를 함께 받는다. */
 export interface PaymentDetails {
   status: PaymentStatus;
-  attemptId: string | null;
   pgStatus: string | null;
   approvedAt: string | null;
   checkedAt: string | null;

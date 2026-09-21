@@ -102,7 +102,7 @@ class PaymentIntegrationTest {
                 .andExpect(jsonPath("$.payment.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.payment.pgStatus").value("DONE"))
                 .andExpect(jsonPath("$.payment.canReconcile").value(false))
-                .andExpect(jsonPath("$.payment.attemptId").value(id))
+                .andExpect(jsonPath("$.payment.attemptId").doesNotExist())
                 .andExpect(jsonPath("$.payment.paymentKey").doesNotExist());
         mvc.perform(get("/orders/{id}", id)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.payment.status").value("SUCCEEDED"))

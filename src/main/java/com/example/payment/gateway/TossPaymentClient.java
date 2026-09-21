@@ -68,9 +68,9 @@ public class TossPaymentClient {
             return PaymentResult.unknown("PG_RESPONSE_MISMATCH");
         }
 
-        boolean cardPayment = "카드".equals(response.method())
-                || ("간편결제".equals(response.method()) && response.card() != null);
-        if ("DONE".equals(response.status()) && response.approvedAt() != null && cardPayment) {
+        // CARD 통합결제창은 간편결제도 제공한다. 계좌·포인트로 결제하면 card 필드가 없을 수 있다.
+        boolean supportedMethod = "카드".equals(response.method()) || "간편결제".equals(response.method());
+        if ("DONE".equals(response.status()) && response.approvedAt() != null && supportedMethod) {
             return new PaymentResult(PaymentStatus.SUCCEEDED, "DONE", null, response.approvedAt().toInstant());
         }
         if ("ABORTED".equals(response.status()) || "EXPIRED".equals(response.status())) {
@@ -84,8 +84,14 @@ public class TossPaymentClient {
         try {
             TossErrorResponse error = exception.getResponseBodyAs(TossErrorResponse.class);
             if (exception.getStatusCode().is4xxClientError() && error != null
-                    && ("REJECT_CARD_COMPANY".equals(error.code()) || "REJECT_CARD_PAYMENT".equals(error.code()))) {
+                    && ("REJECT_CARD_COMPANY".equals(error.code())
+                    || "INVALID_REJECT_CARD".equals(error.code())
+                    || "INVALID_STOPPED_CARD".equals(error.code()))) {
                 return PaymentResult.failed(error.code());
+            }
+            // 이미 처리된 결제·설정 오류·세션 만료 등은 원인 코드를 보존하고 조회로 확인한다.
+            if (error != null && error.code() != null && !error.code().isBlank() && error.code().length() <= 80) {
+                return PaymentResult.unknown(error.code());
             }
         } catch (RestClientException ignored) {
             // 오류 응답이 JSON이 아니어도 결과 미확정으로 처리한다.
@@ -96,7 +102,7 @@ public class TossPaymentClient {
     /** 토스의 JSON 응답 중 사용하는 필드만 받는다. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record TossPaymentResponse(String paymentKey, String orderId, BigDecimal totalAmount, String currency,
-                               String status, String method, OffsetDateTime approvedAt, Map<String, Object> card) {}
+                               String status, String method, OffsetDateTime approvedAt) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record TossErrorResponse(String code) {}

@@ -47,10 +47,24 @@ Spring Boot의 처리 순서:
 | `PAYMENT_DB_URL` | 접속할 PostgreSQL 주소 | `jdbc:postgresql://localhost:5432/payment_service` |
 | `PAYMENT_DB_USERNAME` | PostgreSQL 사용자 | `payment` |
 | `PAYMENT_DB_PASSWORD` | PostgreSQL 비밀번호 | `payment_local` |
-| `TOSS_CLIENT_KEY` | 토스페이먼츠 클라이언트 키 | 빈 값 |
-| `TOSS_SECRET_KEY` | 토스페이먼츠 시크릿 키 | 빈 값 |
+| `TOSS_CLIENT_KEY` | API 개별 연동 테스트 클라이언트 키 (`test_ck_`) | 빈 값 |
+| `TOSS_SECRET_KEY` | API 개별 연동 테스트 시크릿 키 (`test_sk_`, 서버 전용) | 빈 값 |
 | `PAYMENT_BIND_ADDRESS` | Spring Boot가 요청을 받을 주소 | `127.0.0.1` |
 | `PORT` | Spring Boot 포트 | `8080` |
+
+## 토스 테스트 키 설정
+
+개발자센터의 [API 키 메뉴](https://developers.tosspayments.com/my/api-keys)에서 같은 테스트 상점의 **API 개별 연동 키**를 사용합니다.
+
+```powershell
+$env:TOSS_CLIENT_KEY = 'test_ck_본인의_클라이언트_키'
+$env:TOSS_SECRET_KEY = 'test_sk_본인의_시크릿_키'
+.\gradlew.bat bootRun
+```
+
+이 MVP는 SDK v2의 **결제창(구버전)** 제품을 사용합니다. 주문서형·결제창형용 `test_gck_`, `test_gsk_`나 `live_` 키를 혼용하면 안 됩니다. 둘 다 빈 값이면 주문 기능만 사용하며, 한쪽만 있거나 접두사가 잘못되면 서버가 시작되지 않습니다. 키 접두사 검증만으로 두 키가 실제 같은 상점인지 확인할 수는 없으므로 개발자센터에서 한 쌍을 복사하세요.
+
+시크릿 키는 서버만 사용합니다. React가 읽는 `VITE_*` 변수에 넣거나 파일에 커밋하지 마세요. Spring Boot는 `.env` 파일을 자동으로 읽지 않으므로, 실행할 터미널이나 IntelliJ 실행 설정에 값을 지정합니다.
 
 ## PowerShell에서 설정하기
 
