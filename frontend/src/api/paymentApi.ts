@@ -62,7 +62,7 @@ export function getOrder(orderId: string): Promise<Order> {
 }
 
 /**
- * 카드 인증으로 받은 정보를 POST /payments/confirm에 보내 최종 승인을 요청한다.
+ * 결제수단 인증으로 받은 정보를 POST /payments/confirm에 보내 최종 승인을 요청한다.
  * HTTP 422도 결제 거절 상태를 담은 Order 응답이므로 일반 요청 오류 대신 화면에 표시할 결과로 받는다.
  */
 export function confirmPayment(command: ConfirmPaymentCommand): Promise<Order> {

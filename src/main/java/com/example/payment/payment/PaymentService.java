@@ -11,7 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
- * 카드 인증이 끝난 뒤 결제를 승인한다. confirm()을 위에서 아래로 읽으면 처리 순서를 볼 수 있다.
+ * 결제수단 인증이 끝난 뒤 결제를 승인한다. confirm()을 위에서 아래로 읽으면 처리 순서를 볼 수 있다.
  * saveAndFlush() 호출마다 저장소가 트랜잭션을 처리하므로, 토스 응답을 기다리는 동안 DB 잠금을 잡지 않는다.
  */
 @Service
@@ -53,7 +53,7 @@ public class PaymentService {
         payment = new Payment(order.getId(), request.paymentKey());
         payment = paymentRepository.saveAndFlush(payment);
 
-        // 5. 카드 인증 결과로 토스에 최종 승인을 요청한다.
+        // 5. 결제수단 인증 결과로 토스에 최종 승인을 요청한다.
         PaymentResult result = tossPaymentClient.confirm(payment, order.getAmount());
 
         // 6. 토스의 응답을 결제에 기록하고, 프론트에 주문과 결제 결과를 반환한다.

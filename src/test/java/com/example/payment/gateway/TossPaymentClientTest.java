@@ -45,7 +45,7 @@ class TossPaymentClientTest {
     @BeforeEach
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
-        new PaymentConfiguration().tossRestClient(builder, new TossProperties("test_ck_gateway", "test_sk_gateway"));
+        new PaymentConfiguration().tossRestClient(builder, new TossProperties("test_gck_gateway", "test_gsk_gateway", null, null));
         server = MockRestServiceServer.bindTo(builder).build();
         gateway = new TossPaymentClient(builder.build());
     }
@@ -58,7 +58,7 @@ class TossPaymentClientTest {
     @Test
     void sendsExactContractAndValidatesApproval() {
         server.expect(requestTo(BASE + "/confirm")).andExpect(method(HttpMethod.POST))
-                .andExpect(header("Authorization", "Basic " + Base64.getEncoder().encodeToString("test_sk_gateway:".getBytes(StandardCharsets.UTF_8))))
+                .andExpect(header("Authorization", "Basic " + Base64.getEncoder().encodeToString("test_gsk_gateway:".getBytes(StandardCharsets.UTF_8))))
                 .andExpect(header("Idempotency-Key", "order-123"))
                 .andExpect(content().json(""" 
                         {"orderId":"order-123","paymentKey":"payment-key","amount":10000}
@@ -119,7 +119,7 @@ class TossPaymentClientTest {
         assertThat(gateway.confirm(PAYMENT, 10_000)).isEqualTo(PaymentResult.unknown(code));
     }
 
-    /** CARD 결제창의 간편결제는 카드·계좌·포인트를 사용할 수 있으므로 card 객체를 강제하지 않는다. */
+    /** 결제창형의 간편결제는 카드·계좌·포인트를 사용할 수 있으므로 card 객체를 강제하지 않는다. */
     @ParameterizedTest
     @ValueSource(strings = {"null", "{\"amount\":10000}"})
     void easyPayApprovalSucceedsWithOrWithoutCard(String card) {

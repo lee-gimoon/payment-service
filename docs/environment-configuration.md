@@ -117,13 +117,17 @@ payment:
   toss:
     client-key: ${TOSS_CLIENT_KEY:}
     secret-key: ${TOSS_SECRET_KEY:}
+    payment-method-variant-key: ${TOSS_PAYMENT_METHOD_VARIANT_KEY:}
+    agreement-variant-key: ${TOSS_AGREEMENT_VARIANT_KEY:}
 ```
 
-토스페이먼츠 키를 환경변수에서 가져옵니다. 둘 다 없으면 주문 생성·조회만 사용할 수 있습니다. 결제를 실행하려면 같은 테스트 상점의 **API 개별 연동 키**인 `test_ck_`와 `test_sk_`를 한 쌍으로 설정합니다. 한쪽만 설정하거나 운영 키·주문서형/결제창형용 키를 넣으면 서버 시작 시 검증에 실패합니다.
+토스페이먼츠 키를 환경변수에서 가져옵니다. 둘 다 없으면 주문 생성·조회만 사용할 수 있습니다. 결제를 실행하려면 함께 발급된 **주문서형·결제창형 테스트 키**인 `test_gck_`와 `test_gsk_`를 한 쌍으로 설정합니다. 한쪽만 설정하거나 운영 키·API 개별 연동 키를 넣으면 서버 시작 시 검증에 실패합니다.
 
-현재 구현은 SDK v2의 `payment()`를 사용하는 **결제창(구버전)** 제품입니다. 신규 권장 제품인 주문서형·결제창형의 `widgets()` 설정과 혼용하지 않습니다. [적용한 공식 가이드](https://docs.tosspayments.com/guides/v2/payment-window/integration)
+현재 구현은 SDK v2의 `widgets()`와 `renderPaymentWindow()`를 사용하는 **결제창형 결제** 제품입니다. 선택 사항인 두 `variantKey`는 토스 어드민의 결제수단·약관 UI를 선택합니다. 빈 값이면 SDK 기본 UI를 사용하며, 상점 UI에는 카드·국내 간편결제만 노출하도록 설정하세요. [적용한 공식 가이드](https://docs.tosspayments.com/guides/v2/payment-widget/integration-window)
 
-React는 `/payment-config`로 공개 클라이언트 키만 받습니다. 시크릿 키는 Spring Boot의 토스 API 호출에만 사용합니다. 실제 키를 Git이나 `VITE_*` 환경변수에 저장하지 마세요. [키 설정 예시](environment-variables.md#토스-테스트-키-설정)
+React는 `/payment-config`로 사용 가능 여부, 공개 클라이언트 키, 두 UI variantKey를 받습니다. 시크릿 키는 Spring Boot의 토스 API 호출에만 사용합니다. 실제 키를 Git이나 `VITE_*` 환경변수에 저장하지 마세요. [키 설정 예시](environment-variables.md#토스-테스트-키-설정)
+
+서버 승인·조회 URL은 `/v1/payments/confirm`, `/v1/payments/{paymentKey}`입니다. SDK v2와 별개이며 신규 결제창에서도 이 API를 사용합니다. 결제창형 키의 API 응답 버전은 공식 문서상 `2022-11-16`으로 고정됩니다. [API 키와 버전](https://docs.tosspayments.com/reference/using-api/api-keys)
 
 `PaymentConfiguration`에서 토스 연결 제한은 3초, 응답 대기는 60초로 설정합니다. 응답 대기 60초는 [토스 타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)의 권장값입니다. 시간이 초과돼도 승인됐을 수 있으므로 결제 실패로 단정하지 않고 결과를 조회합니다.
 

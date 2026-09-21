@@ -17,13 +17,13 @@
 ## 2. 주문부터 결제 완료까지
 
 1. **주문 생성**: 서버가 티셔츠 1장, 10,000원 주문과 고유한 `orderId`를 DB에 저장합니다.
-2. **결제 요청**: React가 클라이언트 키와 주문 정보를 토스 JS SDK에 전달합니다. SDK가 `requestPayment()`를 실행해 토스 결제창을 엽니다.
+2. **결제 요청**: React가 결제창형 클라이언트 키로 SDK의 `widgets()`를 초기화하고, `setAmount()`로 금액을 설정한 뒤 `renderPaymentWindow()`로 결제창을 엽니다. 구매자가 결제수단을 선택하면 `paymentRequest` 이벤트에서 `widgets.requestPayment()`를 호출합니다.
 3. **결제수단 인증**: 사용자가 결제창에서 카드·간편결제를 인증합니다. 성공하면 토스가 브라우저를 `successUrl`로 이동시키면서 최종 승인에 필요한 `paymentKey`, `orderId`, `amount`를 전달합니다. 실패하면 `failUrl`로 이동시키면서 `code`, `message`를 전달합니다.
 4. **서버 검증**: React가 세 값을 `POST /payments/confirm`에 보냅니다. 서버가 저장된 주문 금액과 비교하고 결제 키를 먼저 보관합니다.
 5. **최종 승인**: 서버가 시크릿 키로 토스 `POST /v1/payments/confirm`을 호출합니다.
 6. **결과 저장·조회**: 토스 응답의 주문번호·키·금액·통화와 `DONE`·승인 시각을 확인하고 `SUCCEEDED`로 저장합니다.
 
-**인증 성공은 아직 결제 완료가 아닙니다.** 승인 단계가 있어야 끝납니다. 인증 후 결과 페이지가 바로 승인을 요청하며, 공식 연동 가이드는 결제 요청 완료 후 10분 이내 승인을 안내합니다. [토스 공식 연동 절차](https://docs.tosspayments.com/guides/v2/payment-window/integration)
+**인증 성공은 아직 결제 완료가 아닙니다.** 승인 단계가 있어야 끝납니다. 인증 후 결과 페이지가 바로 승인을 요청하며, 공식 연동 가이드는 결제 요청 완료 후 10분 이내 승인을 안내합니다. [토스 공식 연동 절차](https://docs.tosspayments.com/guides/v2/payment-widget/integration-window)
 
 ## 3. 세 가지 식별자를 구분하세요
 
@@ -37,9 +37,13 @@
 
 ## 4. 어떤 결제창을 사용하나요?
 
-현재 코드는 SDK v2의 `payment()`로 여는 **결제창(구버전)** 제품입니다. `method: "CARD"`는 카드뿐 아니라 간편결제도 표시합니다. 간편결제의 계좌·포인트 결제에는 `card` 객체가 없을 수 있으므로 이를 필수 성공 조건으로 삼지 않습니다. [SDK 명세](https://docs.tosspayments.com/sdk/v2/js/payment), [간편결제 응답](https://docs.tosspayments.com/guides/v2/easypay-response)
+현재 코드는 신규 권장 제품인 **결제창형 결제(기존 결제위젯)**를 SDK v2의 `widgets()`와 `renderPaymentWindow()`로 엽니다. 사용자가 결제수단을 고른 뒤 `paymentRequest` 이벤트에서 인증을 요청하며, 결제창이 열린 동안 다른 작업과 중복 요청을 막습니다. 창을 닫으면 같은 주문으로 다시 열 수 있고, 오류나 화면 이탈 때도 창을 정리합니다. [SDK 명세](https://docs.tosspayments.com/sdk/v2/js/payment-window)
 
-토스는 신규 연동에 **주문서형·결제창형(기존 결제위젯)**을 권장합니다. 기존 MVP의 개별 연동 테스트 키와 흐름을 유지하기 위해 현재 제품의 공식 가이드를 적용했습니다. 추후 제품을 바꿀 때는 키와 SDK 메서드를 함께 변경해야 합니다. [신규 권장 제품](https://docs.tosspayments.com/guides/v2/payment-widget)
+클라이언트와 서버는 함께 발급된 **주문서형·결제창형 테스트 키(`test_gck_`, `test_gsk_`)**를 사용합니다. `TOSS_PAYMENT_METHOD_VARIANT_KEY`, `TOSS_AGREEMENT_VARIANT_KEY`로 결제수단·약관 UI를 지정할 수 있으며, 빈 값이면 SDK 기본 UI를 사용합니다. 상점 결제 어드민의 UI에는 카드·국내 간편결제만 노출하세요. 다른 수단을 선택하면 이 MVP는 인증 전에 중단합니다.
+
+간편결제의 계좌·포인트 결제에는 `card` 객체가 없을 수 있으므로 이를 필수 성공 조건으로 삼지 않습니다. 서버는 응답의 `method`가 카드·간편결제인지도 확인합니다. [간편결제 응답](https://docs.tosspayments.com/guides/v2/easypay-response)
+
+서버 승인·조회 API는 신규 제품에서도 `POST /v1/payments/confirm`, `GET /v1/payments/{paymentKey}`입니다. SDK v2, 결제창 제품, 서버 API 버전은 별개입니다. 공식 문서상 결제창형 키의 API 응답 버전은 `2022-11-16`으로 고정되며 URL을 `/v2`로 바꾸지 않습니다. [API 키와 버전](https://docs.tosspayments.com/reference/using-api/api-keys), [코어 API](https://docs.tosspayments.com/reference)
 
 ## 5. 실패와 중복 요청
 

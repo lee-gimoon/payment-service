@@ -51,7 +51,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /** 실제 PostgreSQL에서 API와 저장을 검증한다. 토스 HTTP 호출만 대체하므로 실제 결제는 발생하지 않는다. */
-@SpringBootTest(properties = {"payment.toss.client-key=test_ck_integration", "payment.toss.secret-key=test_sk_integration"})
+@SpringBootTest(properties = {"payment.toss.client-key=test_gck_integration", "payment.toss.secret-key=test_gsk_integration",
+        "payment.toss.payment-method-variant-key=CARD_ONLY", "payment.toss.agreement-variant-key=TERMS"})
 @AutoConfigureMockMvc
 @Testcontainers
 class PaymentIntegrationTest {
@@ -318,7 +319,9 @@ class PaymentIntegrationTest {
     void publicConfigDoesNotExposeSecret() throws Exception {
         mvc.perform(get("/payment-config")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.enabled").value(true))
-                .andExpect(jsonPath("$.clientKey").value("test_ck_integration"))
+                .andExpect(jsonPath("$.clientKey").value("test_gck_integration"))
+                .andExpect(jsonPath("$.paymentMethodVariantKey").value("CARD_ONLY"))
+                .andExpect(jsonPath("$.agreementVariantKey").value("TERMS"))
                 .andExpect(jsonPath("$.secretKey").doesNotExist());
     }
 

@@ -39,7 +39,7 @@ public class Payment {
 
     protected Payment() {}
 
-    /** 카드 인증 후 받은 paymentKey로 승인 요청 정보를 만든다. 저장은 서비스에서 한다. */
+    /** 결제수단 인증 후 받은 paymentKey로 승인 요청 정보를 만든다. 저장은 서비스에서 한다. */
     public Payment(String orderId, String paymentKey) {
         this.orderId = orderId;
         this.paymentKey = paymentKey;

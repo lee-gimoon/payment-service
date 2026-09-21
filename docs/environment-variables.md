@@ -47,22 +47,33 @@ Spring Boot의 처리 순서:
 | `PAYMENT_DB_URL` | 접속할 PostgreSQL 주소 | `jdbc:postgresql://localhost:5432/payment_service` |
 | `PAYMENT_DB_USERNAME` | PostgreSQL 사용자 | `payment` |
 | `PAYMENT_DB_PASSWORD` | PostgreSQL 비밀번호 | `payment_local` |
-| `TOSS_CLIENT_KEY` | API 개별 연동 테스트 클라이언트 키 (`test_ck_`) | 빈 값 |
-| `TOSS_SECRET_KEY` | API 개별 연동 테스트 시크릿 키 (`test_sk_`, 서버 전용) | 빈 값 |
+| `TOSS_CLIENT_KEY` | 주문서형·결제창형 테스트 클라이언트 키 (`test_gck_`) | 빈 값 |
+| `TOSS_SECRET_KEY` | 주문서형·결제창형 테스트 시크릿 키 (`test_gsk_`, 서버 전용) | 빈 값 |
+| `TOSS_PAYMENT_METHOD_VARIANT_KEY` | 결제 어드민의 결제수단 UI variantKey | 빈 값(SDK 기본 UI) |
+| `TOSS_AGREEMENT_VARIANT_KEY` | 결제 어드민의 약관 UI variantKey | 빈 값(SDK 기본 UI) |
 | `PAYMENT_BIND_ADDRESS` | Spring Boot가 요청을 받을 주소 | `127.0.0.1` |
 | `PORT` | Spring Boot 포트 | `8080` |
 
 ## 토스 테스트 키 설정
 
-개발자센터의 [API 키 메뉴](https://developers.tosspayments.com/my/api-keys)에서 같은 테스트 상점의 **API 개별 연동 키**를 사용합니다.
+개발자센터의 [API 키 메뉴](https://developers.tosspayments.com/my/api-keys)에서 **주문서형·결제창형 연동 테스트 키**를 한 쌍으로 사용합니다. 전자결제 신청 전이라 해당 키가 없다면 [공식 연동 문서의 테스트 키](https://docs.tosspayments.com/guides/v2/payment-widget/integration)를 사용하세요.
 
 ```powershell
-$env:TOSS_CLIENT_KEY = 'test_ck_본인의_클라이언트_키'
-$env:TOSS_SECRET_KEY = 'test_sk_본인의_시크릿_키'
+$env:TOSS_CLIENT_KEY = 'test_gck_본인의_클라이언트_키'
+$env:TOSS_SECRET_KEY = 'test_gsk_본인의_시크릿_키'
 .\gradlew.bat bootRun
 ```
 
-이 MVP는 SDK v2의 **결제창(구버전)** 제품을 사용합니다. 주문서형·결제창형용 `test_gck_`, `test_gsk_`나 `live_` 키를 혼용하면 안 됩니다. 둘 다 빈 값이면 주문 기능만 사용하며, 한쪽만 있거나 접두사가 잘못되면 서버가 시작되지 않습니다. 키 접두사 검증만으로 두 키가 실제 같은 상점인지 확인할 수는 없으므로 개발자센터에서 한 쌍을 복사하세요.
+이 MVP는 SDK v2의 **결제창형 결제** 제품을 사용합니다. 개별 연동 키인 `test_ck_`, `test_sk_`와 운영용 `live_` 키는 거부합니다. 둘 다 빈 값이면 주문 기능만 사용하며, 한쪽만 있거나 접두사가 잘못되면 서버가 시작되지 않습니다. 키 접두사 검증만으로 두 키가 실제 한 쌍인지 확인할 수는 없으므로 함께 발급된 키를 복사하세요. [공식 키 설명](https://docs.tosspayments.com/reference/using-api/api-keys)
+
+결제 어드민에서 카드·국내 간편결제만 표시하도록 UI를 설정하세요. 별도 UI를 쓰면 아래 변수도 서버를 실행하는 터미널에 지정합니다. 값은 예시 문자열이 아니라 어드민에서 복사한 실제 `variantKey`여야 합니다.
+
+```powershell
+$env:TOSS_PAYMENT_METHOD_VARIANT_KEY = '어드민의_결제수단_UI_variantKey'
+$env:TOSS_AGREEMENT_VARIANT_KEY = '어드민의_약관_UI_variantKey'
+```
+
+두 값은 선택 사항이며 비우면 SDK 기본 UI를 사용합니다. 미지원 수단이 보이더라도 선택 시 인증 전에 안내하고 중단합니다. `/payment-config`는 이 UI 설정과 공개 클라이언트 키를 브라우저에 전달합니다.
 
 시크릿 키는 서버만 사용합니다. React가 읽는 `VITE_*` 변수에 넣거나 파일에 커밋하지 마세요. Spring Boot는 `.env` 파일을 자동으로 읽지 않으므로, 실행할 터미널이나 IntelliJ 실행 설정에 값을 지정합니다.
 

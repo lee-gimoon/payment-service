@@ -23,7 +23,7 @@ public class TossPaymentClient {
         this.client = client;
     }
 
-    /** 카드 인증으로 받은 정보에 서버의 주문 금액을 넣어 최종 승인을 요청한다. */
+    /** 결제수단 인증으로 받은 정보에 서버의 주문 금액을 넣어 최종 승인을 요청한다. */
     public PaymentResult confirm(Payment payment, long amount) {
         try {
             TossPaymentResponse response = client.post()
@@ -68,7 +68,7 @@ public class TossPaymentClient {
             return PaymentResult.unknown("PG_RESPONSE_MISMATCH");
         }
 
-        // CARD 통합결제창은 간편결제도 제공한다. 계좌·포인트로 결제하면 card 필드가 없을 수 있다.
+        // 결제창형 UI의 카드·국내 간편결제를 지원한다. 계좌·포인트로 결제하면 card 필드가 없을 수 있다.
         boolean supportedMethod = "카드".equals(response.method()) || "간편결제".equals(response.method());
         if ("DONE".equals(response.status()) && response.approvedAt() != null && supportedMethod) {
             return new PaymentResult(PaymentStatus.SUCCEEDED, "DONE", null, response.approvedAt().toInstant());

@@ -10,24 +10,42 @@ class TossPropertiesTest {
     /** 키가 모두 없어도 설정 검증은 통과하되 결제 기능은 비활성화되는지 확인한다. */
     @Test
     void absentKeysDisablePaymentsButAllowOrderDevelopment() {
-        TossProperties properties = new TossProperties(null, null);
+        TossProperties properties = new TossProperties(null, null, null, null);
         assertThat(properties.configured()).isFalse();
         assertThat(properties.isTestKeyPair()).isTrue();
     }
 
-    /** 개별 연동 테스트 키 접두사 쌍만 허용하고 운영 키·단일 키·위젯 키는 거부하는지 확인한다. */
+    /** 결제창형 테스트 키만 허용하고 구제품·운영·혼합·단일 키는 거부한다. */
     @Test
-    void onlyPairedIndividualIntegrationTestKeysAreAccepted() {
-        assertThat(new TossProperties("test_ck_example", "test_sk_example").isTestKeyPair()).isTrue();
-        assertThat(new TossProperties("live_ck_example", "live_sk_example").isTestKeyPair()).isFalse();
-        assertThat(new TossProperties("test_ck_example", "").isTestKeyPair()).isFalse();
-        assertThat(new TossProperties("", "test_sk_example").isTestKeyPair()).isFalse();
-        assertThat(new TossProperties("test_gck_example", "test_gsk_example").isTestKeyPair()).isFalse();
+    void onlyPairedWidgetTestKeysAreAccepted() {
+        assertThat(keys("test_gck_example", "test_gsk_example").isTestKeyPair()).isTrue();
+        assertThat(keys("live_gck_example", "live_gsk_example").isTestKeyPair()).isFalse();
+        assertThat(keys("test_gck_example", "").isTestKeyPair()).isFalse();
+        assertThat(keys("", "test_gsk_example").isTestKeyPair()).isFalse();
+        assertThat(keys("test_ck_example", "test_sk_example").isTestKeyPair()).isFalse();
+        assertThat(keys("test_gck_example", "test_sk_example").isTestKeyPair()).isFalse();
+        assertThat(keys("test_ck_example", "test_gsk_example").isTestKeyPair()).isFalse();
+        assertThat(keys("test_gck_example", "live_gsk_example").isTestKeyPair()).isFalse();
+        assertThat(keys("test_gck_", "test_gsk_").isTestKeyPair()).isFalse();
+    }
+
+    @Test
+    void optionalVariantsAreTrimmedAndDefaultToEmpty() {
+        TossProperties properties = new TossProperties(" test_gck_example ", " test_gsk_example ", " CARD_ONLY ", " TERMS ");
+        assertThat(properties.isTestKeyPair()).isTrue();
+        assertThat(properties.paymentMethodVariantKey()).isEqualTo("CARD_ONLY");
+        assertThat(properties.agreementVariantKey()).isEqualTo("TERMS");
+        assertThat(keys("", "").paymentMethodVariantKey()).isEmpty();
+        assertThat(keys("", "").agreementVariantKey()).isEmpty();
     }
 
     /** 설정 객체의 문자열 표현에 클라이언트 키와 시크릿 키 원문이 포함되지 않는지 확인한다. */
     @Test
     void stringRepresentationDoesNotExposeKeys() {
-        assertThat(new TossProperties("test_ck_example", "test_sk_example").toString()).doesNotContain("test_sk", "test_ck");
+        assertThat(keys("test_gck_example", "test_gsk_example").toString()).doesNotContain("test_gsk", "test_gck");
+    }
+
+    private TossProperties keys(String clientKey, String secretKey) {
+        return new TossProperties(clientKey, secretKey, null, null);
     }
 }

@@ -40,6 +40,7 @@ export function StorePage() {
   // ref로 DOM 조작하기: JSX 요소에 ref를 전달하면 React가 그 DOM 요소를 ref.current에 넣어 focus() 같은 메서드로 조작할 수 있다.
   // ref 콘텐츠 재생성 피하기: 초기값은 첫 렌더링에만 저장되지만 초기값을 만드는 식은 매번 실행되므로, 비용 큰 객체는 current가 null일 때만 생성한다.
   const busyRef = useRef(true);
+  const paymentAbortRef = useRef<AbortController | null>(null);
 
   /** 받은 주문을 화면과 조회 입력란에 반영하고, 다음 방문에서 찾을 수 있도록 주문번호를 기억한다. */
   function showOrder(order: Order) {
@@ -65,10 +66,12 @@ export function StorePage() {
     try {
       await work();
     } catch (actionError) {
-      setError(errorMessage(actionError));
+      if (!paymentAbortRef.current?.signal.aborted) setError(errorMessage(actionError));
     } finally {
-      busyRef.current = false;
-      setBusy(false);
+      if (!paymentAbortRef.current?.signal.aborted) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
   }
 
@@ -82,6 +85,8 @@ export function StorePage() {
     // 서버 응답이 도착했을 때 StorePage가 아직 열려 있는지 확인하는 변수다.
     // 화면을 떠나면 false로 바꿔, 늦게 온 응답으로 setPaymentConfig() 등을 호출하지 않는다.
     let active = true;
+    const paymentAbort = new AbortController();
+    paymentAbortRef.current = paymentAbort;
     document.title = "한 장의 티셔츠 · 테스트 스토어";
 
     /** 공개 결제 설정을 읽고, 브라우저에 마지막 주문번호가 있으면 서버에서 최신 주문을 조회한다. */
@@ -109,7 +114,7 @@ export function StorePage() {
         }
       } catch (initializationError) {
         if (active) {
-          setPaymentConfig({ enabled: false, clientKey: "" });
+          setPaymentConfig({ enabled: false, clientKey: "", paymentMethodVariantKey: "", agreementVariantKey: "" });
           setError(errorMessage(initializationError));
         }
       } finally {
@@ -126,6 +131,7 @@ export function StorePage() {
     // 여기서는 active를 false로 바꿔, 나중에 도착한 서버 응답이 상태를 바꾸지 못하게 한다.
     return () => {
       active = false;
+      paymentAbort.abort();
     };
   }, []);
 
@@ -165,7 +171,7 @@ export function StorePage() {
     });
   }
 
-  /** 결제 버튼의 시작점: 주문을 다시 조회해 READY인지 확인한 후 토스 카드 인증창을 연다. */
+  /** 결제 버튼의 시작점: 주문을 다시 조회해 READY인지 확인한 후 토스 결제수단 인증창을 연다. */
   function handlePayment() {
     if (!currentOrder) {
       return;
@@ -177,10 +183,12 @@ export function StorePage() {
       }
 
       const latestOrder = await getOrder(currentOrder.orderId);
+      const signal = paymentAbortRef.current?.signal;
+      if (!signal || signal.aborted) return;
       showOrder(latestOrder);
 
       if (latestOrder.payment.status === "READY") {
-        await openTossPayment(latestOrder, paymentConfig.clientKey);
+        await openTossPayment(latestOrder, paymentConfig, signal);
       }
     });
   }

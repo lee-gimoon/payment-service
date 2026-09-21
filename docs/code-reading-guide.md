@@ -25,11 +25,16 @@ React의 [tossPayments.ts](../frontend/src/payments/tossPayments.ts)가 공식 `
 
 ```typescript
 const tossPayments = await loadTossPayments(clientKey);
-const payment = tossPayments.payment({ customerKey: ANONYMOUS });
-await payment.requestPayment({ /* 주문번호·금액·successUrl·failUrl */ });
+const widgets = tossPayments.widgets({ customerKey: ANONYMOUS });
+await widgets.setAmount({ currency: "KRW", value: order.amount });
+const paymentWindow = await widgets.renderPaymentWindow();
+paymentWindow.on("paymentRequest", async ({ paymentMethod }) => {
+  // 실제 코드는 paymentMethod.code로 카드·국내 간편결제인지 먼저 확인한다.
+  await widgets.requestPayment({ /* 주문번호·successUrl·failUrl */ });
+});
 ```
 
-`ANONYMOUS`는 비회원 구매자이고, `orderId`는 주문번호입니다. `method: "CARD"` 통합결제창에서는 카드와 간편결제를 선택할 수 있습니다. 인증에 성공하면 토스가 브라우저를 `successUrl`로 이동시키며 `paymentKey`, `orderId`, `amount`를 쿼리 파라미터로 전달합니다. 실패하면 `failUrl`로 이동시키며 `code`, `message`를 전달합니다.
+`ANONYMOUS`는 비회원 구매자이고, `orderId`는 주문번호입니다. 결제창형 UI의 결제수단과 약관은 토스 어드민에서 설정합니다. [paymentWindow.ts](../frontend/src/payments/paymentWindow.ts)는 선택 이벤트의 지원 수단을 확인하고, 중복 요청을 막으며 닫기·오류·페이지 이탈을 정리합니다. 인증에 성공하면 토스가 브라우저를 `successUrl`로 이동시키며 `paymentKey`, `orderId`, `amount`를 쿼리 파라미터로 전달합니다. 실패하면 `failUrl`로 이동시키며 `code`, `message`를 전달합니다.
 
 인증은 토스 결제창에서 진행합니다. 이 단계가 끝났다고 서버의 결제 승인까지 완료된 것은 아닙니다. [paymentRedirect.ts](../frontend/src/payments/paymentRedirect.ts)가 복귀 URL을 읽고, [PaymentResultPage.tsx](../frontend/src/pages/PaymentResultPage.tsx)가 승인 요청을 보냅니다. 인증 실패 시에는 URL의 오류 코드·메시지를 표시하며 승인을 요청하지 않습니다.
 
@@ -50,7 +55,7 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 
 `TossPaymentClient`는 토스 HTTP 통신만 담당합니다. 내부의 `client.post().uri(...).body(...)`가 외부 API 요청입니다. `PaymentResult`는 그 응답을 우리 서비스의 상태로 바꾼 DTO입니다.
 
-승인 응답의 주문번호·결제 키·금액·통화가 요청과 일치하고, `status`가 `DONE`이며 승인 시각이 있어야 성공입니다. 통합결제창의 간편결제는 계좌·포인트를 사용할 수도 있어 `card` 객체를 필수로 검사하지 않습니다.
+승인 응답의 주문번호·결제 키·금액·통화가 요청과 일치하고, `status`가 `DONE`이며 승인 시각과 지원하는 결제수단(카드·간편결제)이 있어야 성공입니다. 간편결제는 계좌·포인트를 사용할 수도 있어 `card` 객체를 필수로 검사하지 않습니다.
 
 ## 4. 결과를 조회한다
 
@@ -106,7 +111,7 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 - `reconcile()`: PROCESSING 또는 UNKNOWN 결제를 토스에서 다시 조회합니다. 새 승인은 요청하지 않습니다.
 - `ApiExceptionHandler`: 잘못된 입력과 저장 오류를 React용 JSON 메시지로 바꿉니다.
 - `Payment.version`의 `@Version`: 두 요청이 동시에 결과를 저장하면, 오래된 결과의 덮어쓰기를 JPA가 거부합니다. 이 경우 화면에서 저장된 결과를 다시 조회합니다.
-- `TossProperties`, `PaymentConfiguration`: 테스트 키, 토스 주소, 연결 3초·응답 60초 제한 시간을 설정합니다.
+- `TossProperties`, `PaymentConfiguration`: 결제창형 테스트 키, UI의 variantKey, 토스 주소, 연결 3초·응답 60초 제한 시간을 설정합니다.
 
 ## MVP의 처리 규칙
 
@@ -118,4 +123,4 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 
 취소·환불·웹훅·자동 복구 배치·여러 결제 시도를 다루는 확장은 이후 학습 단계입니다. 인증과 주문 접근 권한이 없는 로컬 테스트 예제라는 범위도 동일합니다.
 
-공식 근거: [결제창 연동 절차](https://docs.tosspayments.com/guides/v2/payment-window/integration), [API 인증·멱등키](https://docs.tosspayments.com/reference/using-api/authorization), [간편결제 응답](https://docs.tosspayments.com/guides/v2/easypay-response). 토스 MCP로 이 문서들을 조회해 현재 구현과 대조했습니다.
+공식 근거: [결제창형 연동 절차](https://docs.tosspayments.com/guides/v2/payment-widget/integration-window), [결제창형 SDK](https://docs.tosspayments.com/sdk/v2/js/payment-window), [API 인증·멱등키](https://docs.tosspayments.com/reference/using-api/authorization), [간편결제 응답](https://docs.tosspayments.com/guides/v2/easypay-response).

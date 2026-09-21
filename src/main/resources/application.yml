@@ -28,6 +28,9 @@ payment:
   toss:
     client-key: ${TOSS_CLIENT_KEY:}
     secret-key: ${TOSS_SECRET_KEY:}
+    # 비워두면 토스의 기본 UI를 사용한다. 별도 UI는 결제 어드민의 variantKey를 지정한다.
+    payment-method-variant-key: ${TOSS_PAYMENT_METHOD_VARIANT_KEY:}
+    agreement-variant-key: ${TOSS_AGREEMENT_VARIANT_KEY:}
 
 # 기본적으로 로컬에서만 API를 열고, 일반 서버 오류 응답에 내부 예외 내용을 포함하지 않는다.
 server:

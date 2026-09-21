@@ -28,7 +28,7 @@ function errorMessage(error: unknown): string {
     : "결과를 확인하지 못했습니다. 다시 결제하지 말고 저장된 결과를 조회해주세요.";
 }
 
-/** 카드 인증 결과로 승인을 요청하고, 주문 조회·PG 결과 재확인·승인 요청 재전송 버튼을 관리한다. */
+/** 결제수단 인증 결과로 승인을 요청하고, 주문 조회·PG 결과 재확인·승인 요청 재전송 버튼을 관리한다. */
 export function PaymentResultPage() {
   const [redirect] = useState(readPaymentRedirect);
   const [order, setOrder] = useState<Order | null>(null);

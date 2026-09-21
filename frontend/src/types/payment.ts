@@ -30,13 +30,15 @@ export interface Order {
   payment: PaymentDetails;
 }
 
-/** 브라우저에 공개할 수 있는 결제 사용 여부와 클라이언트 키다. 서버 시크릿 키는 포함하지 않는다. */
+/** 브라우저용 키와 결제창형 UI 선택 설정이다. 서버 시크릿 키는 포함하지 않는다. */
 export interface PaymentConfig {
   enabled: boolean;
   clientKey: string;
+  paymentMethodVariantKey: string;
+  agreementVariantKey: string;
 }
 
-/** 카드 인증 이후 최종 승인을 요청할 때 서버에 보내는 주문번호·결제 키·금액이다. */
+/** 결제수단 인증 이후 최종 승인을 요청할 때 서버에 보내는 주문번호·결제 키·금액이다. */
 export interface ConfirmPaymentCommand {
   orderId: string;
   paymentKey: string;

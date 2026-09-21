@@ -6,9 +6,9 @@
 
 ## 어떤 토스 연동인가요?
 
-기존 구현에 맞춰 **SDK v2의 카드·간편결제 통합결제창**과 API 개별 연동 테스트 키를 사용합니다. 공식 문서에서는 이 제품을 **결제창(구버전)**이라고 부릅니다. SDK v1을 사용한다는 뜻은 아닙니다.
+토스가 신규 연동에 권장하는 **결제창형 결제(기존 결제위젯)**와 SDK v2를 사용합니다. 결제 버튼을 누르면 `widgets()` → `setAmount()` → `renderPaymentWindow()`로 결제창을 열고, 구매자가 수단을 선택한 `paymentRequest` 이벤트에서 `widgets.requestPayment()`를 호출합니다.
 
-토스가 신규 연동에 권장하는 제품은 **주문서형·결제창형 결제(기존 결제위젯)**입니다. 이 MVP는 기존 결제창의 공식 가이드를 따르며, 두 제품의 SDK 메서드와 키를 섞지 않습니다. [현재 구현의 연동 가이드](https://docs.tosspayments.com/guides/v2/payment-window/integration), [신규 권장 제품](https://docs.tosspayments.com/guides/v2/payment-widget)
+브라우저 SDK와 서버 API의 버전은 별개입니다. 서버 승인·조회는 신규 제품에서도 `/v1/payments/confirm`, `/v1/payments/{paymentKey}`를 사용합니다. 현재 의존성인 `@tosspayments/tosspayments-sdk` 2.8.1은 결제창형 메서드를 지원합니다. [결제창형 연동 가이드](https://docs.tosspayments.com/guides/v2/payment-widget/integration-window), [SDK 명세](https://docs.tosspayments.com/sdk/v2/js/payment-window)
 
 ## 기본 결제 흐름
 
@@ -25,8 +25,11 @@ sequenceDiagram
     React->>Server: POST /orders
     Server->>DB: 주문번호·금액 저장
     Server-->>React: orderId, amount
-    React->>SDK: requestPayment(orderId, amount, URLs)
-    SDK->>Toss: 결제창 요청
+    React->>SDK: widgets(), setAmount(amount), renderPaymentWindow()
+    SDK->>Toss: 결제창형 UI 요청
+    User->>SDK: 결제수단 선택
+    SDK-->>React: paymentRequest 이벤트
+    React->>SDK: requestPayment(orderId, URLs)
     Toss->>User: 카드·간편결제 인증
     Toss-->>React: successUrl (paymentKey, orderId, amount)
     React->>Server: POST /payments/confirm
@@ -57,17 +60,21 @@ docker compose up -d
 
 ### 2. 토스 키 설정 후 백엔드 실행
 
-토스 개발자센터에서 **같은 테스트 상점의 API 개별 연동 키**를 가져옵니다. 키를 설정한 터미널에서 서버를 실행하세요.
+토스 개발자센터에서 **주문서형·결제창형 연동 테스트 키 한 쌍**을 가져옵니다. 본인 상점의 키는 전자결제 신청 후 확인할 수 있으며, 신청 전에는 [공식 연동 문서의 테스트 키](https://docs.tosspayments.com/guides/v2/payment-widget/integration)를 사용할 수 있습니다. 키를 설정한 터미널에서 서버를 실행하세요.
 
 ```powershell
-$env:TOSS_CLIENT_KEY = 'test_ck_로 시작하는 클라이언트 키'
-$env:TOSS_SECRET_KEY = 'test_sk_로 시작하는 시크릿 키'
+$env:TOSS_CLIENT_KEY = 'test_gck_로 시작하는 클라이언트 키'
+$env:TOSS_SECRET_KEY = 'test_gsk_로 시작하는 시크릿 키'
 .\gradlew.bat bootRun
 ```
 
 macOS/Linux에서는 `export TOSS_CLIENT_KEY='...'`, `export TOSS_SECRET_KEY='...'`를 설정하고 `./gradlew bootRun`을 실행합니다.
 
-키가 둘 다 없으면 주문 생성·조회만 가능합니다. 이 프로젝트는 개별 연동 테스트 키만 허용하므로 `live_` 키나 주문서형·결제창형용 `test_gck_`, `test_gsk_` 키를 넣으면 시작 시 검증에 실패합니다. 시크릿 키를 프런트엔드나 Git에 넣지 마세요.
+키가 둘 다 없으면 주문 생성·조회만 가능합니다. `live_` 키, API 개별 연동 키(`test_ck_`, `test_sk_`), 한쪽만 설정한 키는 시작 시 검증에 실패합니다. 접두사만으로 실제 키의 짝을 확인할 수 없으므로 반드시 함께 발급된 키를 사용하세요. 시크릿 키를 프런트엔드나 Git에 넣지 마세요.
+
+상점의 결제 어드민에서는 **카드·국내 간편결제만** 표시하도록 UI를 설정하세요. 별도 UI를 사용한다면 `TOSS_PAYMENT_METHOD_VARIANT_KEY`와 `TOSS_AGREEMENT_VARIANT_KEY`에 각각 결제수단·약관 UI의 `variantKey`를 설정합니다. 미설정 시 SDK 기본 UI를 사용합니다. 기본 UI에 계좌이체·가상계좌·브랜드페이 등 미지원 수단이 보이더라도 이 MVP는 인증 요청 전에 안내하고 중단합니다.
+
+기존 버전에서 전환했다면 두 키를 함께 교체하고 서버와 프론트를 다시 실행하세요. DB 변경은 없습니다. 이전 개별 연동 키로 만든 결제는 새 키로 조회할 수 없으므로, 미확정 테스트 결제는 기존 설정에서 먼저 확인하고 새 제품은 새 주문으로 테스트하세요. [키 종류와 API 버전](https://docs.tosspayments.com/reference/using-api/api-keys)
 
 ### 3. 다른 터미널에서 프런트엔드 실행
 
@@ -125,7 +132,8 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 
 - 비회원이므로 공식 SDK의 `ANONYMOUS`를 사용합니다.
 - 주문 금액과 `paymentKey`를 서버에 저장하고 승인 전후 정보를 검증합니다.
-- `CARD` 통합결제창의 카드·간편결제를 처리합니다. 간편결제는 계좌·포인트를 사용할 수도 있습니다.
+- 결제창형의 카드·국내 간편결제를 처리합니다. 간편결제는 계좌·포인트를 사용할 수도 있습니다.
+- 결제창이 열린 동안 중복 실행을 막고, 닫기·오류·화면 이탈 시 작업과 창을 정리합니다.
 - 같은 승인 요청은 저장된 결과를 반환합니다. 다른 결제 키로 기존 주문의 결제를 교체하지 않습니다.
 - UUID 주문번호를 토스의 `Idempotency-Key`로 사용합니다.
 - 토스 [타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)에 따라 API 응답 대기는 60초로 설정합니다.
@@ -151,7 +159,14 @@ npm test
 npm run build
 ```
 
-프런트엔드는 Node 내장 테스트로 인증 복귀 URL 처리를 확인하고, TypeScript 검사와 Vite 빌드를 수행합니다. 실제 테스트 상점의 카드·간편결제 인증은 브라우저에서 별도로 확인해야 합니다.
+프런트엔드는 Node 내장 테스트로 결제창 이벤트·중복 요청·닫기·오류·화면 이탈·미지원 수단·복귀 URL 처리를 확인하고, TypeScript 검사와 Vite 빌드를 수행합니다.
+
+브라우저 수동 확인은 올바른 테스트 키로 다음 순서대로 진행합니다.
+
+1. 새 주문에서 결제창을 열고 닫은 뒤, 같은 주문으로 다시 열 수 있는지 확인합니다.
+2. 카드와 국내 간편결제로 각각 인증하고 결과 화면·DB·본인 상점의 개발자센터에서 승인 결과를 비교합니다. 문서 공용 키의 결제내역은 본인 상점 내역과 별개입니다.
+3. 인증 취소·실패 시 오류가 표시되고 서버 승인 요청이 발생하지 않는지 확인합니다.
+4. UI에 미지원 수단이 있다면 선택 시 안내가 나오고 인증 요청이 발생하지 않는지 확인합니다.
 
 ## 기술과 파일
 
@@ -165,13 +180,14 @@ Java 21 / Spring Boot 4.1.1 / JPA / PostgreSQL 18 / Flyway / React 19 / TypeScri
 
 ## 문서
 
+- [프로젝트 구조와 폴더·파일별 역할](docs/project-structure.md)
 - [기본 결제 흐름과 MVP 범위](docs/payment-domain.md)
 - [코드 읽는 순서](docs/code-reading-guide.md)
 - [Java·JPA 개념](docs/java-jpa-notes.md)
 - [JPA에서 DB까지의 처리 경로](docs/jpa-database-pipeline.md)
 - [로컬 개발 환경](docs/environment-configuration.md)
 - [환경변수 설정](docs/environment-variables.md)
-- [토스 결제창 SDK](https://docs.tosspayments.com/sdk/v2/js/payment)
+- [토스 결제창형 SDK](https://docs.tosspayments.com/sdk/v2/js/payment-window)
 - [토스 API 명세](https://docs.tosspayments.com/reference)
 
 종료할 때 Spring Boot와 Vite 터미널에서 Ctrl+C를 누르고 `docker compose down`을 실행합니다. Docker 볼륨에 DB 데이터가 유지됩니다.

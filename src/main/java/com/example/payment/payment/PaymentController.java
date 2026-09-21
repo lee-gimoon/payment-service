@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 브라우저가 보낸 카드 인증 결과를 받고 PaymentService에 최종 승인을 요청한다. */
+/** 브라우저가 보낸 결제수단 인증 결과를 받고 PaymentService에 최종 승인을 요청한다. */
 @RestController
 @Tag(name = "Payments")
 public class PaymentController {
@@ -28,11 +28,12 @@ public class PaymentController {
     @GetMapping("/payment-config")
     @Operation(summary = "브라우저용 결제 설정")
     public PublicConfig config() {
-        return new PublicConfig(tossProperties.configured(), tossProperties.clientKey());
+        return new PublicConfig(tossProperties.configured(), tossProperties.clientKey(),
+                tossProperties.paymentMethodVariantKey(), tossProperties.agreementVariantKey());
     }
 
     @PostMapping("/payments/confirm")
-    @Operation(summary = "카드 인증 후 결제 승인")
+    @Operation(summary = "결제수단 인증 후 결제 승인")
     public ResponseEntity<OrderResponse> confirm(@Valid @RequestBody ConfirmPaymentRequest request) {
         OrderResponse order = paymentService.confirm(request);
         return response(order);
@@ -55,5 +56,6 @@ public class PaymentController {
         };
     }
 
-    public record PublicConfig(boolean enabled, String clientKey) {}
+    public record PublicConfig(boolean enabled, String clientKey,
+                               String paymentMethodVariantKey, String agreementVariantKey) {}
 }
