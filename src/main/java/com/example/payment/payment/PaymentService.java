@@ -62,21 +62,6 @@ public class PaymentService {
         return OrderResponse.of(order, payment);
     }
 
-    /** 결과를 모를 때 사용하는 보조 기능이다. 새 승인 없이 토스의 저장된 결과만 조회한다. */
-    public OrderResponse reconcile(String orderId) {
-        PurchaseOrder order = findOrder(orderId);
-        Payment payment = paymentRepository.findById(orderId).orElse(null);
-        if (payment == null || !payment.canReconcile()) {
-            return OrderResponse.of(order, payment);
-        }
-        requirePaymentConfig();
-
-        PaymentResult result = tossPaymentClient.lookup(payment, order.getAmount());
-        payment.applyResult(result);
-        payment = paymentRepository.saveAndFlush(payment);
-        return OrderResponse.of(order, payment);
-    }
-
     private PurchaseOrder findOrder(String orderId) {
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));

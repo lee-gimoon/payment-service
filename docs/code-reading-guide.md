@@ -89,38 +89,42 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 | amount | 주문 총금액 |
 | created_at | 주문 시각 |
 
-`payments`는 8개 컬럼입니다.
+`payments`는 자동 복구와 취소 기록을 포함해 15개 컬럼입니다.
 
 | 컬럼 | 의미 |
 | --- | --- |
 | order_id | 결제할 주문번호. 기본 키이므로 주문당 한 행 |
 | payment_key | 토스 승인·조회에 쓰는 키. 다른 주문과 중복 금지 |
-| status | PROCESSING / SUCCEEDED / FAILED / UNKNOWN |
+| status | 승인·확인 중·취소 중·취소 완료·운영자 확인 상태 |
 | approved_at | 토스에서 결제가 승인된 시각 |
 | checked_at | 토스 결과를 마지막으로 확인한 시각 |
 | pg_status | 토스의 원본 상태. 예: DONE |
 | error_code | 화면에 전달할 오류 원인 |
 | version | JPA가 동시 저장 충돌을 검사하는 번호 |
+| pg_amount / pg_currency | 토스에서 확인한 실제 승인 금액·통화 |
+| canceled_at | 토스에서 확인한 전액 취소 시각 |
+| cancel_idempotency_key / cancel_requested_at | 취소 재시도에 유지할 키와 최초 취소 의도 시각 |
+| next_action_at / recovery_attempts | 다음 자동 처리 시각과 시도 횟수 |
 
-금액은 주문 테이블 한 곳에서만 관리합니다. 원화 전용이므로 응답의 `currency`는 항상 `KRW`입니다. 프론트는 `status`가 READY가 아니면 서버에 결제 기록이 있음을 알고 임시 승인 정보를 지웁니다. 별도의 결제 시도 식별자는 사용하지 않습니다.
+기대 금액은 주문 테이블에, 실제 승인 금액은 결제 테이블에 보관합니다. 주문은 원화이며 불일치한 PG 금액·통화도 취소 검증을 위해 보존합니다. 프론트는 `status`가 READY가 아니면 서버에 결제 기록이 있음을 알고 임시 승인 정보를 지웁니다.
 
-기존 DB는 [V2 마이그레이션](../src/main/resources/db/migration/V2__simplify_payment_processing.sql)으로 바뀝니다. 주문·결제 행과 승인 결과는 유지하고, 쓰지 않는 컬럼만 제거합니다. V1은 이전 DB를 만들었던 변경 이력이므로 다시 수정하지 않습니다.
+V1·V2는 기존 변경 이력입니다. [V3 마이그레이션](../src/main/resources/db/migration/V3__automatic_payment_recovery.sql)이 기존 행을 유지하며 복구·취소 컬럼을 추가하고 미확정 결제를 자동 처리 대상으로 예약합니다.
 
 ## 정상 흐름을 이해한 뒤 볼 보조 기능
 
-- `reconcile()`: PROCESSING 또는 UNKNOWN 결제를 토스에서 다시 조회합니다. 새 승인은 요청하지 않습니다.
+- `PaymentRecoveryService.recoverDuePayments()`: DB에 저장된 미확정 결제를 선점해 재조회하고, 확인된 금액·통화 불일치를 자동 취소합니다. [상세 흐름](payment-recovery.md)
 - `ApiExceptionHandler`: 잘못된 입력과 저장 오류를 React용 JSON 메시지로 바꿉니다.
 - `Payment.version`의 `@Version`: 두 요청이 동시에 결과를 저장하면, 오래된 결과의 덮어쓰기를 JPA가 거부합니다. 이 경우 화면에서 저장된 결과를 다시 조회합니다.
 - `TossProperties`, `PaymentConfiguration`: 결제창형 테스트 키, UI의 variantKey, 토스 주소, 연결 3초·응답 60초 제한 시간을 설정합니다.
 
 ## MVP의 처리 규칙
 
-`PROCESSING` 상태는 시간이 지났다는 이유로 자동 변경하지 않으며, 바로 수동 재확인이 가능합니다. 작업 ID나 처리 기한을 관리하는 별도 복구 시스템은 없습니다.
+`PROCESSING`은 2분 뒤부터 자동 조회합니다. 작업 선점은 `next_action_at`과 `@Version`으로 처리하고, 작업 중 종료되면 임대 만료 후 재개합니다. 금액 불일치 취소는 취소 의도와 멱등키를 먼저 저장하며, 취소 응답을 못 받으면 조회부터 재시도합니다.
 
 저장소 메서드 호출별로 트랜잭션을 끝내므로 토스 호출 전체에 `@Transactional`을 붙이지 않습니다. 토스 호출 전에 결제 정보를 저장해 중복 승인을 막고, 저장 실패 뒤에도 같은 키로 결과를 조회할 수 있습니다. UUID 주문번호를 토스의 `Idempotency-Key`로 사용합니다.
 
-중복 요청이 최초 저장 시점에 정확히 겹치거나 결과 저장이 충돌하면 한 요청은 409를 받을 수 있습니다. 프론트의 저장된 결과 조회로 확인합니다. 조회한 토스 결과조차 아직 불명확하면 UNKNOWN을 유지합니다.
+중복 요청이나 저장 충돌 시 한 요청은 409를 받을 수 있습니다. 화면은 주문 결과를 자동 갱신하며, 토스 호출이 필요한 복구는 서버가 담당합니다. 반복 실패는 최대 10회 후 `REVIEW_REQUIRED`와 오류 로그로 남깁니다.
 
-취소·환불·웹훅·자동 복구 배치·여러 결제 시도를 다루는 확장은 이후 학습 단계입니다. 인증과 주문 접근 권한이 없는 로컬 테스트 예제라는 범위도 동일합니다.
+고객 임의 취소·웹훅·여러 결제 시도는 별도 확장 범위입니다. 현재 자동 취소는 같은 주문·키로 확인한 카드·국내 간편결제의 금액·통화 불일치에 한정합니다. 인증과 주문 접근 권한이 없는 로컬 테스트 예제라는 범위는 동일합니다.
 
 공식 근거: [결제창형 연동 절차](https://docs.tosspayments.com/guides/v2/payment-widget/integration-window), [결제창형 SDK](https://docs.tosspayments.com/sdk/v2/js/payment-window), [API 인증·멱등키](https://docs.tosspayments.com/reference/using-api/authorization), [간편결제 응답](https://docs.tosspayments.com/guides/v2/easypay-response).

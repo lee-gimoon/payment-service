@@ -159,4 +159,81 @@ class TossPaymentClientTest {
                 .andRespond(withSuccess(DONE, MediaType.APPLICATION_JSON));
         assertThat(gateway.lookup(PAYMENT, 10_000).status()).isEqualTo(PaymentStatus.SUCCEEDED);
     }
+
+    /** 같은 주문·키의 승인 금액 불일치는 별도 GET으로 확인한 뒤에만 취소 대상으로 돌려준다. */
+    @Test
+    void cancellationRequiresIndependentLookupOfTheSamePayment() {
+        String mismatch = DONE.replace("10000", "9000");
+        server.expect(requestTo(BASE + "/confirm")).andRespond(withSuccess(mismatch, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE + "/payment-key")).andRespond(withSuccess(mismatch, MediaType.APPLICATION_JSON));
+        assertThat(gateway.confirm(PAYMENT, 10_000).status()).isEqualTo(PaymentStatus.UNKNOWN);
+        PaymentResult result = gateway.lookup(PAYMENT, 10_000);
+        assertThat(result.status()).isEqualTo(PaymentStatus.CANCEL_PENDING);
+        assertThat(result.pgAmount()).isEqualByComparingTo("9000");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"order-123,other-order", "payment-key,other-key"})
+    void identityMismatchDoesNotAuthorizeCancelingAnUnrelatedPayment(String from, String to) {
+        server.expect(requestTo(BASE + "/payment-key")).andRespond(withSuccess(DONE.replace(from, to), MediaType.APPLICATION_JSON));
+        assertThat(gateway.lookup(PAYMENT, 10_000).status()).isEqualTo(PaymentStatus.REVIEW_REQUIRED);
+    }
+
+    @Test
+    void fullCancelUsesPersistedIdempotencyKeyAndValidatesCancellationEvidence() {
+        Payment payment = pendingCancel();
+        server.expect(requestTo(BASE + "/payment-key/cancel")).andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", payment.getCancelIdempotencyKey()))
+                .andExpect(content().json("""
+                        {"cancelReason":"주문 금액 또는 통화 불일치로 자동 취소"}
+                        """))
+                .andRespond(withSuccess(canceledJson(), MediaType.APPLICATION_JSON));
+        PaymentResult result = gateway.cancel(payment);
+        assertThat(result.status()).isEqualTo(PaymentStatus.CANCELED);
+        assertThat(result.pgAmount()).isEqualByComparingTo("9000");
+        assertThat(result.canceledAt()).hasToString("2026-09-11T01:01:00Z");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"CANCELED,DONE", "DONE,PENDING", "other-placeholder,unused"})
+    void invalidCancelEvidenceCannotBeStoredAsCanceled(String from, String to) {
+        String json = "other-placeholder".equals(from)
+                ? canceledJson().replace("\"balanceAmount\":0", "\"balanceAmount\":100")
+                : canceledJson().replace(from, to);
+        server.expect(requestTo(BASE + "/payment-key/cancel")).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+        assertThat(gateway.cancel(pendingCancel()).status()).isEqualTo(PaymentStatus.UNKNOWN);
+    }
+
+    @Test
+    void cancelTimeoutStaysPendingAndNextLookupCanConfirmCancellationDespiteOriginalAmountMismatch() {
+        Payment payment = pendingCancel();
+        server.expect(requestTo(BASE + "/payment-key/cancel"))
+                .andRespond(withException(new SocketTimeoutException("response lost")));
+        server.expect(requestTo(BASE + "/payment-key"))
+                .andRespond(withSuccess(canceledJson(), MediaType.APPLICATION_JSON));
+        payment.applyResult(gateway.cancel(payment));
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCEL_PENDING);
+        assertThat(gateway.lookup(payment, 10_000).status()).isEqualTo(PaymentStatus.CANCELED);
+    }
+
+    @Test
+    void changedEvidenceAfterCancelIntentRequiresReview() {
+        server.expect(requestTo(BASE + "/payment-key")).andRespond(withSuccess(DONE, MediaType.APPLICATION_JSON));
+        assertThat(gateway.lookup(pendingCancel(), 10_000).status()).isEqualTo(PaymentStatus.REVIEW_REQUIRED);
+    }
+
+    private Payment pendingCancel() {
+        Payment payment = new Payment("order-123", "payment-key");
+        payment.applyResult(new PaymentResult(PaymentStatus.CANCEL_PENDING, "DONE", "PG_AMOUNT_MISMATCH",
+                java.time.Instant.parse("2026-09-11T01:00:00Z"), java.math.BigDecimal.valueOf(9000), "KRW", null));
+        return payment;
+    }
+
+    private String canceledJson() {
+        return """
+                {"orderId":"order-123","paymentKey":"payment-key","totalAmount":9000,"currency":"KRW",
+                 "status":"CANCELED","method":"카드","approvedAt":"2026-09-11T10:00:00+09:00",
+                 "balanceAmount":0,"cancels":[{"cancelStatus":"DONE","canceledAt":"2026-09-11T10:01:00+09:00"}]}
+                """;
+    }
 }

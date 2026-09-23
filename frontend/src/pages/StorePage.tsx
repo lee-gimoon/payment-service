@@ -6,8 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   createOrder,
   getOrder,
-  getPaymentConfig,
-  reconcilePayment
+  getPaymentConfig
 } from "../api/paymentApi";
 import { AppShell } from "../components/AppShell";
 import { CheckoutCard } from "../components/CheckoutCard";
@@ -16,6 +15,7 @@ import { OrderResultCard } from "../components/OrderResultCard";
 import { ProductCard } from "../components/ProductCard";
 import { readLocalValue, writeLocalValue } from "../lib/storage";
 import { openTossPayment } from "../payments/tossPayments";
+import { useOrderPolling } from "../payments/useOrderPolling";
 import type { Order, PaymentConfig } from "../types/payment";
 
 /** 마지막 주문번호를 localStorage에 저장하거나 찾을 때 쓰는 항목 이름이다. 실제 주문번호는 이 항목의 값으로 저장한다. */
@@ -48,6 +48,8 @@ export function StorePage() {
     setLookupOrderId(order.orderId);
     writeLocalValue(LAST_ORDER_ID_KEY, order.orderId);
   }
+
+  useOrderPolling(currentOrder, showOrder);
 
   /**
    * 주문 생성·조회·결제 등 버튼을 눌렀을 때 각 handle 함수가 호출하는 공통 작업 처리 함수다.
@@ -160,17 +162,6 @@ export function StorePage() {
     });
   }
 
-  /** 결과가 불명확한 주문에 대해 서버가 토스의 결제 결과를 조회하고 저장하도록 요청한다. */
-  function handleReconcile() {
-    if (!currentOrder) {
-      return;
-    }
-
-    void runAction(async () => {
-      showOrder(await reconcilePayment(currentOrder.orderId));
-    });
-  }
-
   /** 결제 버튼의 시작점: 주문을 다시 조회해 READY인지 확인한 후 토스 결제수단 인증창을 연다. */
   function handlePayment() {
     if (!currentOrder) {
@@ -228,7 +219,6 @@ export function StorePage() {
           order={currentOrder}
           busy={busy}
           onRefresh={handleRefresh}
-          onReconcile={handleReconcile}
         />
       )}
 

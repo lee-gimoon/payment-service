@@ -1,14 +1,17 @@
 /** 파일 역할: Spring Boot의 주문·결제 API와 React 사이에서 주고받는 데이터의 TypeScript 타입을 정의한다. */
 
-/** READY는 승인 시도 전, UNKNOWN은 결과 미확정이며 나머지는 처리 중·성공·확정 실패를 뜻한다. */
+/** 승인·자동 확인·자동 취소 및 운영자 확인 상태를 구분한다. */
 export type PaymentStatus =
   | "READY"
   | "PROCESSING"
   | "SUCCEEDED"
   | "FAILED"
-  | "UNKNOWN";
+  | "UNKNOWN"
+  | "CANCEL_PENDING"
+  | "CANCELED"
+  | "REVIEW_REQUIRED";
 
-/** 주문 응답에 포함된 결제 요약이다. PG 원본 상태, 확인 시각, 재확인 가능 여부를 함께 받는다. */
+/** 주문 응답에 포함된 승인 금액·상태·승인 및 취소 시각이다. */
 export interface PaymentDetails {
   status: PaymentStatus;
   pgStatus: string | null;
@@ -16,7 +19,9 @@ export interface PaymentDetails {
   checkedAt: string | null;
   errorCode: string | null;
   message: string;
-  canReconcile: boolean;
+  paidAmount: number | null;
+  paidCurrency: string | null;
+  canceledAt: string | null;
 }
 
 /** 주문 API가 반환하는 상품·금액과 연결된 결제 상태로, 백엔드 OrderResponse에 대응한다. */

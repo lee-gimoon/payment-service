@@ -7,7 +7,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -39,18 +38,10 @@ public class PaymentController {
         return response(order);
     }
 
-    /** 기존 React의 PG 결과 재확인 버튼에서 사용하는 보조 API다. */
-    @PostMapping("/payments/{orderId}/reconcile")
-    @Operation(summary = "토스에서 결제 결과 재확인")
-    public ResponseEntity<OrderResponse> reconcile(@PathVariable String orderId) {
-        OrderResponse order = paymentService.reconcile(orderId);
-        return response(order);
-    }
-
-    /** 프론트가 사용하는 HTTP 규칙: 성공 200, 처리 중·미확정 202, 결제 거절 422. */
+    /** 완료·취소 완료 200, 처리 중·확인 지연 202, 결제 거절 422를 반환한다. */
     private ResponseEntity<OrderResponse> response(OrderResponse order) {
         return switch (order.payment().status()) {
-            case PROCESSING, UNKNOWN -> ResponseEntity.accepted().body(order);
+            case PROCESSING, UNKNOWN, CANCEL_PENDING, REVIEW_REQUIRED -> ResponseEntity.accepted().body(order);
             case FAILED -> ResponseEntity.unprocessableContent().body(order);
             default -> ResponseEntity.ok(order);
         };

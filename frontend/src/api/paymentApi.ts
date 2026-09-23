@@ -57,8 +57,8 @@ export function createOrder(): Promise<Order> {
 }
 
 /** GET /orders/{orderId}로 우리 서버에 저장된 주문과 결제 상태를 읽는다. */
-export function getOrder(orderId: string): Promise<Order> {
-  return request<Order>(`/orders/${encodeURIComponent(orderId)}`);
+export function getOrder(orderId: string, signal?: AbortSignal): Promise<Order> {
+  return request<Order>(`/orders/${encodeURIComponent(orderId)}`, { signal });
 }
 
 /**
@@ -73,15 +73,6 @@ export function confirmPayment(command: ConfirmPaymentCommand): Promise<Order> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(command)
     },
-    [422]
-  );
-}
-
-/** POST /payments/{orderId}/reconcile로 PG 결과 재확인을 요청한다. 확정 실패의 422 응답도 Order로 받는다. */
-export function reconcilePayment(orderId: string): Promise<Order> {
-  return request<Order>(
-    `/payments/${encodeURIComponent(orderId)}/reconcile`,
-    { method: "POST" },
     [422]
   );
 }

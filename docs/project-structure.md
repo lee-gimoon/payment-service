@@ -109,7 +109,7 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 | [OrderService.java](../src/main/java/com/example/payment/order/OrderService.java) | 주문을 만들고 저장하거나, 기존 주문과 연결된 결제 결과를 조회합니다. 주문 생성과 조회의 트랜잭션 범위를 지정합니다. |
 | [OrderRepository.java](../src/main/java/com/example/payment/order/OrderRepository.java) | `PurchaseOrder`를 저장·조회하는 Spring Data JPA 인터페이스입니다. `save()`, `findById()` 등의 실제 구현은 Spring Data JPA가 제공합니다. |
 | [PurchaseOrder.java](../src/main/java/com/example/payment/order/PurchaseOrder.java) | `purchase_orders` 테이블과 연결되는 Entity입니다. 주문번호, 상품명, 수량, 총금액, 생성 시각을 보관합니다. 새 주문번호는 UUID로 만듭니다. |
-| [OrderResponse.java](../src/main/java/com/example/payment/order/OrderResponse.java) | 프론트에 반환할 주문·결제 응답 DTO입니다. Entity를 응답 형태로 바꾸고 상태별 안내 문구를 넣습니다. 내부 `PaymentResponse`에는 결제 상태·시각·오류·재확인 가능 여부를 담습니다. 결제 행이 없으면 `READY`로 표현합니다. |
+| [OrderResponse.java](../src/main/java/com/example/payment/order/OrderResponse.java) | 프론트에 반환할 주문·결제 응답 DTO입니다. 상태별 안내와 실제 승인 금액·통화, 승인·취소 시각을 담습니다. 결제 행이 없으면 `READY`로 표현합니다. |
 
 ### 2.6. `payment/`: 결제 승인과 결과 관리
 
@@ -117,13 +117,15 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 
 | 파일 | 역할 |
 | --- | --- |
-| [PaymentController.java](../src/main/java/com/example/payment/payment/PaymentController.java) | `/payment-config`, `/payments/confirm`, `/payments/{orderId}/reconcile` 요청을 받습니다. 브라우저용 공개 설정을 반환하고, 결제 처리 결과에 따라 HTTP 200·202·422를 선택합니다. 내부 `PublicConfig`에는 클라이언트 키와 UI 설정만 포함하고 시크릿 키는 제외합니다. |
-| [PaymentService.java](../src/main/java/com/example/payment/payment/PaymentService.java) | 주문·금액 검증 → 중복 확인 → 결제 키 저장 → 토스 승인 → 결과 저장 순서를 관리합니다. `reconcile()`은 기존 결제를 토스에서 조회해 결과를 다시 확인합니다. |
+| [PaymentController.java](../src/main/java/com/example/payment/payment/PaymentController.java) | `/payment-config`, `/payments/confirm` 요청을 받습니다. 공개 설정과 승인 결과를 반환하며 수동 PG 재확인 API는 제공하지 않습니다. |
+| [PaymentService.java](../src/main/java/com/example/payment/payment/PaymentService.java) | 주문·금액 검증 → 중복 확인 → 결제 키 저장 → 토스 승인 → 결과 저장 순서를 관리합니다. |
+| [PaymentRecoveryService.java](../src/main/java/com/example/payment/payment/PaymentRecoveryService.java) | 미확정 결제를 선점하고 토스 재조회 → 정상 승인 복구 또는 확인된 금액 불일치 자동 취소 → 결과 저장을 수행합니다. |
+| [PaymentRecoveryConfiguration.java](../src/main/java/com/example/payment/config/PaymentRecoveryConfiguration.java) | 자동 복구 작업을 기본 5초 간격으로 실행합니다. |
 | [PaymentRepository.java](../src/main/java/com/example/payment/payment/PaymentRepository.java) | `Payment`를 저장·조회하는 JPA 인터페이스입니다. 결제의 기본 키가 주문번호이므로 `findById(orderId)`로 해당 주문의 결제를 찾습니다. |
 | [Payment.java](../src/main/java/com/example/payment/payment/Payment.java) | `payments` 테이블과 연결되는 Entity입니다. 주문번호, 토스 결제 키, 처리 상태와 시각 등을 보관합니다. `applyResult()`로 결과를 반영하고, `@Version`으로 동시 저장 충돌을 검사합니다. |
 | [ConfirmPaymentRequest.java](../src/main/java/com/example/payment/payment/ConfirmPaymentRequest.java) | 프론트가 승인 요청에 보내는 `orderId`, `paymentKey`, `amount`를 받는 DTO입니다. 빈 값·길이·숫자 범위 같은 입력 형식을 검사합니다. DB 금액과의 비교는 `PaymentService`가 합니다. |
 | [PaymentResult.java](../src/main/java/com/example/payment/payment/PaymentResult.java) | 토스 응답을 해석한 뒤 서버 내부에서 전달하는 결과 DTO입니다. 우리 결제 상태, 토스 상태, 오류 코드, 승인 시각을 담아 `TossPaymentClient`에서 `PaymentService`로 전달합니다. |
-| [PaymentStatus.java](../src/main/java/com/example/payment/payment/PaymentStatus.java) | `READY`, `PROCESSING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`이라는 우리 서비스의 결제 상태를 정의하는 enum입니다. `READY`는 주문만 있고 결제 행은 없는 상태를 응답에서 표현할 때 사용합니다. |
+| [PaymentStatus.java](../src/main/java/com/example/payment/payment/PaymentStatus.java) | 승인·재조회·취소·운영자 확인 상태를 구분합니다. `READY`는 주문만 있고 결제 행은 없는 상태입니다. |
 
 ### 2.7. 파일 이름에서 자주 보는 역할
 
@@ -149,12 +151,13 @@ Java 코드와 함께 서버 실행에 사용되는 설정과 SQL을 둡니다.
 
 ### `db/migration/`: DB 구조의 변경 이력
 
-Flyway가 서버 시작 시 아직 적용하지 않은 SQL 파일을 버전 순서대로 실행합니다. 새 DB도 V1을 거쳐 V2까지 적용된 상태가 현재 구조입니다.
+Flyway가 서버 시작 시 아직 적용하지 않은 SQL 파일을 버전 순서대로 실행합니다. 새 DB도 V1부터 V3까지 적용된 상태가 현재 구조입니다.
 
 | 파일 | 역할 |
 | --- | --- |
 | [V1__create_orders_and_payments.sql](../src/main/resources/db/migration/V1__create_orders_and_payments.sql) | 최초 주문·결제 테이블과 제약조건을 생성한 이력입니다. 이후 V2에서 제거한 예전 컬럼도 이 파일에는 남아 있습니다. |
-| [V2__simplify_payment_processing.sql](../src/main/resources/db/migration/V2__simplify_payment_processing.sql) | 기존 행을 유지하면서 사용하지 않는 컬럼을 제거하고 결제 테이블에 `version`을 추가합니다. 현재 Entity와 맞는 구조로 변경합니다. |
+| [V2__simplify_payment_processing.sql](../src/main/resources/db/migration/V2__simplify_payment_processing.sql) | 기본 승인 학습 단계의 구조 변경 이력입니다. 사용하지 않던 컬럼을 제거하고 `version`을 추가했습니다. |
+| [V3__automatic_payment_recovery.sql](../src/main/resources/db/migration/V3__automatic_payment_recovery.sql) | 기존 데이터를 보존하며 자동 재조회·취소 일정, 멱등키, 실제 승인 금액·통화, 취소 시각과 상태 제약을 추가합니다. |
 
 이미 적용한 마이그레이션은 변경 이력이므로, 이후 DB 구조를 수정할 때는 새 버전 SQL을 추가하는 방식으로 관리합니다.
 
@@ -203,7 +206,7 @@ React 화면에서 Spring Boot로 보내는 HTTP 요청을 모읍니다. 화면�
 
 | 파일 | 역할 |
 | --- | --- |
-| [paymentApi.ts](../frontend/src/api/paymentApi.ts) | 공개 결제 설정 조회, 주문 생성·조회, 승인, PG 결과 재확인 함수를 제공합니다. 공통 `request()`가 `fetch`와 JSON 응답을 처리하고, `ApiRequestError`가 서버 오류를 화면으로 전달합니다. 결제 결과를 담은 HTTP 422는 조회할 결과로 받아들입니다. |
+| [paymentApi.ts](../frontend/src/api/paymentApi.ts) | 공개 설정, 주문 생성·조회, 승인 요청을 제공합니다. 자동 복구는 서버가 수행하므로 프론트에 PG 재확인 함수는 없습니다. 결제 결과를 담은 HTTP 422도 주문 응답으로 받습니다. |
 
 서버의 `api/error/`는 **들어온 요청의 오류 응답을 만드는 곳**이고, 프론트의 `api/`는 **서버로 요청을 보내는 곳**입니다. 같은 `api`라는 이름이지만 역할이 다릅니다.
 
@@ -217,7 +220,7 @@ React 화면에서 Spring Boot로 보내는 HTTP 요청을 모읍니다. 화면�
 | [ProductCard.tsx](../frontend/src/components/ProductCard.tsx) | 판매하는 티셔츠의 상품 소개와 시각적 상품 카드를 표시합니다. |
 | [CheckoutCard.tsx](../frontend/src/components/CheckoutCard.tsx) | 주문 요약, 금액, 주문 만들기·테스트 결제 버튼, 결제 설정 안내를 표시합니다. 주문 상태와 작업 중 여부에 따라 버튼을 표시하거나 비활성화합니다. |
 | [OrderLookup.tsx](../frontend/src/components/OrderLookup.tsx) | 주문번호 입력란과 조회 버튼을 표시합니다. 버튼 클릭이나 Enter 입력을 부모의 조회 동작에 연결합니다. |
-| [OrderResultCard.tsx](../frontend/src/components/OrderResultCard.tsx) | 스토어에서 주문의 결제 상태·시각·오류를 표시하고, 저장 결과 조회·PG 결과 재확인 버튼을 제공합니다. |
+| [OrderResultCard.tsx](../frontend/src/components/OrderResultCard.tsx) | 주문 금액과 실제 승인 금액·상태·승인 및 취소 시각을 표시합니다. |
 
 ### 5.5. `frontend/src/lib/`: 여러 화면에서 쓰는 도우미
 
@@ -235,7 +238,8 @@ URL별 화면을 구성하고, API 호출·결제 실행·결과 표시 순서�
 | 파일 | 역할 |
 | --- | --- |
 | [StorePage.tsx](../frontend/src/pages/StorePage.tsx) | `/`의 스토어 화면입니다. 결제 설정과 마지막 주문을 불러오고 주문 생성·조회·결제창 열기를 연결합니다. 작업 중 중복 클릭을 막으며, 페이지를 떠날 때 진행 중인 결제창 작업을 정리하도록 알립니다. |
-| [PaymentResultPage.tsx](../frontend/src/pages/PaymentResultPage.tsx) | `/payment/result`의 결과 화면입니다. 인증 복귀 정보를 바탕으로 서버에 승인을 요청하거나 기존 주문을 조회합니다. 인증 실패 안내와 저장 결과 조회·PG 재확인·동일 승인 요청 재전송을 관리합니다. |
+| [PaymentResultPage.tsx](../frontend/src/pages/PaymentResultPage.tsx) | 인증 복귀 정보를 바탕으로 승인을 요청한 뒤 저장된 주문을 자동 조회합니다. 토스 재조회·취소는 백엔드 작업이 독립적으로 수행합니다. |
+| [useOrderPolling.ts](../frontend/src/payments/useOrderPolling.ts), [orderPolling.ts](../frontend/src/payments/orderPolling.ts) | 진행 중인 주문을 자동 갱신하고 완료 또는 화면 이탈 시 조회를 중단합니다. |
 
 ### 5.7. `frontend/src/payments/`: 토스 결제창과 복귀 처리
 

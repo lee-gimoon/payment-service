@@ -6,8 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   confirmPayment,
-  getOrder,
-  reconcilePayment
+  getOrder
 } from "../api/paymentApi";
 import { AppShell } from "../components/AppShell";
 import {
@@ -17,6 +16,7 @@ import {
 } from "../lib/formatters";
 import { removeSessionValue, writeLocalValue } from "../lib/storage";
 import { readPaymentRedirect } from "../payments/paymentRedirect";
+import { useOrderPolling } from "../payments/useOrderPolling";
 import type { ConfirmPaymentCommand, Order } from "../types/payment";
 
 const LAST_ORDER_ID_KEY = "lastOrderId";
@@ -28,7 +28,7 @@ function errorMessage(error: unknown): string {
     : "결과를 확인하지 못했습니다. 다시 결제하지 말고 저장된 결과를 조회해주세요.";
 }
 
-/** 결제수단 인증 결과로 승인을 요청하고, 주문 조회·PG 결과 재확인·승인 요청 재전송 버튼을 관리한다. */
+/** 인증 결과로 승인을 요청하고, 서버가 자동 처리한 주문·결제 결과를 읽어 표시한다. */
 export function PaymentResultPage() {
   const [redirect] = useState(readPaymentRedirect);
   const [order, setOrder] = useState<Order | null>(null);
@@ -40,7 +40,7 @@ export function PaymentResultPage() {
     "결제수단 인증 후 서버에서 최종 승인 결과를 확인합니다."
   );
   const [error, setError] = useState("");
-  // 화면용 상태: true이면 JSX의 disabled={busy} 때문에 결과 조회와 재확인 버튼이 비활성화된다.
+  // 화면용 상태: true이면 결과 조회와 승인 요청 버튼을 비활성화한다.
   const [busy, setBusy] = useState(true);
   // ref로 값 참조하기: useRef()는 current에 값을 담는 객체를 반환하며, 값을 바꿔도 재렌더링하지 않고 다음 렌더링에서도 그 값을 유지한다.
   // ref로 DOM 조작하기: JSX 요소에 ref를 전달하면 React가 그 DOM 요소를 ref.current에 넣어 focus() 같은 메서드로 조작할 수 있다.
@@ -49,7 +49,7 @@ export function PaymentResultPage() {
 
   /**
    * 서버가 반환한 상태와 안내를 표시한다. 결제 시도가 이미 기록되었다면 임시 승인 요청 정보를 지운다.
-   * UNKNOWN도 서버에 시도가 있는 상태이므로 이후에는 주문 조회와 PG 결과 재확인으로 이어진다.
+   * UNKNOWN도 서버에 시도가 있으므로 자동 복구를 기다리며 저장된 주문만 읽는다.
    */
   function showOrder(nextOrder: Order) {
     setOrder(nextOrder);
@@ -66,17 +66,19 @@ export function PaymentResultPage() {
     }
   }
 
+  useOrderPolling(order, showOrder, busy ? null : redirect.orderId);
+
   /** 요청 오류를 결제 실패로 단정하지 않고, 저장된 결과부터 조회하도록 안내한다. */
   function showRequestError(requestError: unknown) {
     setTitle("결제 결과 확인이 필요합니다");
     setMessage(
-      "통신 오류만으로 결제 실패를 판단할 수 없습니다. 주문 결과를 먼저 조회해주세요."
+      "서버가 결제 결과를 확인하고 있습니다. 잠시 후 결과가 자동으로 반영됩니다."
     );
     setError(errorMessage(requestError));
   }
 
   /**
-   * 결과 조회·PG 재확인·승인 요청 버튼을 눌렀을 때 각 handle 함수가 호출하는 공통 작업 처리 함수다.
+   * 주문 조회·승인 요청 버튼의 공통 작업 처리 함수다.
    * handle 함수가 전달한 work()를 실행하되, 이미 다른 작업이 진행 중이면 이번 호출을 건너뛴다.
    * 실행 중에는 버튼을 비활성화하고, 실패하면 오류를 표시하며, 끝나면 다시 버튼을 사용할 수 있게 한다.
    */
@@ -174,17 +176,6 @@ export function PaymentResultPage() {
     });
   }
 
-  /** 서버가 기존 paymentKey로 토스의 결과를 조회하고 DB와 맞추도록 요청한다. 재승인 요청은 아니다. */
-  function handleReconcile() {
-    if (!redirect.orderId) {
-      return;
-    }
-
-    void runAction(async () => {
-      showOrder(await reconcilePayment(redirect.orderId as string));
-    });
-  }
-
   /**
    * 임시 승인 정보가 남아 있을 때 동일한 승인 요청을 서버에 다시 전달한다.
    * 서버는 이미 기록된 결제 시도가 있으면 저장된 결과를 반환하므로 기존 시도를 새로 만들지 않는다.
@@ -212,12 +203,20 @@ export function PaymentResultPage() {
             <dd>{order?.orderId || redirect.orderId || "확인 중"}</dd>
           </div>
           <div>
-            <dt>결제 금액</dt>
+            <dt>주문 금액</dt>
             <dd>{order ? formatAmount(order.amount) : "—"}</dd>
           </div>
           <div>
             <dt>결제 상태</dt>
             <dd>{order ? paymentStatusLabel(order.payment.status) : "—"}</dd>
+          </div>
+          <div>
+            <dt>실제 승인 금액</dt>
+            <dd>{order?.payment.paidAmount == null ? "—" : `${order.payment.paidAmount.toLocaleString("ko-KR")} ${order.payment.paidCurrency}`}</dd>
+          </div>
+          <div>
+            <dt>취소 시각</dt>
+            <dd>{formatDateTime(order?.payment.canceledAt ?? null)}</dd>
           </div>
           <div>
             <dt>승인 시각</dt>
@@ -234,12 +233,7 @@ export function PaymentResultPage() {
         <div className="actions">
           {redirect.orderId && (
             <button className="secondary" type="button" disabled={busy} onClick={handleRefresh}>
-              저장된 결과 조회
-            </button>
-          )}
-          {order?.payment.canReconcile && (
-            <button type="button" disabled={busy} onClick={handleReconcile}>
-              PG 결과 재확인
+              주문 내역 새로고침
             </button>
           )}
           {confirmation && (

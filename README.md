@@ -1,6 +1,6 @@
 # Payment Service
 
-토스페이먼츠의 기본 결제 흐름을 배우는 Spring Boot + React MVP입니다. **티셔츠 1장, 10,000원 주문 → 결제수단 인증 → 서버 승인 → 결과 조회**만 다룹니다.
+토스페이먼츠의 결제 흐름을 배우는 Spring Boot + React MVP입니다. **주문 → 결제수단 인증 → 서버 승인 → 자동 재조회·필요시 취소 → 주문 내역 조회**를 다룹니다.
 
 먼저 [기본 결제 흐름](docs/payment-domain.md)을 읽고, [코드 읽는 순서](docs/code-reading-guide.md)대로 따라가세요.
 
@@ -102,7 +102,6 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 | GET | `/orders/{orderId}` | DB에 저장된 주문·결제 조회 |
 | GET | `/payment-config` | 공개 클라이언트 키와 결제 가능 여부 |
 | POST | `/payments/confirm` | 인증 성공 후 받은 값을 검증하고 토스에 최종 승인 요청 |
-| POST | `/payments/{orderId}/reconcile` | 불명확한 결과를 토스에서 다시 조회 |
 
 승인 요청은 다음 세 값을 받습니다. `paymentKey`는 인증 성공 후 `successUrl`로 받은 값을 사용합니다.
 
@@ -123,10 +122,13 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 | SUCCEEDED | 주문·키·금액·통화와 토스 DONE 결과를 확인하고 저장 |
 | FAILED | 명시적인 카드 거절 또는 토스 ABORTED·EXPIRED 확인 |
 | UNKNOWN | 통신 오류 등으로 결과 재확인 필요 |
+| CANCEL_PENDING | 승인된 금액·통화 불일치를 확인하여 서버가 취소 처리 중 |
+| CANCELED | 토스 전액 취소 완료 확인 |
+| REVIEW_REQUIRED | 자동 처리로 확정하지 못해 운영자 확인 필요 |
 
-승인·재확인 API는 완료 시 200, 처리 중·미확정 시 202, 확정 실패 시 422와 주문 본문을 반환합니다. 일반 입력 오류·없는 주문·충돌·설정 및 저장 장애는 `{code, message}` 형식으로 400·404·409·503을 반환합니다.
+승인 API는 완료·취소 완료 시 200, 처리 중·미확정·확인 지연 시 202, 확정 실패 시 422와 주문 본문을 반환합니다. 주문 조회는 DB에 저장된 주문·결제·취소 내역을 200으로 반환합니다. 일반 입력 오류·없는 주문·충돌·설정 및 저장 장애는 `{code, message}` 형식으로 400·404·409·503을 반환합니다.
 
-타임아웃은 실패로 단정하지 않습니다. 먼저 **저장된 결과 조회**, 필요하면 **PG 결과 재확인**을 누르세요. 재확인은 조회 API만 호출하며 새 승인을 요청하지 않습니다. 조회도 불명확하면 UNKNOWN으로 남습니다.
+타임아웃은 실패로 단정하지 않습니다. 서버가 DB의 미확정 결제를 자동 재조회합니다. 같은 주문·결제키의 승인 금액이나 통화가 잘못됐다면 취소 의도를 먼저 저장하고 토스 취소 API를 호출합니다. 화면은 저장된 주문 결과만 자동 갱신합니다. 브라우저를 닫아도 서버 작업은 계속됩니다. [자동 복구·취소 파이프라인](docs/payment-recovery.md)
 
 ## MVP에서 지키는 규칙
 
@@ -139,9 +141,9 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 - 토스 [타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)에 따라 API 응답 대기는 60초로 설정합니다.
 - 토스 호출 전후의 DB 저장을 분리하고, 유일성 제약과 `@Version`으로 중복·동시 저장을 검사합니다.
 
-주문 테이블 5개 컬럼, 결제 테이블 8개 컬럼을 사용합니다. DB 마이그레이션과 상세 동작은 [코드 읽는 순서](docs/code-reading-guide.md)에 있습니다.
+주문 테이블 5개 컬럼, 결제 테이블 15개 컬럼을 사용합니다. V3 마이그레이션은 기존 데이터를 보존하며 자동 복구 일정·취소 멱등키·실제 승인 금액·취소 시각을 추가합니다. DB 마이그레이션과 상세 동작은 [코드 읽는 순서](docs/code-reading-guide.md)에 있습니다.
 
-이 프로젝트는 로그인·주문 접근 권한이 없는 로컬 학습 예제입니다. 취소·환불·가상계좌·빌링·웹훅·자동 복구는 구현 범위에 포함하지 않습니다.
+이 프로젝트는 로그인·주문 접근 권한이 없는 로컬 학습 예제입니다. 내부 자동 복구·취소를 제공하며 고객 임의 취소 API는 공개하지 않습니다. 식별자가 다른 거래, 부분 취소, 미지원 결제수단과 반복 장애는 `REVIEW_REQUIRED`로 남기고 오류 로그를 기록합니다. 운영 알림 연결, 고객 취소 권한, 가상계좌·빌링·웹훅은 별도 구현이 필요합니다.
 
 ## 테스트
 
@@ -173,8 +175,8 @@ npm run build
 Java 21 / Spring Boot 4.1.1 / JPA / PostgreSQL 18 / Flyway / React 19 / TypeScript 7 / Vite 8을 사용합니다.
 
 - `order/`: 주문 생성·조회
-- `payment/`: 승인 흐름·저장·수동 재확인
-- `gateway/TossPaymentClient.java`: 토스 승인·조회 HTTP 호출
+- `payment/`: 승인 흐름·저장·자동 재조회·취소 처리
+- `gateway/TossPaymentClient.java`: 토스 승인·조회·취소 HTTP 호출
 - `frontend/src/payments/`: 공식 SDK 호출·복귀 URL 처리
 - `frontend/src/pages/`: 스토어·결제 결과 화면
 
@@ -182,6 +184,7 @@ Java 21 / Spring Boot 4.1.1 / JPA / PostgreSQL 18 / Flyway / React 19 / TypeScri
 
 - [프로젝트 구조와 폴더·파일별 역할](docs/project-structure.md)
 - [기본 결제 흐름과 MVP 범위](docs/payment-domain.md)
+- [자동 결제 확인과 취소 파이프라인](docs/payment-recovery.md)
 - [코드 읽는 순서](docs/code-reading-guide.md)
 - [Java·JPA 개념](docs/java-jpa-notes.md)
 - [JPA에서 DB까지의 처리 경로](docs/jpa-database-pipeline.md)

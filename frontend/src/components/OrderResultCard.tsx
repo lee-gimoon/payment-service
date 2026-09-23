@@ -1,4 +1,4 @@
-/** 파일 역할: 스토어에서 주문의 결제 결과를 보여주고 저장 결과 조회·PG 재확인 버튼을 제공한다. */
+/** 파일 역할: 서버가 자동 처리한 주문·결제·취소 결과를 보여준다. */
 import {
   formatAmount,
   formatDateTime,
@@ -6,20 +6,18 @@ import {
 } from "../lib/formatters";
 import type { Order } from "../types/payment";
 
-/** 표시할 주문과 작업 여부, 부모 화면이 실행할 두 종류의 조회 콜백이다. */
+/** 표시할 주문과 작업 여부, 저장된 주문을 새로 읽는 콜백이다. */
 interface OrderResultCardProps {
   order: Order;
   busy: boolean;
   onRefresh: () => void;
-  onReconcile: () => void;
 }
 
-/** 주문 내용·결제 상태·처리 시각을 표시하고, 서버가 허용한 경우 PG 결과 재확인 버튼을 보여준다. */
+/** 주문과 승인·취소 내역을 표시한다. 미확정 결제의 복구는 서버가 담당한다. */
 export function OrderResultCard({
   order,
   busy,
-  onRefresh,
-  onReconcile
+  onRefresh
 }: OrderResultCardProps) {
   const statusLabel = paymentStatusLabel(order.payment.status);
 
@@ -48,6 +46,14 @@ export function OrderResultCard({
           <dd>{formatDateTime(order.payment.approvedAt)}</dd>
         </div>
         <div>
+          <dt>실제 승인 금액</dt>
+          <dd>{order.payment.paidAmount == null ? "—" : `${order.payment.paidAmount.toLocaleString("ko-KR")} ${order.payment.paidCurrency}`}</dd>
+        </div>
+        <div>
+          <dt>취소 시각</dt>
+          <dd>{formatDateTime(order.payment.canceledAt)}</dd>
+        </div>
+        <div>
           <dt>결과 확인 시각</dt>
           <dd>{formatDateTime(order.payment.checkedAt)}</dd>
         </div>
@@ -61,13 +67,8 @@ export function OrderResultCard({
 
       <div className="actions">
         <button className="secondary" type="button" disabled={busy} onClick={onRefresh}>
-          저장된 결과 조회
+          주문 내역 새로고침
         </button>
-        {order.payment.canReconcile && (
-          <button type="button" disabled={busy} onClick={onReconcile}>
-            PG 결과 재확인
-          </button>
-        )}
       </div>
     </section>
   );

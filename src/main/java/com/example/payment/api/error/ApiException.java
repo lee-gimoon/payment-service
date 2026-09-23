@@ -3,7 +3,11 @@ package com.example.payment.api.error;
 
 import org.springframework.http.HttpStatus;
 
-/** HTTP 상태, 기계가 구분할 오류 코드, 사용자 안내 메시지를 함께 가진 업무 예외다. */
+/**
+ * 서비스가 발견한 업무 오류의 HTTP 상태·오류 코드·메시지를 묶어
+ * Spring 예외 처리기까지 운반하는 클래스다.
+ * message는 이 예외를 생성하는 서비스 코드가 전달한다.
+ */
 public class ApiException extends RuntimeException {
     private final HttpStatus status;
     private final String code;
