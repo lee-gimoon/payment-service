@@ -70,26 +70,40 @@ public class PaymentService {
 
     /** 승인 결과가 불확실하면 같은 요청에서 GET 재조회 → 취소 의도 저장 → 취소 → 결과 저장을 이어서 수행한다. */
     private Payment verifyAndCancelIfNeeded(Payment payment, long amount) {
+        // 1. 저장된 결제키로 토스에 다시 조회해 실제 승인 상태를 확인한다.
         PaymentResult result = tossPaymentClient.lookup(payment, amount);
+
+        // 2. 승인 금액이나 통화가 주문과 다르면 취소 요청 전에 취소 의도와 실제 승인 정보를 저장한다.
         if (result.status() == PaymentStatus.CANCEL_PENDING) {
             payment.applyResult(result);
-            payment = paymentRepository.saveAndFlush(payment); // 취소 멱등키와 실제 승인 금액을 외부 호출 전에 저장한다.
+            payment = paymentRepository.saveAndFlush(payment);
+
+            // 3. 저장한 취소 멱등키로 토스에 취소를 요청한다.
             result = tossPaymentClient.cancel(payment);
+
+            // 4. 취소 응답이 불확실하면 한 번 더 조회해 취소 여부를 확인한다.
             if (result.status() == PaymentStatus.UNKNOWN) {
-                // 취소 응답을 잃었다면 한 번 조회해 이미 취소되었는지 확인한다.
                 result = tossPaymentClient.lookup(payment, amount);
             }
         }
+
+        // 5. 재조회 후에도 결과가 불확실하거나 취소가 완료되지 않았다면 수동 확인 대상으로 분류한다.
         if (result.status() == PaymentStatus.UNKNOWN || result.status() == PaymentStatus.CANCEL_PENDING) {
             result = PaymentResult.reviewRequired(result.errorCode() == null
                     ? "PG_RESULT_UNCONFIRMED" : result.errorCode());
         }
+
+        // 6. 최종 결과를 결제 객체에 반영하고 DB에 저장한다.
         payment.applyResult(result);
         payment = paymentRepository.saveAndFlush(payment);
+
+        // 7. 수동 확인이 필요한 결제는 주문번호와 사유, 취소 요청 여부를 로그에 남긴다.
         if (payment.getStatus() == PaymentStatus.REVIEW_REQUIRED) {
             log.error("PAYMENT_REVIEW_REQUIRED orderId={} errorCode={} cancelRequested={}",
                     payment.getOrderId(), payment.getErrorCode(), payment.getCancelIdempotencyKey() != null);
         }
+
+        // 8. 저장된 결제 상태를 호출한 confirm()에 돌려준다.
         return payment;
     }
 

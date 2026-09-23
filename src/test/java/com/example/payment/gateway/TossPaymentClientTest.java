@@ -222,6 +222,23 @@ class TossPaymentClientTest {
         assertThat(gateway.lookup(pendingCancel(), 10_000).status()).isEqualTo(PaymentStatus.REVIEW_REQUIRED);
     }
 
+    /** 취소 의도가 저장된 뒤에도 토스가 DONE이면 취소 완료나 정상 결제 성공으로 처리하지 않는다. */
+    @Test
+    void stillApprovedAfterCancelIntentIsNotSucceeded() {
+        server.expect(requestTo(BASE + "/payment-key"))
+                .andRespond(withSuccess(DONE.replace("10000", "9000"), MediaType.APPLICATION_JSON));
+        assertThat(gateway.lookup(pendingCancel(), 10_000).status()).isEqualTo(PaymentStatus.CANCEL_PENDING);
+    }
+
+    /** 취소를 시작한 결제에서 실패 상태가 조회되면 단순 결제 실패로 덮어쓰지 않는다. */
+    @ParameterizedTest
+    @ValueSource(strings = {"ABORTED", "EXPIRED"})
+    void failureAfterCancelIntentRequiresReview(String status) {
+        server.expect(requestTo(BASE + "/payment-key"))
+                .andRespond(withSuccess(DONE.replace("10000", "9000").replace("DONE", status), MediaType.APPLICATION_JSON));
+        assertThat(gateway.lookup(pendingCancel(), 10_000).status()).isEqualTo(PaymentStatus.REVIEW_REQUIRED);
+    }
+
     private Payment pendingCancel() {
         Payment payment = new Payment("order-123", "payment-key");
         payment.applyResult(new PaymentResult(PaymentStatus.CANCEL_PENDING, "DONE", "PG_AMOUNT_MISMATCH",

@@ -142,7 +142,7 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 
 | 파일 | 역할 |
 | --- | --- |
-| [TossPaymentClient.java](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | `confirm()`은 승인 POST, `lookup()`은 결제 GET 조회, `cancel()`은 `/v1/payments/{paymentKey}/cancel`에 전액 취소 POST를 보냅니다. `readResult()`가 응답을 검사하며, 별도 GET에서 같은 거래의 승인 금액·통화 불일치를 확인한 경우 `CANCEL_PENDING`을 반환합니다. 취소 완료는 `CANCELED`·잔액 0·성공한 취소 이력까지 확인합니다. |
+| [TossPaymentClient.java](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | `confirm()`은 승인 POST, `lookup()`은 결제 GET 조회, `cancel()`은 `/v1/payments/{paymentKey}/cancel`에 전액 취소 POST를 보냅니다. 승인·조회 응답은 `readConfirmationResult()`·`readLookupResult()`가 각각 검사하며, 별도 GET에서 같은 거래의 승인 금액·통화 불일치를 확인한 경우 `CANCEL_PENDING`을 반환합니다. 취소 완료는 `CANCELED`·잔액 0·성공한 취소 이력까지 확인합니다. |
 
 이 파일 안의 `TossPaymentResponse`는 결제 응답, `TossCancellation`은 취소 이력, `TossErrorResponse`는 오류 응답을 읽는 내부 record입니다. 승인·즉시 재조회·취소의 호출 순서와 DB 저장은 `PaymentService`가 담당합니다.
 
@@ -385,7 +385,7 @@ Node 내장 테스트 도구를 사용합니다. 브라우저 저장소·SDK·�
 | 주문·결제 API 경로 확인 | `OrderController.java`, `PaymentController.java`, `frontend/src/api/paymentApi.ts` |
 | 서버의 승인 처리 순서 확인 | `payment/PaymentService.java` |
 | 승인 결과 불확실 시 즉시 처리 순서 확인 | `payment/PaymentService.java`의 `verifyAndCancelIfNeeded()`, [재조회·취소](payment-recovery.md) |
-| 자동 취소 조건과 토스 취소 응답 검증 | `gateway/TossPaymentClient.java`의 `readResult()`, `cancel()`, `canceledResult()` |
+| 자동 취소 조건과 토스 취소 응답 검증 | `gateway/TossPaymentClient.java`의 `readLookupResult()`, `readCancellationLookupResult()`, `cancel()`, `canceledResult()` |
 | 취소 멱등키·취소 의도 저장 확인 | `payment/Payment.java`, `PaymentRepository.java`, V3·V4 마이그레이션 |
 | 토스에 보내는 HTTP 요청 확인 | `gateway/TossPaymentClient.java`, `config/PaymentConfiguration.java` |
 | 토스 키·결제 UI 설정 변경 | `application.yml`, `config/TossProperties.java`, [환경변수 문서](environment-variables.md) |

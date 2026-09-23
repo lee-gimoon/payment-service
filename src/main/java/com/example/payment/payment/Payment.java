@@ -36,9 +36,14 @@ public class Payment {
     @Column(length = 3)
     private String pgCurrency;
 
-    /** 취소 전에 저장한다. 결과가 불명확할 때 취소 요청을 추적하는 고정 멱등키다. */
+    /**
+     * 취소 요청 전에 "이 결제를 취소하려고 한다"는 의도로 저장하는 UUID 멱등키다.
+     * 같은 요청을 다시 보내더라도 토스에서 중복 취소로 처리하지 않도록 Idempotency-Key 헤더에 같은 값을 보낸다.
+     */
     @Column(length = 36, unique = true)
     private String cancelIdempotencyKey;
+
+    /** 취소 요청 전에 "이 결제를 취소하려고 한다"는 의도를 DB에 저장한 시각이다. 실제 취소 완료 시각은 canceledAt이다. */
     private Instant cancelRequestedAt;
 
     @Column(length = 40)
@@ -46,7 +51,16 @@ public class Payment {
     @Column(length = 80)
     private String errorCode;
 
-    /** JPA가 저장할 때 검사하는 번호다. 늦은 응답이 다른 요청의 저장 결과를 덮어쓰지 못하게 한다. */
+    /**
+     * 결제 행을 갱신할 때 충돌을 감지하고, 새 결제를 INSERT 대상으로 판별하게 하는 버전 값이다.
+     * Spring Data JPA는 {@code Long version}이 null이면 새 엔티티로 보고 {@code persist()}를 호출한다.
+     * 버전 필드가 없으면 ID로 새 엔티티인지 판단한다. 이 엔티티는 생성 시 {@code orderId}를 이미
+     * 지정하므로, 새 객체인데도 ID가 있다는 이유로 {@code merge()}를 호출한다.
+     * 동시 요청이 모두 결제 기록을 찾지 못한 뒤 저장할 때, 뒤의 merge()가 먼저 생성된 행을 갱신하면
+     * 두 요청 모두 토스 승인 호출까지 진행할 위험이 있다. persist()를 쓰면 두 번째 INSERT가
+     * 주문번호 기본 키 제약에 걸려 토스 호출 전에 중단된다.
+     * 기존 행을 갱신할 때는 DB의 버전과 비교해 오래된 결과가 최신 결과를 덮어쓰지 못하게 한다.
+     */
     @Version
     private Long version;
 

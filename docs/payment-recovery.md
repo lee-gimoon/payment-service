@@ -13,7 +13,7 @@
 7. 이어서 `POST /v1/payments/{paymentKey}/cancel`을 호출합니다. `cancelAmount`를 생략해 전액 취소합니다. 토스의 `CANCELED`, 잔액 0, 성공한 취소 이력을 확인한 뒤 `CANCELED`와 취소 시각을 저장합니다.
 8. 취소 응답을 받지 못하면 같은 요청에서 GET을 한 번 더 호출해 이미 취소됐는지 확인합니다. 그래도 결과를 확정할 수 없으면 취소 의도와 멱등키를 보존하고 `REVIEW_REQUIRED`와 오류 로그를 남깁니다.
 
-`TossPaymentClient.readResult()`는 토스 응답을 해석하고, `PaymentService`가 HTTP 호출과 DB 저장 순서를 관리합니다. 조회에서 `ABORTED`·`EXPIRED`가 확인되면 `FAILED`로 저장합니다. 부분 취소, 지원하지 않는 결제수단, 식별자 불일치는 자동 취소하지 않습니다.
+`TossPaymentClient.readConfirmationResult()`는 승인 POST 응답을, `readLookupResult()`는 GET 재조회 응답을 해석합니다. `PaymentService`가 HTTP 호출과 DB 저장 순서를 관리합니다. 조회에서 `ABORTED`·`EXPIRED`가 확인되면 `FAILED`로 저장합니다. 부분 취소, 지원하지 않는 결제수단, 식별자 불일치는 자동 취소하지 않습니다.
 
 ## 처리하지 못한 경우
 

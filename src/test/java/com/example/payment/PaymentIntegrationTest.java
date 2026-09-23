@@ -297,7 +297,8 @@ class PaymentIntegrationTest {
     }
 
     private static PaymentResult succeeded() {
-        return new PaymentResult(PaymentStatus.SUCCEEDED, "DONE", null, Instant.parse("2026-09-11T01:00:00Z"));
+        return new PaymentResult(PaymentStatus.SUCCEEDED, "DONE", null,
+                Instant.parse("2026-09-11T01:00:00Z"), null, null, null);
     }
 
     private static ConfirmPaymentRequest request(String id, String key) {

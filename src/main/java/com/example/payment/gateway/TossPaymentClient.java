@@ -54,29 +54,34 @@ public class TossPaymentClient {
                             "paymentKey", payment.getPaymentKey(), "amount", amount)) // 이 값들을 보낼 본문으로 설정한다. 전송할 때 JSON으로 변환된다.
                     .retrieve() // 응답 처리용 객체를 얻는다. 이 객체에서 아래의 body(Class)를 호출할 수 있다.
                     .body(TossPaymentResponse.class); // 여기서 POST 요청을 전송하고 응답 JSON을 이 객체로 변환한다.
-            return readResult(payment, amount, response, false);
+            return readConfirmationResult(payment, amount, response);
         } catch (RestClientResponseException exception) { // 토스 서버가 4xx·5xx 오류 응답을 보낸 경우를 잡는다.
-            return readConfirmationError(exception);
+            return readConfirmationError(exception); // 오류 응답의 코드를 읽어 명시적 결제 거절이면 FAILED, 그 밖에는 재조회가 필요한 UNKNOWN으로 바꾼다.
         } catch (RestClientException exception) { // 그 밖의 연결·시간 초과·응답 변환 등의 오류를 잡는다.
             // 응답이 끊겼어도 토스에서 승인되었을 수 있으므로 실패라고 단정하지 않는다.
             return PaymentResult.unknown("PG_COMMUNICATION_ERROR");
         }
     }
 
-    /** 이미 보낸 결제의 결과만 조회한다. 새로운 승인을 요청하는 메서드가 아니다. */
+    /** 토스 API 서버에 paymentKey로 GET 요청을 보내 결제 한 건을 조회하고, 응답을 PaymentResult로 바꾼다. */
     public PaymentResult lookup(Payment payment, long amount) {
         try {
             TossPaymentResponse response = client.get()
                     .uri("/v1/payments/{paymentKey}", payment.getPaymentKey())
                     .retrieve()
                     .body(TossPaymentResponse.class);
-            return readResult(payment, amount, response, true);
+            return readLookupResult(payment, amount, response);
         } catch (RestClientException exception) {
             return PaymentResult.unknown("PG_LOOKUP_ERROR");
         }
     }
 
-    /** 저장된 취소 의도와 멱등키로 전액 취소한다. 응답이 끊기면 호출자가 GET으로 결과를 확인한다. */
+    /**
+     * 토스 API 서버에 paymentKey로 POST /v1/payments/{paymentKey}/cancel 요청을 보내 결제 전액 취소를 요청한다.
+     * 저장된 취소 멱등키를 헤더에 넣고, JSON 본문에 취소 사유(cancelReason)를 담아 보낸다.
+     * 토스 응답에서 같은 결제의 전액 취소가 확인되면 CANCELED를 반환한다.
+     * 응답을 확인할 수 없으면 UNKNOWN을 반환하며, 호출한 PaymentService가 토스에 GET으로 다시 조회한다.
+     */
     public PaymentResult cancel(Payment payment) {
         if (payment.getStatus() != PaymentStatus.CANCEL_PENDING || payment.getCancelIdempotencyKey() == null
                 || payment.getPgAmount() == null || payment.getPgCurrency() == null) {
@@ -99,54 +104,116 @@ public class TossPaymentClient {
         }
     }
 
-    /** 승인 응답은 먼저 검증하고, 별도 GET 재조회에서 같은 거래의 금액 불일치를 확인한 경우에만 취소를 준비한다. */
-    private PaymentResult readResult(Payment payment, long amount, TossPaymentResponse response, boolean lookup) {
+    /** 승인 POST 응답을 해석한다. 금액이 다르면 UNKNOWN을 반환해 PaymentService가 GET으로 재조회하게 한다. */
+    private PaymentResult readConfirmationResult(Payment payment, long amount, TossPaymentResponse response) {
+        // 응답 본문이 없으면 승인 여부를 판단할 수 없다.
         if (response == null) return PaymentResult.unknown("PG_EMPTY_RESPONSE");
-        if (!samePayment(payment, response)) {
-            // 다른 주문의 결제를 취소하지 않도록 식별자 불일치는 운영자가 확인한다.
-            return lookup ? PaymentResult.reviewRequired("PG_IDENTITY_MISMATCH")
-                    : PaymentResult.unknown("PG_RESPONSE_MISMATCH");
-        }
-        if (response.totalAmount() == null || response.totalAmount().signum() <= 0
-                || response.currency() == null || !response.currency().matches("[A-Z]{3}")) {
-            return PaymentResult.unknown("PG_INCOMPLETE_RESPONSE");
-        }
-        if (payment.getCancelIdempotencyKey() != null && !sameCancellationAmount(payment, response)) {
-            return PaymentResult.reviewRequired("PG_CANCEL_EVIDENCE_CHANGED");
-        }
-        if ("CANCELED".equals(response.status())) {
-            return lookup ? canceledResult(response) : PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
-        }
-        if ("PARTIAL_CANCELED".equals(response.status())) {
-            return lookup ? PaymentResult.reviewRequired("PG_PARTIAL_CANCEL_REVIEW")
-                    : PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
-        }
-        if ("ABORTED".equals(response.status()) || "EXPIRED".equals(response.status())) {
-            if (payment.getCancelIdempotencyKey() != null) return PaymentResult.reviewRequired("PG_CANCEL_STATE_CONFLICT");
-            return new PaymentResult(PaymentStatus.FAILED, response.status(), "PG_" + response.status(), null);
-        }
-        boolean supportedMethod = "카드".equals(response.method()) || "간편결제".equals(response.method());
-        if ("DONE".equals(response.status()) && response.approvedAt() != null) {
-            if (!supportedMethod) {
-                return lookup ? PaymentResult.reviewRequired("PG_UNSUPPORTED_METHOD")
-                        : PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
-            }
-            boolean amountMatches = response.totalAmount().compareTo(BigDecimal.valueOf(amount)) == 0
-                    && "KRW".equals(response.currency());
-            if (payment.getCancelIdempotencyKey() != null || !amountMatches) {
-                if (!lookup) return PaymentResult.unknown("PG_RESPONSE_MISMATCH");
-                return result(PaymentStatus.CANCEL_PENDING, "PG_AMOUNT_MISMATCH", response, null);
-            }
-            return result(PaymentStatus.SUCCEEDED, null, response, null);
-        }
-        return PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+        // 주문번호나 결제키가 다르면 UNKNOWN을 반환해 저장된 결제키로 다시 조회하게 한다.
+        if (!samePayment(payment, response)) return PaymentResult.unknown("PG_RESPONSE_MISMATCH");
+        // 금액·통화가 없거나 형식이 잘못되면 응답을 믿고 처리할 수 없다.
+        if (!hasValidAmountAndCurrency(response)) return PaymentResult.unknown("PG_INCOMPLETE_RESPONSE");
+        if (response.status() == null) return PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+
+        return switch (response.status()) {
+            case "DONE" -> readConfirmedApproval(amount, response);
+            case "ABORTED", "EXPIRED" -> failedResult(response);
+            default -> PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+        };
     }
 
+    /** GET 재조회 응답을 해석한다. 같은 결제의 승인 금액·통화가 주문과 다르면 취소 필요 상태를 반환한다. */
+    private PaymentResult readLookupResult(Payment payment, long amount, TossPaymentResponse response) {
+        // 응답 본문이 없으면 결제 상태를 판단할 수 없다.
+        if (response == null) return PaymentResult.unknown("PG_EMPTY_RESPONSE");
+        // 재조회에서도 식별자가 다르면 다른 거래를 취소하지 않도록 사람 확인 대상으로 남긴다.
+        if (!samePayment(payment, response)) return PaymentResult.reviewRequired("PG_IDENTITY_MISMATCH");
+        // 금액·통화가 없거나 형식이 잘못되면 취소 여부를 결정할 수 없다.
+        if (!hasValidAmountAndCurrency(response)) return PaymentResult.unknown("PG_INCOMPLETE_RESPONSE");
+        // 취소 의도가 이미 저장됐다면 주문 금액 대신 저장된 취소 대상과 응답을 비교한다.
+        if (payment.getCancelIdempotencyKey() != null) return readCancellationLookupResult(payment, response);
+        if (response.status() == null) return PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+
+        return switch (response.status()) {
+            case "DONE" -> readLookedUpApproval(amount, response);
+            case "CANCELED" -> canceledResult(response);
+            case "PARTIAL_CANCELED" -> PaymentResult.reviewRequired("PG_PARTIAL_CANCEL_REVIEW");
+            case "ABORTED", "EXPIRED" -> failedResult(response);
+            default -> PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+        };
+    }
+
+    /** 승인 POST 응답의 DONE은 지원 결제수단·금액·통화까지 맞을 때만 성공으로 처리한다. */
+    private PaymentResult readConfirmedApproval(long amount, TossPaymentResponse response) {
+        // 승인 시각이 없으면 DONE만으로 성공을 확정하지 않는다.
+        if (response.approvedAt() == null) return PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+        // 이 서비스는 카드와 간편결제만 지원한다.
+        if (!supportsMethod(response)) return PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+        // 최초 승인 응답의 금액·통화가 달라지면 GET으로 한 번 더 확인한다.
+        if (!matchesOrderAmount(amount, response)) return PaymentResult.unknown("PG_RESPONSE_MISMATCH");
+        return result(PaymentStatus.SUCCEEDED, null, response, null);
+    }
+
+    /** GET에서 확인한 DONE은 주문 금액·통화가 다를 때만 취소 필요 상태가 된다. */
+    private PaymentResult readLookedUpApproval(long amount, TossPaymentResponse response) {
+        // 승인 시각이 없으면 DONE만으로 성공이나 취소 필요를 확정하지 않는다.
+        if (response.approvedAt() == null) return PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+        // 지원하지 않는 결제수단은 자동 취소하지 않고 사람 확인 대상으로 남긴다.
+        if (!supportsMethod(response)) return PaymentResult.reviewRequired("PG_UNSUPPORTED_METHOD");
+        // 같은 결제의 승인 금액·통화가 주문과 다르면 취소 의도를 저장하도록 알린다.
+        if (!matchesOrderAmount(amount, response)) return result(PaymentStatus.CANCEL_PENDING, "PG_AMOUNT_MISMATCH", response, null);
+        return result(PaymentStatus.SUCCEEDED, null, response, null);
+    }
+
+    /** 취소 요청 후 GET으로 확인한 결제가 같은 취소 대상인지, 전액 취소됐는지 검사한다. */
+    private PaymentResult readCancellationLookupResult(Payment payment, TossPaymentResponse response) {
+        // 취소 전에 저장한 토스 승인 금액·통화와 달라졌다면 자동 판정을 멈춘다.
+        if (!sameCancellationAmount(payment, response)) return PaymentResult.reviewRequired("PG_CANCEL_EVIDENCE_CHANGED");
+        if (response.status() == null) return PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+
+        return switch (response.status()) {
+            case "CANCELED" -> canceledResult(response);
+            case "PARTIAL_CANCELED" -> PaymentResult.reviewRequired("PG_PARTIAL_CANCEL_REVIEW");
+            case "ABORTED", "EXPIRED" -> PaymentResult.reviewRequired("PG_CANCEL_STATE_CONFLICT");
+            case "DONE" -> readStillApprovedCancellation(response);
+            default -> PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+        };
+    }
+
+    /** 취소 의도가 저장됐는데 토스에서 아직 DONE이면 취소 완료로 처리하지 않는다. */
+    private PaymentResult readStillApprovedCancellation(TossPaymentResponse response) {
+        if (response.approvedAt() == null) return PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
+        if (!supportsMethod(response)) return PaymentResult.reviewRequired("PG_UNSUPPORTED_METHOD");
+        return result(PaymentStatus.CANCEL_PENDING, "PG_AMOUNT_MISMATCH", response, null);
+    }
+
+    /** 상태 판단에 필요한 토스 금액·통화 값이 있는지 확인한다. */
+    private boolean hasValidAmountAndCurrency(TossPaymentResponse response) {
+        return response.totalAmount() != null && response.totalAmount().signum() > 0
+                && response.currency() != null && response.currency().matches("[A-Z]{3}");
+    }
+
+    private boolean supportsMethod(TossPaymentResponse response) {
+        return "카드".equals(response.method()) || "간편결제".equals(response.method());
+    }
+
+    /** 토스 승인 금액·통화가 DB의 주문 금액·원화와 같은지 확인한다. */
+    private boolean matchesOrderAmount(long amount, TossPaymentResponse response) {
+        return response.totalAmount().compareTo(BigDecimal.valueOf(amount)) == 0
+                && "KRW".equals(response.currency());
+    }
+
+    private PaymentResult failedResult(TossPaymentResponse response) {
+        return new PaymentResult(PaymentStatus.FAILED, response.status(), "PG_" + response.status(),
+                null, null, null, null);
+    }
+
+    /** 토스 응답의 주문번호와 결제키가 DB에 저장된 결제의 값과 모두 일치하는지 확인한다. */
     private boolean samePayment(Payment payment, TossPaymentResponse response) {
         return response != null && payment.getOrderId().equals(response.orderId())
                 && payment.getPaymentKey().equals(response.paymentKey());
     }
 
+    /** 취소 전에 DB에 저장한 토스 승인 금액·통화가 현재 토스 응답의 금액·통화와 같은지 확인한다. */
     private boolean sameCancellationAmount(Payment payment, TossPaymentResponse response) {
         return response.totalAmount() != null && payment.getPgAmount() != null
                 && response.totalAmount().compareTo(payment.getPgAmount()) == 0
@@ -192,7 +259,12 @@ public class TossPaymentClient {
         return PaymentResult.unknown("PG_HTTP_ERROR");
     }
 
-    /** 토스의 JSON 응답 중 사용하는 필드만 받는다. */
+    /**
+     * 토스 API가 보낸 결제 응답 JSON을 Java 객체로 변환해 받는 DTO다.
+     * 승인·조회·취소 응답 중 우리 코드에서 사용하는 필드만 선언한다.
+     * {@code @JsonIgnoreProperties(ignoreUnknown = true)}는 JSON에 이 record에 없는 필드가 있어도
+     * Jackson이 오류를 내지 않고 그 필드를 무시하게 한다.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record TossPaymentResponse(String paymentKey, String orderId, BigDecimal totalAmount, String currency,
                                String status, String method, OffsetDateTime approvedAt,

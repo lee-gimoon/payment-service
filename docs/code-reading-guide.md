@@ -69,7 +69,7 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 4. 이어서 `TossPaymentClient.cancel()`로 전액 취소합니다. 취소 상태·잔액·이력을 확인한 뒤 `CANCELED`와 취소 시각을 저장합니다.
 5. 취소 응답이 불분명하면 GET으로 한 번 더 확인합니다. 그래도 확정할 수 없으면 취소 의도를 보존하고 `REVIEW_REQUIRED`로 기록합니다.
 
-`readResult()`는 토스 응답을 해석하고, `PaymentService`가 호출·저장 순서를 결정합니다. 주기적인 DB 조회 작업은 없습니다. [상세 처리 순서와 한계](payment-recovery.md)
+`readConfirmationResult()`는 승인 POST 응답을, `readLookupResult()`는 GET 재조회 응답을 해석합니다. `PaymentService`가 호출·저장 순서를 결정하며, 주기적인 DB 조회 작업은 없습니다. [상세 처리 순서와 한계](payment-recovery.md)
 
 ## 5. 저장된 주문·결제·취소 내역을 조회한다
 
@@ -87,7 +87,7 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 | 2 | [OrderService](../src/main/java/com/example/payment/order/OrderService.java) | 주문 객체 생성과 저장 |
 | 3 | [PaymentController](../src/main/java/com/example/payment/payment/PaymentController.java) | 인증 성공 후 승인 요청 JSON 받기 |
 | 4 | [PaymentService](../src/main/java/com/example/payment/payment/PaymentService.java) | confirm()과 verifyAndCancelIfNeeded()의 호출·저장 순서 |
-| 5 | [TossPaymentClient](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | confirm()·lookup()·cancel()과 readResult() |
+| 5 | [TossPaymentClient](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | confirm()·lookup()·cancel()과 응답별 해석 메서드 |
 | 6 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java), [Payment](../src/main/java/com/example/payment/payment/Payment.java) | 저장 필드와 applyResult() |
 | 7 | [OrderResponse](../src/main/java/com/example/payment/order/OrderResponse.java) | 주문·승인·취소 내역 응답 구성 |
 | 8 | [PaymentResultPage](../frontend/src/pages/PaymentResultPage.tsx) | 승인 요청과 주문 내역 표시 |
