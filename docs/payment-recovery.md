@@ -6,7 +6,7 @@
 
 1. `PaymentService.confirm()`이 주문 금액을 검증하고 `PROCESSING`과 결제키를 먼저 저장합니다.
 2. 토스 승인 응답을 저장합니다. 정상 결제는 `SUCCEEDED`, 확정 거절은 `FAILED`, 불명확한 응답은 `UNKNOWN`입니다.
-3. `PaymentRecoveryConfiguration`이 기본 5초 간격으로 `PaymentRecoveryService`를 실행합니다. 작업은 `next_action_at`이 지난 결제를 최대 20개씩 확인합니다.
+3. `PaymentRecoveryConfiguration`이 `PaymentRecoveryService`를 실행합니다. 한 묶음의 처리가 끝난 뒤 기본 5초를 기다리고 다시 실행하며, 각 실행에서 `next_action_at`이 지난 결제를 최대 20개 확인합니다.
 4. 저장된 결제키로 토스 GET 조회를 보냅니다. 같은 주문·키이고 금액·통화가 일치하는 `DONE`은 성공으로 복구합니다.
 5. 같은 주문·키의 `DONE`인데 금액·통화가 다르면 `CANCEL_PENDING`, 실제 승인 금액·통화, 취소 멱등키와 시작 시각을 **취소 호출 전에 DB에 저장**합니다.
 6. `POST /v1/payments/{paymentKey}/cancel`에 고정된 취소 사유와 멱등키를 보냅니다. `cancelAmount`를 생략하여 전액 취소합니다.

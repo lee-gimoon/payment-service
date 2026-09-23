@@ -108,7 +108,7 @@ spring:
     enabled: true
 ```
 
-Spring Boot 시작 시 `src/main/resources/db/migration`에 있는 마이그레이션 SQL을 순서대로 실행합니다. 이 프로젝트에서는 Flyway가 테이블 구조의 변경 이력을 관리하고, Hibernate는 그 결과가 Entity와 일치하는지 검증합니다.
+Spring Boot 시작 시 `src/main/resources/db/migration`에 있는 마이그레이션 SQL을 순서대로 실행합니다. 현재는 V1 → V2 → V3 순서이며, V3가 기존 결제 행을 보존하면서 자동 복구 일정과 취소 기록을 추가합니다. Flyway가 구조의 변경 이력을 관리하고, Hibernate는 그 결과가 Entity와 일치하는지 검증합니다.
 
 ### 토스페이먼츠 키
 
@@ -127,9 +127,24 @@ payment:
 
 React는 `/payment-config`로 사용 가능 여부, 공개 클라이언트 키, 두 UI variantKey를 받습니다. 시크릿 키는 Spring Boot의 토스 API 호출에만 사용합니다. 실제 키를 Git이나 `VITE_*` 환경변수에 저장하지 마세요. [키 설정 예시](environment-variables.md#토스-테스트-키-설정)
 
-서버 승인·조회 URL은 `/v1/payments/confirm`, `/v1/payments/{paymentKey}`입니다. SDK v2와 별개이며 신규 결제창에서도 이 API를 사용합니다. 결제창형 키의 API 응답 버전은 공식 문서상 `2022-11-16`으로 고정됩니다. [API 키와 버전](https://docs.tosspayments.com/reference/using-api/api-keys)
+서버는 승인 `/v1/payments/confirm`, 조회 `/v1/payments/{paymentKey}`, 취소 `/v1/payments/{paymentKey}/cancel`을 사용합니다. SDK v2와 서버 API 버전은 별개이며 결제창형 키의 API 응답 버전은 공식 문서상 `2022-11-16`으로 고정됩니다. [API 키와 버전](https://docs.tosspayments.com/reference/using-api/api-keys)
 
-`PaymentConfiguration`에서 토스 연결 제한은 3초, 응답 대기는 60초로 설정합니다. 응답 대기 60초는 [토스 타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)의 권장값입니다. 시간이 초과돼도 승인됐을 수 있으므로 결제 실패로 단정하지 않고 결과를 조회합니다.
+`PaymentConfiguration`에서 토스 연결 제한은 3초, 응답 대기는 60초로 설정합니다. 응답 대기 60초는 [토스 타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)의 권장값입니다. 시간이 초과돼도 승인·취소가 처리됐을 수 있으므로 서버가 결과를 자동 재조회합니다.
+
+### 결제 자동 복구 작업
+
+```yaml
+payment:
+  recovery:
+    enabled: ${PAYMENT_RECOVERY_ENABLED:true}
+    poll-delay-ms: 5000
+```
+
+`PaymentRecoveryConfiguration`이 `@Scheduled`로 복구 작업을 실행합니다. 한 묶음의 처리가 끝난 뒤 기본 5초를 기다리므로, 개별 API 호출 시간이 길어지면 다음 실행도 늦어집니다. 조회할 토스 키가 설정되지 않았다면 복구 서비스는 작업을 건너뜁니다.
+
+`poll-delay-ms`는 작업을 실행하는 간격입니다. 각 결제의 재시도 시각은 DB의 `next_action_at`에 별도로 저장하며, 초기 승인 대기 2분·미확정 결과의 재시도 대기·작업 선점 5분을 구분합니다. [자동 처리 규칙](payment-recovery.md)
+
+`PAYMENT_RECOVERY_ENABLED=false`로 끄면 미확정 결제는 자동 처리되지 않습니다. 통합 테스트는 스케줄러를 끄고 작업을 직접 호출하여 검증하며, 스케줄 실행 자체는 별도 설정 테스트에서 확인합니다.
 
 ### 서버 주소와 포트
 

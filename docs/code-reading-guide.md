@@ -1,6 +1,6 @@
 # 처음 읽는 주문·결제 코드
 
-현재 코드는 주문 생성 → 카드·간편결제 인증 → 결제 승인 → 결과 조회를 이해하기 위한 MVP입니다. 흐름의 의미는 [기본 결제 흐름](payment-domain.md), 실행 방법은 [README](../README.md)에 있습니다.
+현재 코드는 주문 생성 → 카드·간편결제 인증 → 결제 승인 → 자동 재조회·조건부 취소 → 내역 조회를 구현합니다. 흐름의 의미는 [기본 결제 흐름](payment-domain.md), 실행 방법은 [README](../README.md)에 있습니다.
 
 ## 1. 주문을 만든다
 
@@ -57,11 +57,28 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 
 승인 응답의 주문번호·결제 키·금액·통화가 요청과 일치하고, `status`가 `DONE`이며 승인 시각과 지원하는 결제수단(카드·간편결제)이 있어야 성공입니다. 간편결제는 계좌·포인트를 사용할 수도 있어 `card` 객체를 필수로 검사하지 않습니다.
 
-## 4. 결과를 조회한다
+## 4. 서버가 미확정 결제를 자동 처리한다
+
+`PaymentRecoveryConfiguration.recover()` → `PaymentRecoveryService.recoverDuePayments()`
+
+이 경로는 사용자의 HTTP 요청 없이 스케줄러가 실행합니다. `PaymentService.confirm()`이 저장한 `UNKNOWN`과 결과를 저장하지 못한 `PROCESSING`도 DB에서 다시 찾습니다.
+
+1. `PaymentRepository`가 다음 처리 시각이 지난 결제를 최대 20개 읽습니다.
+2. `Payment.claimRecovery()`로 작업 횟수를 늘리고 5분의 임대 시간을 저장합니다. 이 저장에 성공한 작업자만 토스를 호출합니다.
+3. `TossPaymentClient.lookup()`으로 실제 결제 상태를 조회합니다. 같은 주문·키의 정상 승인은 `SUCCEEDED`로 복구합니다.
+4. 같은 주문·키의 승인 금액·통화가 다르면 `CANCEL_PENDING`과 실제 승인 정보, 고정된 취소 멱등키를 DB에 저장합니다.
+5. `TossPaymentClient.cancel()`로 전액 취소하고, 취소 상태·잔액·이력을 확인한 뒤 `CANCELED`와 취소 시각을 저장합니다.
+6. 응답이 불확실하면 다음 조회를 예약합니다. 식별자 불일치나 반복 실패는 `REVIEW_REQUIRED`와 오류 로그로 남깁니다.
+
+`readResult()`는 응답을 해석하고, `PaymentRecoveryService`가 외부 호출과 저장의 순서를 결정합니다. 취소 응답이 유실되면 다음 작업은 조회부터 시작합니다. [재시도·중단 복구의 상세 규칙](payment-recovery.md)
+
+## 5. 저장된 주문·결제·취소 내역을 조회한다
 
 `GET /orders/{orderId}` → `OrderService.get()`
 
-서버는 주문과 결제를 DB에서 읽어 `OrderResponse`로 반환합니다. 주문번호를 `Payment`의 기본 키로도 쓰기 때문에 같은 번호로 두 테이블을 조회할 수 있습니다.
+서버는 주문과 결제를 DB에서 읽어 `OrderResponse`로 반환합니다. 주문 금액과 실제 승인 금액, 승인 시각과 취소 시각을 함께 담습니다. 주문번호를 `Payment`의 기본 키로도 쓰기 때문에 같은 번호로 두 테이블을 조회할 수 있습니다.
+
+`StorePage`와 `PaymentResultPage`는 `useOrderPolling()` → `watchOrder()` → `getOrder()`로 처리 중인 주문을 기본 3초 간격으로 읽습니다. 이 화면 조회가 서버 복구를 시작시키는 것은 아닙니다. 서버 작업은 화면과 독립적으로 실행됩니다.
 
 ## 먼저 볼 파일
 
@@ -71,9 +88,12 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 | 2 | [OrderService](../src/main/java/com/example/payment/order/OrderService.java) | 주문 객체 생성과 저장 |
 | 3 | [PaymentController](../src/main/java/com/example/payment/payment/PaymentController.java) | 인증 성공 후 승인 요청 JSON 받기 |
 | 4 | [PaymentService](../src/main/java/com/example/payment/payment/PaymentService.java) | confirm()의 1~6번 |
-| 5 | [TossPaymentClient](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | confirm()의 HTTP 요청 |
-| 6 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java), [Payment](../src/main/java/com/example/payment/payment/Payment.java) | DB에 저장하는 필드 |
-| 7 | [OrderResponse](../src/main/java/com/example/payment/order/OrderResponse.java) | 프론트에 반환하는 JSON 구성 |
+| 5 | [TossPaymentClient](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | confirm()·lookup()·cancel()과 readResult() |
+| 6 | [PaymentRecoveryConfiguration](../src/main/java/com/example/payment/config/PaymentRecoveryConfiguration.java) | 자동 실행 조건과 간격 |
+| 7 | [PaymentRecoveryService](../src/main/java/com/example/payment/payment/PaymentRecoveryService.java) | recoverDuePayments() → recover() → finish() |
+| 8 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java), [Payment](../src/main/java/com/example/payment/payment/Payment.java) | 저장 필드, claimRecovery()와 applyResult() |
+| 9 | [OrderResponse](../src/main/java/com/example/payment/order/OrderResponse.java) | 주문·승인·취소 내역 응답 구성 |
+| 10 | [useOrderPolling](../frontend/src/payments/useOrderPolling.ts), [orderPolling](../frontend/src/payments/orderPolling.ts) | 진행 중인 주문의 화면 자동 갱신 |
 
 프록시나 팩토리의 내부 원리를 몰라도 이 순서로 읽을 수 있습니다. 이전에 정리한 JPA 개념은 [별도 참고 문서](java-jpa-notes.md)에 있습니다.
 
@@ -101,19 +121,22 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 | pg_status | 토스의 원본 상태. 예: DONE |
 | error_code | 화면에 전달할 오류 원인 |
 | version | JPA가 동시 저장 충돌을 검사하는 번호 |
-| pg_amount / pg_currency | 토스에서 확인한 실제 승인 금액·통화 |
+| pg_amount | 토스에서 확인한 실제 승인 금액 |
+| pg_currency | 실제 승인에 사용된 통화 |
 | canceled_at | 토스에서 확인한 전액 취소 시각 |
-| cancel_idempotency_key / cancel_requested_at | 취소 재시도에 유지할 키와 최초 취소 의도 시각 |
-| next_action_at / recovery_attempts | 다음 자동 처리 시각과 시도 횟수 |
+| cancel_idempotency_key | 같은 취소 재시도에 유지할 멱등키 |
+| cancel_requested_at | 최초 취소 의도를 기록한 시각 |
+| next_action_at | 다음 자동 처리 시각 또는 작업 중 임대 만료 시각 |
+| recovery_attempts | 자동 복구 작업의 선점 횟수 |
 
 기대 금액은 주문 테이블에, 실제 승인 금액은 결제 테이블에 보관합니다. 주문은 원화이며 불일치한 PG 금액·통화도 취소 검증을 위해 보존합니다. 프론트는 `status`가 READY가 아니면 서버에 결제 기록이 있음을 알고 임시 승인 정보를 지웁니다.
 
 V1·V2는 기존 변경 이력입니다. [V3 마이그레이션](../src/main/resources/db/migration/V3__automatic_payment_recovery.sql)이 기존 행을 유지하며 복구·취소 컬럼을 추가하고 미확정 결제를 자동 처리 대상으로 예약합니다.
 
-## 정상 흐름을 이해한 뒤 볼 보조 기능
+## 설정과 오류 처리도 함께 읽기
 
-- `PaymentRecoveryService.recoverDuePayments()`: DB에 저장된 미확정 결제를 선점해 재조회하고, 확인된 금액·통화 불일치를 자동 취소합니다. [상세 흐름](payment-recovery.md)
 - `ApiExceptionHandler`: 잘못된 입력과 저장 오류를 React용 JSON 메시지로 바꿉니다.
+- `PaymentRecoveryConfiguration`: 자동 작업이 끝난 뒤 다시 실행할 간격과 활성화 여부를 설정합니다.
 - `Payment.version`의 `@Version`: 두 요청이 동시에 결과를 저장하면, 오래된 결과의 덮어쓰기를 JPA가 거부합니다. 이 경우 화면에서 저장된 결과를 다시 조회합니다.
 - `TossProperties`, `PaymentConfiguration`: 결제창형 테스트 키, UI의 variantKey, 토스 주소, 연결 3초·응답 60초 제한 시간을 설정합니다.
 
