@@ -15,7 +15,6 @@ import { OrderResultCard } from "../components/OrderResultCard";
 import { ProductCard } from "../components/ProductCard";
 import { readLocalValue, writeLocalValue } from "../lib/storage";
 import { openTossPayment } from "../payments/tossPayments";
-import { useOrderPolling } from "../payments/useOrderPolling";
 import type { Order, PaymentConfig } from "../types/payment";
 
 /** 마지막 주문번호를 localStorage에 저장하거나 찾을 때 쓰는 항목 이름이다. 실제 주문번호는 이 항목의 값으로 저장한다. */
@@ -48,8 +47,6 @@ export function StorePage() {
     setLookupOrderId(order.orderId);
     writeLocalValue(LAST_ORDER_ID_KEY, order.orderId);
   }
-
-  useOrderPolling(currentOrder, showOrder);
 
   /**
    * 주문 생성·조회·결제 등 버튼을 눌렀을 때 각 handle 함수가 호출하는 공통 작업 처리 함수다.

@@ -7,7 +7,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.Instant;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -77,15 +76,11 @@ public class TossPaymentClient {
         }
     }
 
-    /** 저장된 취소 의도로 전액 취소한다. 응답이 끊기면 다음 작업이 먼저 조회한 뒤 같은 키로 재시도한다. */
+    /** 저장된 취소 의도와 멱등키로 전액 취소한다. 응답이 끊기면 호출자가 GET으로 결과를 확인한다. */
     public PaymentResult cancel(Payment payment) {
         if (payment.getStatus() != PaymentStatus.CANCEL_PENDING || payment.getCancelIdempotencyKey() == null
                 || payment.getPgAmount() == null || payment.getPgCurrency() == null) {
             throw new IllegalStateException("취소 의도를 먼저 저장해야 합니다.");
-        }
-        // 토스 멱등키의 유효 기간(15일)을 넘겨 맹목적으로 재전송하지 않는다.
-        if (payment.getCancelRequestedAt().isBefore(Instant.now().minus(Duration.ofDays(14)))) {
-            return PaymentResult.reviewRequired("PG_CANCEL_RETRY_EXPIRED");
         }
         try {
             TossPaymentResponse response = client.post()

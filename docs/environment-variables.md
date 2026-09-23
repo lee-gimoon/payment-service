@@ -53,7 +53,6 @@ Spring Boot의 처리 순서:
 | `TOSS_AGREEMENT_VARIANT_KEY` | 결제 어드민의 약관 UI variantKey | 빈 값(SDK 기본 UI) |
 | `PAYMENT_BIND_ADDRESS` | Spring Boot가 요청을 받을 주소 | `127.0.0.1` |
 | `PORT` | Spring Boot 포트 | `8080` |
-| `PAYMENT_RECOVERY_ENABLED` | 미확정 결제 자동 재조회·취소 작업 활성화 | `true` |
 
 ## 토스 테스트 키 설정
 

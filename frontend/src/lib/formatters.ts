@@ -6,8 +6,8 @@ const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   PROCESSING: "처리 중",
   SUCCEEDED: "결제 완료",
   FAILED: "결제 실패",
-  UNKNOWN: "결제 확인 중",
-  CANCEL_PENDING: "결제 취소 중",
+  UNKNOWN: "결제 확인 필요",
+  CANCEL_PENDING: "취소 결과 확인 필요",
   CANCELED: "결제 취소 완료",
   REVIEW_REQUIRED: "결제 확인 지연"
 };

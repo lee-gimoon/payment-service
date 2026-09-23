@@ -66,6 +66,6 @@ public class ApiExceptionHandler {
     public ResponseEntity<ErrorResponse> databaseUnavailable(Exception exception) {
         log.error("Payment storage unavailable: {}", exception.getClass().getSimpleName());
         return ResponseEntity.status(503)
-                .body(new ErrorResponse("STORAGE_UNAVAILABLE", "결제 결과 저장이 지연되고 있습니다. 서버가 자동으로 확인하며 주문 내역에 반영합니다."));
+                .body(new ErrorResponse("STORAGE_UNAVAILABLE", "결제 결과를 저장하지 못했습니다. 다시 결제하지 말고 주문번호로 고객센터에 문의해주세요."));
     }
 }

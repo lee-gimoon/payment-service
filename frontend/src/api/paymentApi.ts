@@ -57,8 +57,8 @@ export function createOrder(): Promise<Order> {
 }
 
 /** GET /orders/{orderId}로 우리 서버에 저장된 주문과 결제 상태를 읽는다. */
-export function getOrder(orderId: string, signal?: AbortSignal): Promise<Order> {
-  return request<Order>(`/orders/${encodeURIComponent(orderId)}`, { signal });
+export function getOrder(orderId: string): Promise<Order> {
+  return request<Order>(`/orders/${encodeURIComponent(orderId)}`);
 }
 
 /**

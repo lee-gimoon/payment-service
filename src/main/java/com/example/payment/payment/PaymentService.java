@@ -7,6 +7,8 @@ import com.example.payment.order.OrderRepository;
 import com.example.payment.order.OrderResponse;
 import com.example.payment.order.PurchaseOrder;
 import java.math.BigDecimal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class PaymentService {
+    private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final TossPaymentClient tossPaymentClient;
@@ -56,10 +59,38 @@ public class PaymentService {
         // 5. 결제수단 인증 결과로 토스에 최종 승인을 요청한다.
         PaymentResult result = tossPaymentClient.confirm(payment, order.getAmount());
 
-        // 6. 토스의 응답을 결제에 기록하고, 프론트에 주문과 결제 결과를 반환한다.
+        // 6. 승인 결과를 먼저 저장한다. 응답이 불확실하면 저장된 결제키로 즉시 재조회한다.
         payment.applyResult(result);
         payment = paymentRepository.saveAndFlush(payment);
+        if (result.status() == PaymentStatus.UNKNOWN) {
+            payment = verifyAndCancelIfNeeded(payment, order.getAmount());
+        }
         return OrderResponse.of(order, payment);
+    }
+
+    /** 승인 결과가 불확실하면 같은 요청에서 GET 재조회 → 취소 의도 저장 → 취소 → 결과 저장을 이어서 수행한다. */
+    private Payment verifyAndCancelIfNeeded(Payment payment, long amount) {
+        PaymentResult result = tossPaymentClient.lookup(payment, amount);
+        if (result.status() == PaymentStatus.CANCEL_PENDING) {
+            payment.applyResult(result);
+            payment = paymentRepository.saveAndFlush(payment); // 취소 멱등키와 실제 승인 금액을 외부 호출 전에 저장한다.
+            result = tossPaymentClient.cancel(payment);
+            if (result.status() == PaymentStatus.UNKNOWN) {
+                // 취소 응답을 잃었다면 한 번 조회해 이미 취소되었는지 확인한다.
+                result = tossPaymentClient.lookup(payment, amount);
+            }
+        }
+        if (result.status() == PaymentStatus.UNKNOWN || result.status() == PaymentStatus.CANCEL_PENDING) {
+            result = PaymentResult.reviewRequired(result.errorCode() == null
+                    ? "PG_RESULT_UNCONFIRMED" : result.errorCode());
+        }
+        payment.applyResult(result);
+        payment = paymentRepository.saveAndFlush(payment);
+        if (payment.getStatus() == PaymentStatus.REVIEW_REQUIRED) {
+            log.error("PAYMENT_REVIEW_REQUIRED orderId={} errorCode={} cancelRequested={}",
+                    payment.getOrderId(), payment.getErrorCode(), payment.getCancelIdempotencyKey() != null);
+        }
+        return payment;
     }
 
     private PurchaseOrder findOrder(String orderId) {

@@ -1,6 +1,6 @@
 # Payment Service
 
-토스페이먼츠의 결제 흐름을 배우는 Spring Boot + React MVP입니다. **주문 → 결제수단 인증 → 서버 승인 → 자동 재조회·필요시 취소 → 주문 내역 조회**를 다룹니다.
+토스페이먼츠의 결제 흐름을 배우는 Spring Boot + React MVP입니다. **주문 → 결제수단 인증 → 서버 승인 → 결과가 불확실하면 즉시 재조회·조건부 취소 → 주문 내역 조회**를 다룹니다.
 
 먼저 [기본 결제 흐름](docs/payment-domain.md)을 읽고, [코드 읽는 순서](docs/code-reading-guide.md)대로 따라가세요.
 
@@ -8,7 +8,7 @@
 
 토스가 신규 연동에 권장하는 **결제창형 결제(기존 결제위젯)**와 SDK v2를 사용합니다. 결제 버튼을 누르면 `widgets()` → `setAmount()` → `renderPaymentWindow()`로 결제창을 열고, 구매자가 수단을 선택한 `paymentRequest` 이벤트에서 `widgets.requestPayment()`를 호출합니다.
 
-브라우저 SDK와 서버 API의 버전은 별개입니다. 서버 승인·조회는 신규 제품에서도 `/v1/payments/confirm`, `/v1/payments/{paymentKey}`를 사용합니다. 현재 의존성인 `@tosspayments/tosspayments-sdk` 2.8.1은 결제창형 메서드를 지원합니다. [결제창형 연동 가이드](https://docs.tosspayments.com/guides/v2/payment-widget/integration-window), [SDK 명세](https://docs.tosspayments.com/sdk/v2/js/payment-window)
+브라우저 SDK와 서버 API의 버전은 별개입니다. 서버 승인·조회·취소는 `/v1/payments/confirm`, `/v1/payments/{paymentKey}`, `/v1/payments/{paymentKey}/cancel`을 사용합니다. 현재 의존성인 `@tosspayments/tosspayments-sdk` 2.8.1은 결제창형 메서드를 지원합니다. [결제창형 연동 가이드](https://docs.tosspayments.com/guides/v2/payment-widget/integration-window), [SDK 명세](https://docs.tosspayments.com/sdk/v2/js/payment-window)
 
 ## 기본 결제 흐름
 
@@ -39,6 +39,8 @@ sequenceDiagram
     Server->>DB: 승인 완료 저장
     Server-->>React: SUCCEEDED
 ```
+
+승인 결과가 불확실하면 같은 `POST /payments/confirm` 처리 중 토스 GET으로 재조회합니다. 같은 주문·결제키의 승인 금액·통화가 다르면 `CANCEL_PENDING`과 취소 멱등키를 DB에 저장한 뒤 즉시 취소 API를 호출하고 결과를 저장합니다. 주문번호나 결제키가 다른 거래는 자동 취소하지 않습니다.
 
 토스 JS SDK는 별도로 배포하는 서버가 아니라 React와 같은 브라우저에서 실행되는 라이브러리입니다. React가 전달한 결제 정보를 토스 형식으로 요청하고 결제창을 여는 역할이 분명하므로 흐름에서는 별도 참여자로 표시했습니다.
 
@@ -121,14 +123,14 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 | PROCESSING | 승인 요청 정보를 저장했고 처리 중 |
 | SUCCEEDED | 주문·키·금액·통화와 토스 DONE 결과를 확인하고 저장 |
 | FAILED | 명시적인 카드 거절 또는 토스 ABORTED·EXPIRED 확인 |
-| UNKNOWN | 통신 오류 등으로 결과 재확인 필요 |
-| CANCEL_PENDING | 승인된 금액·통화 불일치를 확인하여 서버가 취소 처리 중 |
+| UNKNOWN | 승인 결과가 불확실해 같은 요청 안에서 재조회할 때 저장하는 상태 |
+| CANCEL_PENDING | 취소 의도와 멱등키를 저장했고 취소 결과를 기다리는 상태 |
 | CANCELED | 토스 전액 취소 완료 확인 |
-| REVIEW_REQUIRED | 자동 처리로 확정하지 못해 운영자 확인 필요 |
+| REVIEW_REQUIRED | 서버에서 결과를 확정하지 못해 운영자 확인 필요 |
 
-승인 API는 완료·취소 완료 시 200, 처리 중·미확정·확인 지연 시 202, 확정 실패 시 422와 주문 본문을 반환합니다. 주문 조회는 DB에 저장된 주문·결제·취소 내역을 200으로 반환합니다. 일반 입력 오류·없는 주문·충돌·설정 및 저장 장애는 `{code, message}` 형식으로 400·404·409·503을 반환합니다.
+승인 API는 완료·취소 완료 시 200, 처리 중·운영 확인 필요 시 202, 확정 실패 시 422와 주문 본문을 반환합니다. 주문 조회는 DB에 저장된 주문·결제·취소 내역을 200으로 반환합니다. 일반 입력 오류·없는 주문·충돌·설정 및 저장 장애는 `{code, message}` 형식으로 400·404·409·503을 반환합니다.
 
-타임아웃은 실패로 단정하지 않습니다. 서버가 DB의 미확정 결제를 자동 재조회합니다. 같은 주문·결제키의 승인 금액이나 통화가 잘못됐다면 취소 의도를 먼저 저장하고 토스 취소 API를 호출합니다. 화면은 저장된 주문 결과만 자동 갱신합니다. 브라우저를 닫아도 서버 작업은 계속됩니다. [자동 복구·취소 파이프라인](docs/payment-recovery.md)
+타임아웃은 실패로 단정하지 않습니다. 승인 결과가 불확실하면 **같은 요청에서 한 번 재조회**합니다. 같은 주문·결제키의 승인 금액이나 통화가 다르면 취소 의도를 먼저 저장하고 토스 취소 API를 바로 호출합니다. 재조회나 취소 결과가 끝내 불확실하면 `REVIEW_REQUIRED`로 남깁니다. 화면의 주문 조회는 저장된 DB 결과만 읽으며 주기적으로 재조회하지 않습니다. [승인 결과 재조회·취소 흐름](docs/payment-recovery.md)
 
 ## MVP에서 지키는 규칙
 
@@ -141,9 +143,9 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 - 토스 [타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)에 따라 API 응답 대기는 60초로 설정합니다.
 - 토스 호출 전후의 DB 저장을 분리하고, 유일성 제약과 `@Version`으로 중복·동시 저장을 검사합니다.
 
-주문 테이블 5개 컬럼, 결제 테이블 15개 컬럼을 사용합니다. V3 마이그레이션은 기존 데이터를 보존하며 자동 복구 일정·취소 멱등키·실제 승인 금액·취소 시각을 추가합니다. DB 마이그레이션과 상세 동작은 [코드 읽는 순서](docs/code-reading-guide.md)에 있습니다.
+주문 테이블 5개 컬럼, 결제 테이블 13개 컬럼을 사용합니다. V3는 취소 기록을 추가했고 V4는 주기적 복구 일정 컬럼을 제거하며 기존 미확정 행을 운영 확인 상태로 옮깁니다. DB 마이그레이션과 상세 동작은 [코드 읽는 순서](docs/code-reading-guide.md)에 있습니다.
 
-이 프로젝트는 로그인·주문 접근 권한이 없는 로컬 학습 예제입니다. 내부 자동 복구·취소를 제공하며 고객 임의 취소 API는 공개하지 않습니다. 식별자가 다른 거래, 부분 취소, 미지원 결제수단과 반복 장애는 `REVIEW_REQUIRED`로 남기고 오류 로그를 기록합니다. 운영 알림 연결, 고객 취소 권한, 가상계좌·빌링·웹훅은 별도 구현이 필요합니다.
+이 프로젝트는 로그인·주문 접근 권한이 없는 로컬 학습 예제입니다. 승인 요청 중의 즉시 재조회·조건부 취소를 제공하며 고객 임의 취소 API는 공개하지 않습니다. 식별자가 다른 거래, 부분 취소, 미지원 결제수단과 확인할 수 없는 결과는 `REVIEW_REQUIRED`로 남기고 오류 로그를 기록합니다. 서버 중단이나 DB 장애로 남은 미확정 결제를 재시작 후 자동 처리하는 기능은 없으므로 실제 서비스에는 운영 알림과 대조 절차가 필요합니다.
 
 ## 테스트
 
@@ -175,7 +177,7 @@ npm run build
 Java 21 / Spring Boot 4.1.1 / JPA / PostgreSQL 18 / Flyway / React 19 / TypeScript 7 / Vite 8을 사용합니다.
 
 - `order/`: 주문 생성·조회
-- `payment/`: 승인 흐름·저장·자동 재조회·취소 처리
+- `payment/`: 승인 흐름·저장·즉시 재조회·조건부 취소 처리
 - `gateway/TossPaymentClient.java`: 토스 승인·조회·취소 HTTP 호출
 - `frontend/src/payments/`: 공식 SDK 호출·복귀 URL 처리
 - `frontend/src/pages/`: 스토어·결제 결과 화면
@@ -184,7 +186,7 @@ Java 21 / Spring Boot 4.1.1 / JPA / PostgreSQL 18 / Flyway / React 19 / TypeScri
 
 - [프로젝트 구조와 폴더·파일별 역할](docs/project-structure.md)
 - [기본 결제 흐름과 MVP 범위](docs/payment-domain.md)
-- [자동 결제 확인과 취소 파이프라인](docs/payment-recovery.md)
+- [승인 결과 재조회와 조건부 취소](docs/payment-recovery.md)
 - [코드 읽는 순서](docs/code-reading-guide.md)
 - [Java·JPA 개념](docs/java-jpa-notes.md)
 - [JPA에서 DB까지의 처리 경로](docs/jpa-database-pipeline.md)

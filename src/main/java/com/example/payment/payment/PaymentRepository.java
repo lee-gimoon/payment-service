@@ -2,10 +2,7 @@
 package com.example.payment.payment;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import java.time.Instant;
-import java.util.List;
 
 /** Spring Data JPA가 구현하는 결제 저장소다. Payment의 기본 키가 주문번호이므로 findById에 orderId를 전달한다. */
 public interface PaymentRepository extends JpaRepository<Payment, String> {
-    List<Payment> findTop20ByNextActionAtLessThanEqualOrderByNextActionAtAsc(Instant now);
 }

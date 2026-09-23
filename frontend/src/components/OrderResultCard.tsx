@@ -1,4 +1,4 @@
-/** 파일 역할: 서버가 자동 처리한 주문·결제·취소 결과를 보여준다. */
+/** 파일 역할: 서버에 저장된 주문·결제·취소 결과를 보여준다. */
 import {
   formatAmount,
   formatDateTime,
@@ -13,7 +13,7 @@ interface OrderResultCardProps {
   onRefresh: () => void;
 }
 
-/** 주문과 승인·취소 내역을 표시한다. 미확정 결제의 복구는 서버가 담당한다. */
+/** 주문과 승인·취소 내역을 표시한다. */
 export function OrderResultCard({
   order,
   busy,

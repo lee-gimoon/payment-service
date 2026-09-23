@@ -1,6 +1,6 @@
 /** 파일 역할: Spring Boot의 주문·결제 API와 React 사이에서 주고받는 데이터의 TypeScript 타입을 정의한다. */
 
-/** 승인·자동 확인·자동 취소 및 운영자 확인 상태를 구분한다. */
+/** 승인·즉시 재조회·취소 및 운영자 확인 상태를 구분한다. */
 export type PaymentStatus =
   | "READY"
   | "PROCESSING"

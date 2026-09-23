@@ -1,8 +1,8 @@
 # 프로젝트 디렉토리 구조와 폴더·파일별 역할
 
-이 문서는 현재 `payment-service` 프로젝트에서 **각 폴더에 무엇을 모아 두었는지, 그 안의 파일이 어떤 일을 하는지** 설명합니다. 결제창형 SDK, 서버의 자동 재조회·조건부 취소, 화면의 주문 내역 자동 갱신까지 반영했습니다.
+이 문서는 현재 `payment-service` 프로젝트에서 **각 폴더에 무엇을 모아 두었는지, 그 안의 파일이 어떤 일을 하는지** 설명합니다. 결제창형 SDK와 승인 요청 안의 즉시 재조회·조건부 취소 흐름을 반영했습니다.
 
-직접 관리하는 소스·설정·문서는 파일별로 설명하고, 설치·빌드 과정에서 만들어지는 라이브러리와 캐시는 폴더 단위로 설명합니다. 결제 업무 흐름은 [기본 결제 흐름](payment-domain.md), 장애 이후의 처리는 [자동 재조회·취소](payment-recovery.md), 실행 방법은 [README](../README.md)를 함께 참고하세요.
+직접 관리하는 소스·설정·문서는 파일별로 설명하고, 설치·빌드 과정에서 만들어지는 라이브러리와 캐시는 폴더 단위로 설명합니다. 결제 업무 흐름은 [기본 결제 흐름](payment-domain.md), 불확실한 승인 결과의 처리는 [재조회·조건부 취소](payment-recovery.md), 실행 방법은 [README](../README.md)를 함께 참고하세요.
 
 ## 1. 전체 구조 먼저 보기
 
@@ -18,7 +18,6 @@ payment-service/
 │  │  │  ├─ config/
 │  │  │  │  ├─ OpenApiConfiguration.java
 │  │  │  │  ├─ PaymentConfiguration.java          토스 HTTP 클라이언트
-│  │  │  │  ├─ PaymentRecoveryConfiguration.java  자동 복구 스케줄 실행
 │  │  │  │  └─ TossProperties.java
 │  │  │  ├─ gateway/
 │  │  │  │  └─ TossPaymentClient.java            승인·조회·취소 HTTP 통신
@@ -30,10 +29,9 @@ payment-service/
 │  │  │  │  └─ OrderResponse.java                주문·승인·취소 내역 응답
 │  │  │  └─ payment/
 │  │  │     ├─ PaymentController.java
-│  │  │     ├─ PaymentService.java               최초 승인 처리
-│  │  │     ├─ PaymentRecoveryService.java       자동 재조회·조건부 취소
+│  │  │     ├─ PaymentService.java               승인·즉시 재조회·조건부 취소
 │  │  │     ├─ PaymentRepository.java
-│  │  │     ├─ Payment.java                      결제 결과·복구 일정·취소 의도
+│  │  │     ├─ Payment.java                      결제 결과·취소 의도
 │  │  │     ├─ PaymentStatus.java
 │  │  │     ├─ PaymentResult.java
 │  │  │     └─ ConfirmPaymentRequest.java
@@ -42,12 +40,12 @@ payment-service/
 │  │     └─ db/migration/
 │  │        ├─ V1__create_orders_and_payments.sql
 │  │        ├─ V2__simplify_payment_processing.sql
-│  │        └─ V3__automatic_payment_recovery.sql
+│  │        ├─ V3__automatic_payment_recovery.sql
+│  │        └─ V4__remove_periodic_payment_recovery.sql
 │  └─ test/java/com/example/payment/
 │     ├─ PaymentIntegrationTest.java
 │     ├─ config/
-│     │  ├─ TossPropertiesTest.java
-│     │  └─ PaymentRecoveryConfigurationTest.java
+│     │  └─ TossPropertiesTest.java
 │     └─ gateway/
 │        └─ TossPaymentClientTest.java
 ├─ frontend/
@@ -71,14 +69,11 @@ payment-service/
 │  │  ├─ payments/
 │  │  │  ├─ tossPayments.ts
 │  │  │  ├─ paymentWindow.ts
-│  │  │  ├─ paymentRedirect.ts
-│  │  │  ├─ orderPolling.ts                     저장된 주문의 반복 조회
-│  │  │  └─ useOrderPolling.ts                  반복 조회를 React 화면에 연결
+│  │  │  └─ paymentRedirect.ts
 │  │  └─ types/payment.ts
 │  ├─ tests/
 │  │  ├─ paymentRedirect.test.mjs
-│  │  ├─ paymentWindow.test.mjs
-│  │  └─ orderPolling.test.mjs
+│  │  └─ paymentWindow.test.mjs
 │  ├─ index.html
 │  ├─ package.json / package-lock.json
 │  ├─ tsconfig.json / vite.config.ts
@@ -88,7 +83,7 @@ payment-service/
 ├─ docs/
 │  ├─ project-structure.md
 │  ├─ payment-domain.md
-│  ├─ payment-recovery.md                       자동 재조회·취소 파이프라인
+│  ├─ payment-recovery.md                       즉시 재조회·조건부 취소
 │  ├─ code-reading-guide.md
 │  ├─ environment-configuration.md
 │  ├─ environment-variables.md
@@ -106,7 +101,7 @@ payment-service/
 
 ## 2. 백엔드: `src/main/java/com/example/payment/`
 
-Spring Boot 서버에서 실행하는 Java 코드입니다. 브라우저 요청으로 주문과 승인을 처리하고, 별도의 예약 작업으로 미확정 결제를 재조회하거나 취소합니다. 브라우저가 닫혀도 서버의 복구 작업은 계속됩니다.
+Spring Boot 서버에서 실행하는 Java 코드입니다. 승인 응답이 불확실하면 같은 요청을 처리하는 동안 토스 결제를 재조회하고, 확인된 금액·통화 불일치를 취소합니다.
 
 이 프로젝트는 `controller/`, `service/`, `repository/`를 각각 최상위 폴더로 만들지 않고, **주문은 `order/`, 결제는 `payment/`처럼 기능별로 모아 놓은 구조**입니다. 한 기능의 요청 처리·업무 처리·저장 코드를 같은 폴더에서 찾을 수 있습니다.
 
@@ -137,10 +132,9 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 | --- | --- |
 | [OpenApiConfiguration.java](../src/main/java/com/example/payment/config/OpenApiConfiguration.java) | Swagger UI·OpenAPI 문서에 표시할 API 제목, 버전, 설명을 설정합니다. 개별 API 설명은 각 Controller에 있습니다. |
 | [PaymentConfiguration.java](../src/main/java/com/example/payment/config/PaymentConfiguration.java) | 토스 전용 `RestClient`를 만듭니다. 토스 서버 주소, 시크릿 키를 사용하는 Basic 인증, 연결·응답 대기 시간을 설정합니다. |
-| [PaymentRecoveryConfiguration.java](../src/main/java/com/example/payment/config/PaymentRecoveryConfiguration.java) | `@EnableScheduling`과 `@Scheduled`로 `PaymentRecoveryService.recoverDuePayments()`를 실행합니다. 한 묶음의 작업이 끝나고 기본 5초 뒤 다시 실행하며, `payment.recovery.enabled=false`로 자동 실행을 끌 수 있습니다. |
 | [TossProperties.java](../src/main/java/com/example/payment/config/TossProperties.java) | `application.yml`의 `payment.toss` 값을 Java 객체로 받습니다. 클라이언트 키·시크릿 키·두 UI variantKey를 보관하고, 결제창형 테스트 키 쌍의 형식을 검사합니다. 키가 모두 없으면 주문 기능만 사용할 수 있도록 합니다. |
 
-`application.yml`은 설정값, `TossProperties`는 토스 설정을 읽는 객체, `PaymentConfiguration`은 HTTP 통신 도구, `PaymentRecoveryConfiguration`은 자동 복구를 실행하는 시점을 담당합니다.
+`application.yml`은 설정값, `TossProperties`는 토스 설정을 읽는 객체, `PaymentConfiguration`은 HTTP 통신 도구를 담당합니다. 주기적 복구 설정은 없습니다.
 
 ### 2.4. `gateway/`: 외부 토스 서버와 통신
 
@@ -150,7 +144,7 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 | --- | --- |
 | [TossPaymentClient.java](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | `confirm()`은 승인 POST, `lookup()`은 결제 GET 조회, `cancel()`은 `/v1/payments/{paymentKey}/cancel`에 전액 취소 POST를 보냅니다. `readResult()`가 응답을 검사하며, 별도 GET에서 같은 거래의 승인 금액·통화 불일치를 확인한 경우 `CANCEL_PENDING`을 반환합니다. 취소 완료는 `CANCELED`·잔액 0·성공한 취소 이력까지 확인합니다. |
 
-이 파일 안의 `TossPaymentResponse`는 결제 응답, `TossCancellation`은 취소 이력, `TossErrorResponse`는 오류 응답을 읽는 내부 record입니다. 최초 승인 저장은 `PaymentService`, 복구·취소 순서와 저장은 `PaymentRecoveryService`가 Repository를 통해 담당합니다.
+이 파일 안의 `TossPaymentResponse`는 결제 응답, `TossCancellation`은 취소 이력, `TossErrorResponse`는 오류 응답을 읽는 내부 record입니다. 승인·즉시 재조회·취소의 호출 순서와 DB 저장은 `PaymentService`가 담당합니다.
 
 ### 2.5. `order/`: 주문 생성과 조회
 
@@ -164,22 +158,21 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 | [PurchaseOrder.java](../src/main/java/com/example/payment/order/PurchaseOrder.java) | `purchase_orders` 테이블과 연결되는 Entity입니다. 주문번호, 상품명, 수량, 총금액, 생성 시각을 보관합니다. 새 주문번호는 UUID로 만듭니다. |
 | [OrderResponse.java](../src/main/java/com/example/payment/order/OrderResponse.java) | 프론트에 반환할 주문·결제 응답 DTO입니다. 상태별 안내와 실제 승인 금액·통화, 승인·취소 시각을 담습니다. 결제 행이 없으면 `READY`로 표현합니다. |
 
-### 2.6. `payment/`: 승인·자동 복구·취소 결과 관리
+### 2.6. `payment/`: 승인·즉시 재조회·취소 결과 관리
 
-결제수단 인증이 끝난 주문을 승인하고, 미확정 결제의 자동 재조회·조건부 취소와 결과 저장을 담당합니다. 외부 HTTP 요청을 받는 `PaymentController`와 예약 작업에서 호출되는 `PaymentRecoveryService`가 각각 진입점입니다.
+결제수단 인증이 끝난 주문을 승인하고, 결과가 불확실하면 같은 요청에서 재조회·조건부 취소와 결과 저장을 이어서 처리합니다. `PaymentController`가 HTTP 진입점입니다.
 
 | 파일 | 역할 |
 | --- | --- |
 | [PaymentController.java](../src/main/java/com/example/payment/payment/PaymentController.java) | `/payment-config`, `/payments/confirm` 요청을 받습니다. 공개 설정과 승인 결과를 반환하며 수동 PG 재확인 API는 제공하지 않습니다. |
-| [PaymentService.java](../src/main/java/com/example/payment/payment/PaymentService.java) | 주문·금액 검증 → 중복 확인 → 결제 키 저장 → 토스 승인 → 결과 저장 순서를 관리합니다. |
-| [PaymentRecoveryService.java](../src/main/java/com/example/payment/payment/PaymentRecoveryService.java) | 처리 시각이 된 결제를 선점한 뒤 토스에서 조회합니다. 정상 승인은 성공으로 복구하고, 같은 거래의 금액·통화 불일치는 취소 의도·멱등키를 먼저 저장한 뒤 취소합니다. 재시도 일정과 최대 10회 한도를 적용하며, 해결하지 못한 결과는 `REVIEW_REQUIRED`와 오류 로그로 남깁니다. |
-| [PaymentRepository.java](../src/main/java/com/example/payment/payment/PaymentRepository.java) | 결제를 저장·조회합니다. `findById(orderId)`로 한 주문의 결제를 찾고, `findTop20ByNextActionAtLessThanEqualOrderByNextActionAtAsc()`로 자동 처리 시각이 지난 최대 20건을 읽습니다. |
-| [Payment.java](../src/main/java/com/example/payment/payment/Payment.java) | 결제 상태, 실제 승인 금액·통화, 승인·취소 시각, 취소 멱등키, 다음 처리 시각과 시도 횟수를 보관합니다. `claimRecovery()`와 `keepRecoveryLease()`로 작업 중 임대 시간을 기록하고, `applyResult()`로 결과와 다음 일정을 반영합니다. `@Version`이 중복 선점과 늦은 저장을 막습니다. |
+| [PaymentService.java](../src/main/java/com/example/payment/payment/PaymentService.java) | 주문·금액 검증 → 결제 키 저장 → 토스 승인 순서를 관리합니다. 결과가 불확실하면 같은 요청에서 GET 재조회 후 필요할 때 취소 의도 저장 → 토스 취소 → 최종 결과 저장을 이어서 수행합니다. |
+| [PaymentRepository.java](../src/main/java/com/example/payment/payment/PaymentRepository.java) | `findById(orderId)`, `saveAndFlush()` 등으로 한 주문의 결제를 저장·조회하는 Spring Data JPA 인터페이스입니다. |
+| [Payment.java](../src/main/java/com/example/payment/payment/Payment.java) | 결제 상태, 실제 승인 금액·통화, 승인·취소 시각, 취소 멱등키를 보관합니다. `applyResult()`로 결과를 반영하며, `@Version`이 늦은 저장으로 다른 결과를 덮어쓰지 못하게 합니다. |
 | [ConfirmPaymentRequest.java](../src/main/java/com/example/payment/payment/ConfirmPaymentRequest.java) | 프론트가 승인 요청에 보내는 `orderId`, `paymentKey`, `amount`를 받는 DTO입니다. 빈 값·길이·숫자 범위 같은 입력 형식을 검사합니다. DB 금액과의 비교는 `PaymentService`가 합니다. |
 | [PaymentResult.java](../src/main/java/com/example/payment/payment/PaymentResult.java) | 해석한 토스 응답을 두 결제 서비스에 전달합니다. 서비스 상태·PG 상태·오류 코드·승인 시각·실제 승인 금액·통화·취소 시각을 담습니다. `unknown()`, `failed()`, `reviewRequired()`는 해당 결과 객체를 만드는 정적 메서드입니다. |
 | [PaymentStatus.java](../src/main/java/com/example/payment/payment/PaymentStatus.java) | `READY`, `PROCESSING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`, `CANCEL_PENDING`, `CANCELED`, `REVIEW_REQUIRED`를 정의합니다. `READY`는 결제 행이 없는 주문을 응답에서 표현하는 상태입니다. |
 
-자동 취소는 카드·국내 간편결제에서 **주문번호와 결제키가 모두 일치하는 거래의 승인 금액·통화 불일치**를 확인했을 때 수행합니다. 식별자 불일치, 부분 취소 상태, 미지원 결제수단은 운영자 확인 대상으로 남깁니다. 취소 응답을 잃으면 다음 작업이 조회부터 재개합니다.
+자동 취소는 카드·국내 간편결제에서 **주문번호와 결제키가 모두 일치하는 거래의 승인 금액·통화 불일치**를 확인했을 때 수행합니다. 식별자 불일치, 부분 취소 상태, 미지원 결제수단은 운영자 확인 대상으로 남깁니다. 취소 응답을 잃으면 같은 요청에서 GET으로 한 번 더 확인합니다.
 
 ### 2.7. 파일 이름에서 자주 보는 역할
 
@@ -201,17 +194,18 @@ Java 코드와 함께 서버 실행에 사용되는 설정과 SQL을 둡니다.
 
 | 파일 | 역할 |
 | --- | --- |
-| [application.yml](../src/main/resources/application.yml) | DB 접속, JPA·Flyway, 토스 키와 UI, 자동 복구 활성화·실행 간격, 서버 주소·포트, Swagger UI를 설정합니다. `${환경변수:기본값}` 형식으로 실행 환경의 값을 가져옵니다. |
+| [application.yml](../src/main/resources/application.yml) | DB 접속, JPA·Flyway, 토스 키와 UI, 서버 주소·포트, Swagger UI를 설정합니다. `${환경변수:기본값}` 형식으로 실행 환경의 값을 가져옵니다. |
 
 ### `db/migration/`: DB 구조의 변경 이력
 
-Flyway가 서버 시작 시 아직 적용하지 않은 SQL 파일을 버전 순서대로 실행합니다. 새 DB도 V1부터 V3까지 적용된 상태가 현재 구조입니다.
+Flyway가 서버 시작 시 아직 적용하지 않은 SQL 파일을 버전 순서대로 실행합니다. 새 DB도 V1부터 V4까지 적용된 상태가 현재 구조입니다.
 
 | 파일 | 역할 |
 | --- | --- |
 | [V1__create_orders_and_payments.sql](../src/main/resources/db/migration/V1__create_orders_and_payments.sql) | 최초 주문·결제 테이블과 제약조건을 생성한 이력입니다. 이후 V2에서 제거한 예전 컬럼도 이 파일에는 남아 있습니다. |
 | [V2__simplify_payment_processing.sql](../src/main/resources/db/migration/V2__simplify_payment_processing.sql) | 기본 승인 학습 단계의 구조 변경 이력입니다. 사용하지 않던 컬럼을 제거하고 `version`을 추가했습니다. |
 | [V3__automatic_payment_recovery.sql](../src/main/resources/db/migration/V3__automatic_payment_recovery.sql) | 기존 데이터를 보존하며 자동 재조회·취소 일정, 멱등키, 실제 승인 금액·통화, 취소 시각과 상태 제약을 추가합니다. |
+| [V4__remove_periodic_payment_recovery.sql](../src/main/resources/db/migration/V4__remove_periodic_payment_recovery.sql) | 주기적 복구 일정·시도 횟수 컬럼을 제거하고 이전 버전의 미확정 행을 운영 확인 대상으로 옮깁니다. |
 
 이미 적용한 마이그레이션은 변경 이력이므로, 이후 DB 구조를 수정할 때는 새 버전 SQL을 추가하는 방식으로 관리합니다.
 
@@ -222,14 +216,13 @@ Flyway가 서버 시작 시 아직 적용하지 않은 SQL 파일을 버전 순�
 | 폴더 | 목적 |
 | --- | --- |
 | 기본 테스트 패키지 | HTTP 요청부터 업무 처리·DB 저장까지 연결한 통합 테스트를 둡니다. |
-| `config/` | 토스 설정값의 허용·거부와 자동 스케줄 실행을 확인합니다. |
+| `config/` | 토스 설정값의 허용·거부를 확인합니다. |
 | `gateway/` | 외부 HTTP 요청 형식과 응답 해석을 확인합니다. |
 
 | 파일 | 역할 |
 | --- | --- |
-| [PaymentIntegrationTest.java](../src/test/java/com/example/payment/PaymentIntegrationTest.java) | 별도 PostgreSQL에서 승인·조회·취소 의도 선저장·취소 응답 유실·취소 후 저장 장애·동시 복구 작업·재시도 한도·마이그레이션을 확인합니다. 토스 호출은 모의 객체로 바꿉니다. |
+| [PaymentIntegrationTest.java](../src/test/java/com/example/payment/PaymentIntegrationTest.java) | 별도 PostgreSQL에서 승인 요청 안의 즉시 재조회, 취소 의도 선저장, 취소 응답 유실 뒤 확인 조회, 운영 확인 상태와 마이그레이션을 검증합니다. 토스 호출은 모의 객체로 바꿉니다. |
 | [config/TossPropertiesTest.java](../src/test/java/com/example/payment/config/TossPropertiesTest.java) | 신규 제품용 테스트 키의 허용, 기존 제품·운영·불완전한 키의 거부, UI 설정값 처리, 키 원문이 문자열 출력에 노출되지 않는지를 확인합니다. |
-| [config/PaymentRecoveryConfigurationTest.java](../src/test/java/com/example/payment/config/PaymentRecoveryConfigurationTest.java) | HTTP 요청 없이 복구 작업이 실행되는지, 자동 실행을 설정으로 끌 수 있는지 확인합니다. |
 | [gateway/TossPaymentClientTest.java](../src/test/java/com/example/payment/gateway/TossPaymentClientTest.java) | 승인·조회·취소 URL, 인증·멱등키·요청 본문과 응답 해석을 모의 HTTP로 검증합니다. 재조회 후 취소 판단, 다른 거래의 취소 차단, 취소 상태·잔액·이력 검증, 응답 유실도 다룹니다. |
 
 ## 5. 프론트엔드: `frontend/`
@@ -261,7 +254,7 @@ React 화면에서 Spring Boot로 보내는 HTTP 요청을 모읍니다. 화면�
 
 | 파일 | 역할 |
 | --- | --- |
-| [paymentApi.ts](../frontend/src/api/paymentApi.ts) | 공개 설정, 주문 생성·조회, 승인 요청을 제공합니다. 자동 복구는 서버가 수행하므로 프론트에 PG 재확인 함수는 없습니다. 결제 결과를 담은 HTTP 422도 주문 응답으로 받습니다. |
+| [paymentApi.ts](../frontend/src/api/paymentApi.ts) | 공개 설정, 주문 생성·조회, 승인 요청을 제공합니다. 프론트에는 PG 재확인 함수가 없습니다. 결제 결과를 담은 HTTP 422도 주문 응답으로 받습니다. |
 
 서버의 `api/error/`는 **들어온 요청의 오류 응답을 만드는 곳**이고, 프론트의 `api/`는 **서버로 요청을 보내는 곳**입니다. 같은 `api`라는 이름이지만 역할이 다릅니다.
 
@@ -292,20 +285,18 @@ URL별 화면을 구성하고, API 호출·결제 실행·결과 표시 순서�
 
 | 파일 | 역할 |
 | --- | --- |
-| [StorePage.tsx](../frontend/src/pages/StorePage.tsx) | `/`의 스토어 화면입니다. 결제 설정과 마지막 주문을 불러오고 주문 생성·조회·결제창 열기를 연결합니다. 처리 중인 주문은 `useOrderPolling()`으로 갱신하고, 화면 이탈 시 결제창 작업과 반복 조회를 정리합니다. |
-| [PaymentResultPage.tsx](../frontend/src/pages/PaymentResultPage.tsx) | 인증 복귀 정보를 바탕으로 승인을 요청한 뒤 저장된 주문을 자동 조회합니다. 토스 재조회·취소는 백엔드 작업이 독립적으로 수행합니다. |
+| [StorePage.tsx](../frontend/src/pages/StorePage.tsx) | `/`의 스토어 화면입니다. 결제 설정과 마지막 주문을 불러오고 주문 생성·조회·결제창 열기를 연결합니다. 화면 이탈 시 진행 중인 결제창 작업을 정리합니다. |
+| [PaymentResultPage.tsx](../frontend/src/pages/PaymentResultPage.tsx) | 인증 복귀 정보를 바탕으로 승인을 요청하고 서버가 반환한 최종 결과를 표시합니다. 요청 오류가 나면 저장된 주문을 다시 읽을 수 있습니다. |
 
-### 5.7. `frontend/src/payments/`: 결제창·인증 복귀·주문 결과 자동 조회
+### 5.7. `frontend/src/payments/`: 결제창과 인증 복귀
 
-브라우저의 결제창 실행, 인증 복귀 URL 처리, 저장된 주문의 반복 조회를 모읍니다. HTTP 요청은 `api/paymentApi.ts`를 사용합니다. 서버에서 수행하는 토스 재조회·취소는 브라우저가 켜져 있는지와 관계없이 진행됩니다.
+브라우저의 결제창 실행과 인증 복귀 URL 처리를 모읍니다. HTTP 요청은 `api/paymentApi.ts`를 사용합니다. 토스 재조회·취소는 승인 요청을 처리하는 서버 코드에서 이어서 수행합니다.
 
 | 파일 | 역할 |
 | --- | --- |
 | [tossPayments.ts](../frontend/src/payments/tossPayments.ts) | 공개 클라이언트 키로 공식 SDK를 불러옵니다. 비회원용 `ANONYMOUS`로 `widgets()`를 초기화하고 `openPaymentWindow()`에 처리를 넘깁니다. |
 | [paymentWindow.ts](../frontend/src/payments/paymentWindow.ts) | 금액과 UI 설정을 적용해 결제창형 UI를 엽니다. `paymentRequest` 이벤트에서 카드·국내 간편결제인지 확인한 뒤 인증을 요청합니다. 중복 이벤트, 창 닫기, 오류, 화면 이탈을 처리합니다. |
 | [paymentRedirect.ts](../frontend/src/payments/paymentRedirect.ts) | 복귀 URL에서 주문번호·결제 키·금액·실패 사유를 읽습니다. 승인 정보를 형식 검사하고 같은 탭의 새로고침에 대비해 임시 저장·복원합니다. 처리 후 URL에서 `paymentKey`를 제거합니다. 서버 승인을 직접 요청하지는 않습니다. |
-| [orderPolling.ts](../frontend/src/payments/orderPolling.ts) | `watchOrder()`가 저장된 주문을 기본 3초 간격으로 읽습니다. `PROCESSING`·`UNKNOWN`·`CANCEL_PENDING` 동안 계속하고, 그 밖의 상태나 화면 이탈에서 멈춥니다. 조회 통신 오류는 다음 조회에서 다시 확인합니다. |
-| [useOrderPolling.ts](../frontend/src/payments/useOrderPolling.ts) | `watchOrder()`를 React 화면의 주문번호·상태와 연결합니다. 주문이나 상태가 바뀌면 조회를 정리하고 필요한 경우 다시 시작하며, 화면을 떠나면 요청을 중단합니다. |
 
 ### 5.8. `frontend/src/types/`: 주고받는 데이터의 타입
 
@@ -323,7 +314,6 @@ Node 내장 테스트 도구를 사용합니다. 브라우저 저장소·SDK·�
 | --- | --- |
 | [paymentRedirect.test.mjs](../frontend/tests/paymentRedirect.test.mjs) | 인증 성공·실패 URL, 주문번호 없는 취소, 잘못된 금액, 임시 승인 정보 복원, 저장소 사용 불가 상황을 확인합니다. |
 | [paymentWindow.test.mjs](../frontend/tests/paymentWindow.test.mjs) | 금액 설정과 창 열기 순서, 선택 후 인증 요청, 중복 이벤트 방지, 닫기 후 재시도, 미지원 수단 차단, 오류·페이지 이탈 시 정리를 확인합니다. |
-| [orderPolling.test.mjs](../frontend/tests/orderPolling.test.mjs) | 미확정 → 취소 진행 → 취소 완료에 따른 자동 조회 종료, 조회 오류 후 재시도, 화면 이탈 시 중단과 늦은 응답 무시를 확인합니다. |
 
 ## 6. 개발 환경과 빌드 도구
 
@@ -365,8 +355,8 @@ Node 내장 테스트 도구를 사용합니다. 브라우저 저장소·SDK·�
 | 파일 | 역할 |
 | --- | --- |
 | [project-structure.md](project-structure.md) | 현재 문서입니다. 폴더 계층과 파일별 책임을 찾아보는 구조 안내서입니다. |
-| [payment-domain.md](payment-domain.md) | 주문·인증·승인·자동 복구·취소·내역 조회의 업무 흐름, 식별자, 사용하는 결제 제품과 구현 범위를 설명합니다. |
-| [payment-recovery.md](payment-recovery.md) | 자동 재조회와 취소 판단, 취소 의도 선저장, 응답 유실·서버 중단 시 재개, 중복 처리 방지와 운영자 확인 조건을 설명합니다. |
+| [payment-domain.md](payment-domain.md) | 주문·인증·승인·즉시 재조회·취소·내역 조회의 업무 흐름, 식별자, 사용하는 결제 제품과 구현 범위를 설명합니다. |
+| [payment-recovery.md](payment-recovery.md) | 승인 요청 안의 재조회와 취소 판단, 취소 의도 선저장, 불확실한 응답과 서버 중단 시의 한계를 설명합니다. |
 | [code-reading-guide.md](code-reading-guide.md) | 실제 코드에서 어떤 파일과 메서드를 어떤 순서로 읽으면 되는지 안내합니다. DB 컬럼과 처리 규칙도 설명합니다. |
 | [environment-configuration.md](environment-configuration.md) | Spring Boot·React·PostgreSQL·pgAdmin의 실행 구성과 각 설정 파일의 관계를 설명합니다. |
 | [environment-variables.md](environment-variables.md) | 환경변수의 의미, 프로젝트에서 사용하는 변수, 토스 키·UI 설정과 PowerShell 설정 방법을 설명합니다. |
@@ -394,15 +384,14 @@ Node 내장 테스트 도구를 사용합니다. 브라우저 저장소·SDK·�
 | 주문 상품·수량·금액 변경 | `order/OrderService.java`, `PurchaseOrder.java`, DB 제약조건과 프론트 상품·주문 표시 |
 | 주문·결제 API 경로 확인 | `OrderController.java`, `PaymentController.java`, `frontend/src/api/paymentApi.ts` |
 | 서버의 승인 처리 순서 확인 | `payment/PaymentService.java` |
-| 미확정 결제의 자동 처리 순서 확인 | `payment/PaymentRecoveryService.java`, [자동 재조회·취소](payment-recovery.md) |
-| 자동 실행 활성화·간격 확인 | `config/PaymentRecoveryConfiguration.java`, `application.yml` |
+| 승인 결과 불확실 시 즉시 처리 순서 확인 | `payment/PaymentService.java`의 `verifyAndCancelIfNeeded()`, [재조회·취소](payment-recovery.md) |
 | 자동 취소 조건과 토스 취소 응답 검증 | `gateway/TossPaymentClient.java`의 `readResult()`, `cancel()`, `canceledResult()` |
-| 취소 멱등키·작업 일정 저장 확인 | `payment/Payment.java`, `PaymentRepository.java`, V3 마이그레이션 |
+| 취소 멱등키·취소 의도 저장 확인 | `payment/Payment.java`, `PaymentRepository.java`, V3·V4 마이그레이션 |
 | 토스에 보내는 HTTP 요청 확인 | `gateway/TossPaymentClient.java`, `config/PaymentConfiguration.java` |
 | 토스 키·결제 UI 설정 변경 | `application.yml`, `config/TossProperties.java`, [환경변수 문서](environment-variables.md) |
 | 결제창 열기·닫기·선택 처리 변경 | `frontend/src/payments/tossPayments.ts`, `paymentWindow.ts` |
 | 인증 후 결과 처리 확인 | `paymentRedirect.ts`, `pages/PaymentResultPage.tsx` |
-| 주문 화면의 자동 갱신 확인 | `frontend/src/payments/useOrderPolling.ts`, `orderPolling.ts` |
+| 주문 화면의 저장된 결과 확인 | `frontend/src/api/paymentApi.ts`, `pages/StorePage.tsx`, `pages/PaymentResultPage.tsx` |
 | 서버 오류 응답 변경 | `api/error/ApiExceptionHandler.java` |
 | 주문·결제 데이터 저장 구조 확인 | `PurchaseOrder.java`, `Payment.java`, `resources/db/migration/` |
 | 화면 구성·스타일 변경 | `frontend/src/pages/`, `components/`, `styles.css` |
@@ -416,27 +405,22 @@ StorePage → paymentApi → OrderController → OrderService → OrderRepositor
 결제수단 인증
 StorePage → tossPayments → paymentWindow → 토스 SDK·결제창
 
-인증 후 최종 승인
+인증 후 최종 승인과 결과 확인
 paymentRedirect → PaymentResultPage → paymentApi → PaymentController
 → PaymentService → TossPaymentClient → 토스 승인 API
-→ PaymentService → PaymentRepository → DB
-
-미확정 결제의 자동 복구 (브라우저 요청 없이 실행)
-PaymentRecoveryConfiguration.recover()
-→ PaymentRecoveryService.recoverDuePayments()
-→ PaymentRepository → DB에서 처리 시각이 지난 결제 조회·선점 저장
-→ TossPaymentClient.lookup() → 토스 결제 GET 조회
-  ├─ 같은 거래의 정상 승인 → SUCCEEDED 저장
-  ├─ 같은 거래의 승인 금액·통화 불일치
-  │  → CANCEL_PENDING·취소 멱등키·실제 승인 금액을 DB에 저장
-  │  → TossPaymentClient.cancel() → 토스 취소 POST
-  │  → 취소 완료 검증 → CANCELED·취소 시각 저장
-  └─ 불확실 → 다음 작업 예약 / 재시도 한도·식별자 문제 → REVIEW_REQUIRED
+→ 승인 결과가 확실하면 PaymentRepository에 저장
+→ 불확실하면 PaymentService.verifyAndCancelIfNeeded()
+  → TossPaymentClient.lookup() → 토스 결제 GET 조회
+    ├─ 같은 거래의 정상 승인 → SUCCEEDED 저장
+    ├─ 같은 거래의 승인 금액·통화 불일치
+    │  → CANCEL_PENDING·취소 멱등키·실제 승인 금액을 DB에 저장
+    │  → TossPaymentClient.cancel() → 토스 취소 POST
+    │  → 취소 완료 검증 → CANCELED·취소 시각 저장
+    └─ 확인 불가·식별자 문제 → REVIEW_REQUIRED 저장
 
 주문·결제·취소 내역 표시
-StorePage 또는 PaymentResultPage → useOrderPolling → watchOrder
-→ paymentApi.getOrder() → GET /orders/{orderId}
-→ OrderController → OrderService → DB 조회 → OrderResponse → 화면 갱신
+StorePage 또는 PaymentResultPage → paymentApi.getOrder() → GET /orders/{orderId}
+→ OrderController → OrderService → DB 조회 → OrderResponse → 화면 표시
 ```
 
-승인 경로는 결제키를, 취소 경로는 취소 의도와 멱등키를 외부 호출 전에 저장합니다. 응답을 잃거나 서버가 중단되어도 DB의 작업 기록으로 다시 조회할 수 있습니다. 주문 조회는 저장된 내역을 읽어 보여줍니다. 저장 순서는 [코드 읽는 순서](code-reading-guide.md), 재시도 조건과 운영자 확인 범위는 [자동 재조회·취소](payment-recovery.md)에 설명합니다.
+승인 경로는 결제키를, 취소 경로는 취소 의도와 멱등키를 외부 호출 전에 저장합니다. 주문 조회는 저장된 내역만 읽습니다. 서버 중단으로 남은 미확정 행은 자동 재처리되지 않으므로 운영 확인이 필요합니다. 저장 순서는 [코드 읽는 순서](code-reading-guide.md), 처리 한계는 [재조회·조건부 취소](payment-recovery.md)에 설명합니다.

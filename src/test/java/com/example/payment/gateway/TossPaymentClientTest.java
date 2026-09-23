@@ -205,13 +205,13 @@ class TossPaymentClientTest {
     }
 
     @Test
-    void cancelTimeoutStaysPendingAndNextLookupCanConfirmCancellationDespiteOriginalAmountMismatch() {
+    void cancelTimeoutCanBeCheckedByImmediateLookupDespiteOriginalAmountMismatch() {
         Payment payment = pendingCancel();
         server.expect(requestTo(BASE + "/payment-key/cancel"))
                 .andRespond(withException(new SocketTimeoutException("response lost")));
         server.expect(requestTo(BASE + "/payment-key"))
                 .andRespond(withSuccess(canceledJson(), MediaType.APPLICATION_JSON));
-        payment.applyResult(gateway.cancel(payment));
+        assertThat(gateway.cancel(payment).status()).isEqualTo(PaymentStatus.UNKNOWN);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCEL_PENDING);
         assertThat(gateway.lookup(payment, 10_000).status()).isEqualTo(PaymentStatus.CANCELED);
     }

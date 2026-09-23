@@ -25,9 +25,6 @@ spring:
 
 # TossProperties로 바인딩되는 키 설정이다. 키가 모두 없으면 주문 기능만 사용할 수 있다.
 payment:
-  recovery:
-    enabled: ${PAYMENT_RECOVERY_ENABLED:true}
-    poll-delay-ms: 5000
   toss:
     client-key: ${TOSS_CLIENT_KEY:}
     secret-key: ${TOSS_SECRET_KEY:}

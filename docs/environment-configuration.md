@@ -108,7 +108,7 @@ spring:
     enabled: true
 ```
 
-Spring Boot 시작 시 `src/main/resources/db/migration`에 있는 마이그레이션 SQL을 순서대로 실행합니다. 현재는 V1 → V2 → V3 순서이며, V3가 기존 결제 행을 보존하면서 자동 복구 일정과 취소 기록을 추가합니다. Flyway가 구조의 변경 이력을 관리하고, Hibernate는 그 결과가 Entity와 일치하는지 검증합니다.
+Spring Boot 시작 시 `src/main/resources/db/migration`의 SQL을 V1 → V2 → V3 → V4 순서로 적용합니다. V3는 취소 기록을 추가했고 V4는 주기적 복구 일정 컬럼을 제거합니다. 기존 미확정 결제는 운영 확인 상태로 옮기며 주문과 결제 기록은 보존합니다. Flyway가 구조 이력을 관리하고 Hibernate는 Entity와 테이블의 일치를 검증합니다.
 
 ### 토스페이먼츠 키
 
@@ -129,22 +129,11 @@ React는 `/payment-config`로 사용 가능 여부, 공개 클라이언트 키, 
 
 서버는 승인 `/v1/payments/confirm`, 조회 `/v1/payments/{paymentKey}`, 취소 `/v1/payments/{paymentKey}/cancel`을 사용합니다. SDK v2와 서버 API 버전은 별개이며 결제창형 키의 API 응답 버전은 공식 문서상 `2022-11-16`으로 고정됩니다. [API 키와 버전](https://docs.tosspayments.com/reference/using-api/api-keys)
 
-`PaymentConfiguration`에서 토스 연결 제한은 3초, 응답 대기는 60초로 설정합니다. 응답 대기 60초는 [토스 타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)의 권장값입니다. 시간이 초과돼도 승인·취소가 처리됐을 수 있으므로 서버가 결과를 자동 재조회합니다.
+`PaymentConfiguration`에서 토스 연결 제한은 3초, 응답 대기는 60초로 설정합니다. 응답 대기 60초는 [토스 타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)의 권장값입니다. 승인 응답이 불확실하면 같은 요청에서 GET으로 한 번 재조회합니다. 취소 응답이 불확실할 때도 한 번 더 조회합니다.
 
-### 결제 자동 복구 작업
+### 승인 결과 확인
 
-```yaml
-payment:
-  recovery:
-    enabled: ${PAYMENT_RECOVERY_ENABLED:true}
-    poll-delay-ms: 5000
-```
-
-`PaymentRecoveryConfiguration`이 `@Scheduled`로 복구 작업을 실행합니다. 한 묶음의 처리가 끝난 뒤 기본 5초를 기다리므로, 개별 API 호출 시간이 길어지면 다음 실행도 늦어집니다. 조회할 토스 키가 설정되지 않았다면 복구 서비스는 작업을 건너뜁니다.
-
-`poll-delay-ms`는 작업을 실행하는 간격입니다. 각 결제의 재시도 시각은 DB의 `next_action_at`에 별도로 저장하며, 초기 승인 대기 2분·미확정 결과의 재시도 대기·작업 선점 5분을 구분합니다. [자동 처리 규칙](payment-recovery.md)
-
-`PAYMENT_RECOVERY_ENABLED=false`로 끄면 미확정 결제는 자동 처리되지 않습니다. 통합 테스트는 스케줄러를 끄고 작업을 직접 호출하여 검증하며, 스케줄 실행 자체는 별도 설정 테스트에서 확인합니다.
+결제 재조회와 조건부 취소는 `PaymentService.confirm()`이 승인 요청을 처리할 때 수행합니다. `@Scheduled` 설정이나 주기적인 DB 조회는 없습니다. 호출·저장 순서는 [승인 결과 재조회와 조건부 취소](payment-recovery.md)에 설명합니다.
 
 ### 서버 주소와 포트
 

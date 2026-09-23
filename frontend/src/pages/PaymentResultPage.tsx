@@ -16,7 +16,6 @@ import {
 } from "../lib/formatters";
 import { removeSessionValue, writeLocalValue } from "../lib/storage";
 import { readPaymentRedirect } from "../payments/paymentRedirect";
-import { useOrderPolling } from "../payments/useOrderPolling";
 import type { ConfirmPaymentCommand, Order } from "../types/payment";
 
 const LAST_ORDER_ID_KEY = "lastOrderId";
@@ -28,7 +27,7 @@ function errorMessage(error: unknown): string {
     : "결과를 확인하지 못했습니다. 다시 결제하지 말고 저장된 결과를 조회해주세요.";
 }
 
-/** 인증 결과로 승인을 요청하고, 서버가 자동 처리한 주문·결제 결과를 읽어 표시한다. */
+/** 인증 결과로 승인을 요청하고, 서버가 저장한 주문·결제 결과를 표시한다. */
 export function PaymentResultPage() {
   const [redirect] = useState(readPaymentRedirect);
   const [order, setOrder] = useState<Order | null>(null);
@@ -49,7 +48,7 @@ export function PaymentResultPage() {
 
   /**
    * 서버가 반환한 상태와 안내를 표시한다. 결제 시도가 이미 기록되었다면 임시 승인 요청 정보를 지운다.
-   * UNKNOWN도 서버에 시도가 있으므로 자동 복구를 기다리며 저장된 주문만 읽는다.
+   * 결제 시도가 저장되었다면 새 승인 요청 대신 저장된 주문을 읽는다.
    */
   function showOrder(nextOrder: Order) {
     setOrder(nextOrder);
@@ -66,13 +65,11 @@ export function PaymentResultPage() {
     }
   }
 
-  useOrderPolling(order, showOrder, busy ? null : redirect.orderId);
-
   /** 요청 오류를 결제 실패로 단정하지 않고, 저장된 결과부터 조회하도록 안내한다. */
   function showRequestError(requestError: unknown) {
     setTitle("결제 결과 확인이 필요합니다");
     setMessage(
-      "서버가 결제 결과를 확인하고 있습니다. 잠시 후 결과가 자동으로 반영됩니다."
+      "요청 결과를 받지 못했습니다. 주문 내역을 조회하고, 확인되지 않으면 주문번호로 문의해주세요."
     );
     setError(errorMessage(requestError));
   }
