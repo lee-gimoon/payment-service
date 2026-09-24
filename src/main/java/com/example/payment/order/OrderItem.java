@@ -3,19 +3,21 @@ package com.example.payment.order;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import com.example.payment.product.Product;
 import java.util.Set;
-import java.util.UUID;
 
 /** purchase_order_items 테이블의 한 행. 구입 당시 상품명·단가·옵션을 보관한다. */
 @Entity
 @Table(name = "purchase_order_items")
 public class OrderItem {
     @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(length = 36)
     private String id;
 
@@ -52,7 +54,6 @@ public class OrderItem {
                 || quantity < 1 || quantity > 10) {
             throw new IllegalArgumentException("판매 중인 상품과 유효한 옵션·수량이 필요합니다.");
         }
-        this.id = UUID.randomUUID().toString();
         this.product = product;
         this.productName = product.getName();
         this.size = size;
@@ -60,7 +61,7 @@ public class OrderItem {
         this.quantity = quantity;
     }
 
-    /** 주문에 추가할 때 부모와 목록 순서를 연결한다. */
+    /** 주문 생성 시 부모 주문과 항목 순서를 지정한다. */
     void attachTo(PurchaseOrder order, int lineNumber) {
         this.order = order;
         this.lineNumber = lineNumber;

@@ -3,6 +3,7 @@ package com.example.payment.payment;
 import com.example.payment.api.error.ApiException;
 import com.example.payment.config.TossProperties;
 import com.example.payment.gateway.TossPaymentClient;
+import com.example.payment.order.OrderItemRepository;
 import com.example.payment.order.OrderRepository;
 import com.example.payment.order.OrderResponse;
 import com.example.payment.order.PurchaseOrder;
@@ -20,13 +21,16 @@ import org.springframework.stereotype.Service;
 public class PaymentService {
     private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
     private final PaymentRepository paymentRepository;
     private final TossPaymentClient tossPaymentClient;
     private final TossProperties tossProperties;
 
-    public PaymentService(OrderRepository orderRepository, PaymentRepository paymentRepository,
+    public PaymentService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
+                          PaymentRepository paymentRepository,
                           TossPaymentClient tossPaymentClient, TossProperties tossProperties) {
         this.orderRepository = orderRepository;
+        this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
         this.tossPaymentClient = tossPaymentClient;
         this.tossProperties = tossProperties;
@@ -48,7 +52,7 @@ public class PaymentService {
             if (!payment.getPaymentKey().equals(request.paymentKey())) {
                 throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_CONFLICT", "이미 다른 결제 요청이 연결된 주문입니다.");
             }
-            return OrderResponse.of(order, payment);
+            return response(order, payment);
         }
         requirePaymentConfig();
 
@@ -65,7 +69,7 @@ public class PaymentService {
         if (result.status() == PaymentStatus.UNKNOWN) {
             payment = verifyAndCancelIfNeeded(payment, order.getAmount());
         }
-        return OrderResponse.of(order, payment);
+        return response(order, payment);
     }
 
     /** 승인 결과가 불확실하면 같은 요청에서 GET 재조회 → 취소 의도 저장 → 취소 → 결과 저장을 이어서 수행한다. */
@@ -108,8 +112,12 @@ public class PaymentService {
     }
 
     private PurchaseOrder findOrder(String orderId) {
-        return orderRepository.findWithItemsById(orderId)
+        return orderRepository.findById(orderId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
+    }
+
+    private OrderResponse response(PurchaseOrder order, Payment payment) {
+        return OrderResponse.of(order, orderItemRepository.findByOrderId(order.getId()), payment);
     }
 
     private void requirePaymentConfig() {

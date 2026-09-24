@@ -1,16 +1,11 @@
 package com.example.payment.order;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -24,7 +19,7 @@ public class PurchaseOrder {
     @Column(length = 64)
     private String id;
 
-    // 화면용 주문 요약명. 실제 구매 상품은 items에 있다.
+    // 화면용 주문 요약명. 실제 구매 상품은 purchase_order_items에 있다.
     @Column(nullable = false, length = 100)
     private String productName;
 
@@ -41,11 +36,6 @@ public class PurchaseOrder {
     @Version
     private Long version;
 
-    // OrderItem.order의 order_id로 연결한다. 새 주문과 함께 저장하고, 조회할 때는 필요 시 불러온다.
-    @OneToMany(mappedBy = "order", cascade = CascadeType.PERSIST, fetch = FetchType.LAZY)
-    @OrderBy("lineNumber ASC")
-    private List<OrderItem> items = new ArrayList<>();
-
     /** JPA가 DB에서 조회한 객체를 만들 때 사용하는 생성자다. */
     protected PurchaseOrder() {}
 
@@ -58,18 +48,18 @@ public class PurchaseOrder {
         this.createdAt = Instant.now();
         Set<String> productIds = new HashSet<>();
         long totalAmount = 0;
-        for (OrderItem item : items) {
+        for (int lineNumber = 0; lineNumber < items.size(); lineNumber++) {
+            OrderItem item = items.get(lineNumber);
             this.quantity = Math.addExact(this.quantity, item.getQuantity());
             totalAmount = Math.addExact(totalAmount, Math.multiplyExact(item.getUnitPrice(), item.getQuantity()));
             productIds.add(item.getProductId());
-            item.attachTo(this, this.items.size());
-            this.items.add(item);
+            item.attachTo(this, lineNumber);
         }
         if (this.quantity > 100 || totalAmount <= 0) {
             throw new IllegalArgumentException("주문 수량과 금액을 확인해주세요.");
         }
         this.amount = totalAmount;
-        String firstName = this.items.getFirst().getProductName();
+        String firstName = items.getFirst().getProductName();
         String suffix = productIds.size() > 1 ? " 외 " + (productIds.size() - 1) + "종" : "";
         this.productName = firstName.substring(0, Math.min(firstName.length(), 100 - suffix.length())) + suffix;
     }
@@ -79,5 +69,4 @@ public class PurchaseOrder {
     public int getQuantity() { return quantity; }
     public long getAmount() { return amount; }
     public Instant getCreatedAt() { return createdAt; }
-    public List<OrderItem> getItems() { return List.copyOf(items); }
 }

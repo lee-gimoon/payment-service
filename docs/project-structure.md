@@ -154,8 +154,9 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 | --- | --- |
 | [OrderController.java](../src/main/java/com/example/payment/order/OrderController.java) | `POST /orders`, `GET /orders/{orderId}` 요청을 받습니다. `OrderService`를 호출하고 주문 응답을 반환합니다. |
 | [OrderService.java](../src/main/java/com/example/payment/order/OrderService.java) | 주문을 만들고 저장하거나, 기존 주문과 연결된 결제 결과를 조회합니다. 주문 생성과 조회의 트랜잭션 범위를 지정합니다. |
-| [OrderRepository.java](../src/main/java/com/example/payment/order/OrderRepository.java) | `PurchaseOrder`를 저장하고, 응답이 필요할 때 주문 항목을 함께 조회합니다. |
-| [PurchaseOrder.java](../src/main/java/com/example/payment/order/PurchaseOrder.java) | `purchase_orders` 테이블의 Entity입니다. 주문 항목으로 총수량·금액을 계산하고 항목 목록을 보유합니다. |
+| [OrderRepository.java](../src/main/java/com/example/payment/order/OrderRepository.java) | `purchase_orders`의 주문 한 건을 저장하고 조회합니다. |
+| [OrderItemRepository.java](../src/main/java/com/example/payment/order/OrderItemRepository.java) | `purchase_order_items`를 저장하고 `order_id`로 주문 항목을 조회합니다. |
+| [PurchaseOrder.java](../src/main/java/com/example/payment/order/PurchaseOrder.java) | `purchase_orders` 테이블의 Entity입니다. 주문 항목으로 총수량·금액을 계산하고 요약을 저장합니다. |
 | [OrderItem.java](../src/main/java/com/example/payment/order/OrderItem.java) | `purchase_order_items` 테이블의 Entity입니다. 주문·상품 외래 키와 구입 당시 상품명·단가·사이즈·수량을 보관합니다. |
 | [OrderResponse.java](../src/main/java/com/example/payment/order/OrderResponse.java) | 프론트에 반환할 주문·결제 응답 DTO입니다. 상태별 안내와 실제 승인 금액·통화, 승인·취소 시각을 담습니다. 결제 행이 없으면 `READY`로 표현합니다. |
 

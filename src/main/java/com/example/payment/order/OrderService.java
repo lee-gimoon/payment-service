@@ -17,12 +17,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderService {
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
     private final PaymentRepository paymentRepository;
     private final ProductCatalog productCatalog;
 
-    public OrderService(OrderRepository orderRepository, PaymentRepository paymentRepository,
+    public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
+                        PaymentRepository paymentRepository,
                         ProductCatalog productCatalog) {
         this.orderRepository = orderRepository;
+        this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
         this.productCatalog = productCatalog;
     }
@@ -51,7 +54,8 @@ public class OrderService {
             lines.add(new OrderItem(product, item.size(), item.quantity()));
         }
         PurchaseOrder order = orderRepository.save(new PurchaseOrder(lines));
-        return OrderResponse.of(order, null);
+        orderItemRepository.saveAll(lines);
+        return OrderResponse.of(order, lines, null);
     }
 
     private ApiException invalidCart() {
@@ -61,9 +65,9 @@ public class OrderService {
     /** 주문과 연결된 결제를 조회하여 프론트에 함께 전달한다. */
     @Transactional(readOnly = true)
     public OrderResponse get(String orderId) {
-        PurchaseOrder order = orderRepository.findWithItemsById(orderId)
+        PurchaseOrder order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
         Payment payment = paymentRepository.findById(orderId).orElse(null);
-        return OrderResponse.of(order, payment);
+        return OrderResponse.of(order, orderItemRepository.findByOrderId(orderId), payment);
     }
 }

@@ -109,6 +109,22 @@ class PaymentIntegrationTest {
     }
 
     @Test
+    void confirmedCatalogOrderStillReturnsItsPurchasedItems() throws Exception {
+        String orderId = orders.create(new CreateOrderRequest(List.of(
+                new CreateOrderRequest.Item("tee-01", "M", 1),
+                new CreateOrderRequest.Item("tee-02", "L", 1)))).orderId();
+        when(toss.confirm(any(), anyLong())).thenReturn(succeeded());
+
+        mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmJson(orderId, "catalog-payment-key", "47000")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.amount").value(47000))
+                .andExpect(jsonPath("$.payment.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.items[0].productId").value("tee-01"))
+                .andExpect(jsonPath("$.items[1].productId").value("tee-02"));
+    }
+
+    @Test
     void savedOrderItemsLoadAsEntitiesWithTheirOwnIds() throws Exception {
         String orderId = orders.create(new CreateOrderRequest(List.of(
                 new CreateOrderRequest.Item("tee-02", "M", 1),

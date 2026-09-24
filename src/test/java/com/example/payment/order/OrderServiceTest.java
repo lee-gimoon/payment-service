@@ -30,7 +30,8 @@ class OrderServiceTest {
         when(products.findByIdAndActiveTrue("tee-04")).thenReturn(Optional.of(new Product(
                 "tee-04", "블루 스타 티", "BLUE / BOXY", "그래픽", 27_000,
                 "#4e78d7", "#dbe9fa", "star", "", 4)));
-        service = new OrderService(orders, mock(PaymentRepository.class), new ProductCatalog(products));
+        service = new OrderService(orders, mock(OrderItemRepository.class),
+                mock(PaymentRepository.class), new ProductCatalog(products));
     }
 
     @Test

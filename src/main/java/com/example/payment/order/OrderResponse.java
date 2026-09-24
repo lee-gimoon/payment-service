@@ -11,7 +11,7 @@ public record OrderResponse(String orderId, String productName, int quantity, lo
                             List<ItemResponse> items, Instant createdAt, PaymentResponse payment) {
 
     /** 주문만 있으면 READY, 결제가 있으면 DB에 저장된 결제 결과를 담는다. */
-    public static OrderResponse of(PurchaseOrder order, Payment payment) {
+    public static OrderResponse of(PurchaseOrder order, List<OrderItem> orderItems, Payment payment) {
         PaymentResponse paymentResponse;
         if (payment == null) {
             paymentResponse = new PaymentResponse(PaymentStatus.READY, null, null, null, null,
@@ -22,7 +22,7 @@ public record OrderResponse(String orderId, String productName, int quantity, lo
                     payment.getApprovedAt(), payment.getCheckedAt(), payment.getErrorCode(),
                     message(payment.getStatus()), payment.getPgAmount(), payment.getPgCurrency(), payment.getCanceledAt());
         }
-        List<ItemResponse> items = order.getItems().stream().map(item ->
+        List<ItemResponse> items = orderItems.stream().map(item ->
                 new ItemResponse(item.getProductId(), item.getProductName(), item.getSize(),
                         item.getUnitPrice(), item.getQuantity())).toList();
         return new OrderResponse(order.getId(), order.getProductName(), order.getQuantity(),
