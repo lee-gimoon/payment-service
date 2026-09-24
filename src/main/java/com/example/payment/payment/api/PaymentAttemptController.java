@@ -1,5 +1,6 @@
-package com.example.payment.payment;
+package com.example.payment.payment.api;
 
+import com.example.payment.payment.application.PaymentAttemptService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;

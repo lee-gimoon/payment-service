@@ -1,9 +1,9 @@
 package com.example.payment.order;
 
 import com.example.payment.api.error.ApiException;
-import com.example.payment.payment.Payment;
-import com.example.payment.payment.PaymentAttemptRepository;
-import com.example.payment.payment.PaymentRepository;
+import com.example.payment.payment.domain.Payment;
+import com.example.payment.payment.persistence.PaymentAttemptRepository;
+import com.example.payment.payment.persistence.PaymentRepository;
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductCatalog;
 import java.util.ArrayList;

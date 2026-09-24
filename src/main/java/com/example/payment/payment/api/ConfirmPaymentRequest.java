@@ -1,5 +1,5 @@
 /* 파일 역할: POST /payments/confirm의 JSON 요청 형식과 입력값 검증 조건을 정의한다. */
-package com.example.payment.payment;
+package com.example.payment.payment.api;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;

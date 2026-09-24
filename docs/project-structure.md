@@ -16,11 +16,7 @@ payment-service/
 │  │  │  │  ├─ ApiException.java
 │  │  │  │  └─ ApiExceptionHandler.java
 │  │  │  ├─ config/
-│  │  │  │  ├─ OpenApiConfiguration.java
-│  │  │  │  ├─ PaymentConfiguration.java          토스 HTTP 클라이언트
-│  │  │  │  └─ TossProperties.java
-│  │  │  ├─ gateway/
-│  │  │  │  └─ TossPaymentClient.java            승인·조회·취소 HTTP 통신
+│  │  │  │  └─ OpenApiConfiguration.java
 │  │  │  ├─ order/
 │  │  │  │  ├─ OrderController.java
 │  │  │  │  ├─ OrderService.java
@@ -37,13 +33,28 @@ payment-service/
 │  │  │  │  ├─ ProductRepository.java
 │  │  │  │  └─ ProductResponse.java
 │  │  │  └─ payment/
-│  │  │     ├─ PaymentController.java
-│  │  │     ├─ PaymentService.java               승인·즉시 재조회·조건부 취소
-│  │  │     ├─ PaymentRepository.java
-│  │  │     ├─ Payment.java                      결제 결과·취소 의도
-│  │  │     ├─ PaymentStatus.java
-│  │  │     ├─ PaymentResult.java
-│  │  │     └─ ConfirmPaymentRequest.java
+│  │  │     ├─ api/                              결제 HTTP 요청·응답
+│  │  │     │  ├─ PaymentController.java
+│  │  │     │  ├─ PaymentAttemptController.java
+│  │  │     │  └─ ConfirmPaymentRequest.java
+│  │  │     ├─ application/                      결제 처리 순서
+│  │  │     │  ├─ PaymentService.java
+│  │  │     │  ├─ PaymentAttemptService.java
+│  │  │     │  ├─ PaymentPreparationService.java
+│  │  │     │  └─ PaymentSettlementService.java
+│  │  │     ├─ domain/                           결제 상태·규칙
+│  │  │     │  ├─ Payment.java
+│  │  │     │  ├─ PaymentAttempt.java
+│  │  │     │  ├─ PaymentStatus.java
+│  │  │     │  ├─ PaymentAttemptStatus.java
+│  │  │     │  └─ PaymentResult.java
+│  │  │     ├─ persistence/                      JPA 저장소
+│  │  │     │  ├─ PaymentRepository.java
+│  │  │     │  └─ PaymentAttemptRepository.java
+│  │  │     └─ infrastructure/toss/             토스 설정·HTTP 통신
+│  │  │        ├─ PaymentConfiguration.java
+│  │  │        ├─ TossProperties.java
+│  │  │        └─ TossPaymentClient.java
 │  │  └─ resources/
 │  │     ├─ application.yml
 │  │     └─ db/migration/
@@ -54,13 +65,13 @@ payment-service/
 │  │        ├─ V5__catalog_orders.sql
 │  │        ├─ V6__create_products.sql
 │  │        ├─ V7__order_items_entity.sql
-│  │        └─ V8__product_order_integrity.sql
+│  │        ├─ V8__product_order_integrity.sql
+│  │        └─ V9__order_payment_lifecycle.sql
 │  └─ test/java/com/example/payment/
 │     ├─ PaymentIntegrationTest.java
 │     ├─ order/OrderServiceTest.java
-│     ├─ config/
-│     │  └─ TossPropertiesTest.java
-│     └─ gateway/
+│     └─ payment/infrastructure/toss/
+│        ├─ TossPropertiesTest.java
 │        └─ TossPaymentClientTest.java
 ├─ frontend/
 │  ├─ src/
@@ -138,27 +149,24 @@ Spring Boot 서버에서 실행하는 Java 코드입니다. 승인 응답이 불
 
 예를 들어 `PaymentService`가 금액 불일치로 `ApiException`을 던지면, `ApiExceptionHandler`가 이를 프론트에서 읽을 수 있는 HTTP 오류 응답으로 변환합니다.
 
-### 2.3. `config/`: 서버와 외부 연결의 설정
+### 2.3. `config/`: 공통 API 문서 설정
 
-Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니다. 여기서 준비한 객체를 Service나 외부 통신 코드가 주입받아 사용합니다.
+서버 전체에 적용하는 OpenAPI 문서 설정을 둡니다. 토스 전용 설정은 `payment/infrastructure/toss/`에 있습니다.
 
 | 파일 | 역할 |
 | --- | --- |
 | [OpenApiConfiguration.java](../src/main/java/com/example/payment/config/OpenApiConfiguration.java) | Swagger UI·OpenAPI 문서에 표시할 API 제목, 버전, 설명을 설정합니다. 개별 API 설명은 각 Controller에 있습니다. |
-| [PaymentConfiguration.java](../src/main/java/com/example/payment/config/PaymentConfiguration.java) | 토스 전용 `RestClient`를 만듭니다. 토스 서버 주소, 시크릿 키를 사용하는 Basic 인증, 연결·응답 대기 시간을 설정합니다. |
-| [TossProperties.java](../src/main/java/com/example/payment/config/TossProperties.java) | `application.yml`의 `payment.toss` 값을 Java 객체로 받습니다. 클라이언트 키·시크릿 키·두 UI variantKey를 보관하고, 결제창형 테스트 키 쌍의 형식을 검사합니다. 키가 모두 없으면 주문 기능만 사용할 수 있도록 합니다. |
+### 2.4. `payment/infrastructure/toss/`: 토스 설정과 외부 통신
 
-`application.yml`은 설정값, `TossProperties`는 토스 설정을 읽는 객체, `PaymentConfiguration`은 HTTP 통신 도구를 담당합니다. 주기적 복구 설정은 없습니다.
-
-### 2.4. `gateway/`: 외부 토스 서버와 통신
-
-우리 서버에서 외부 결제 서비스로 요청을 보내는 코드를 모읍니다. 토스의 HTTP 응답을 우리 서비스가 사용할 결과로 해석합니다.
+토스 설정값, 전용 HTTP 클라이언트와 승인·조회·취소 요청 코드를 결제 기능 안에 모읍니다.
 
 | 파일 | 역할 |
 | --- | --- |
-| [TossPaymentClient.java](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | `confirm()`은 승인 POST, `lookup()`은 결제 GET 조회, `cancel()`은 `/v1/payments/{paymentKey}/cancel`에 전액 취소 POST를 보냅니다. 승인·조회 응답은 `readConfirmationResult()`·`readLookupResult()`가 각각 검사하며, 별도 GET에서 같은 거래의 승인 금액·통화 불일치를 확인한 경우 `CANCEL_PENDING`을 반환합니다. 취소 완료는 `CANCELED`·잔액 0·성공한 취소 이력까지 확인합니다. |
+| [PaymentConfiguration.java](../src/main/java/com/example/payment/payment/infrastructure/toss/PaymentConfiguration.java) | 토스 전용 `RestClient`를 만듭니다. 토스 서버 주소, 시크릿 키를 사용하는 Basic 인증, 연결·응답 대기 시간을 설정합니다. |
+| [TossProperties.java](../src/main/java/com/example/payment/payment/infrastructure/toss/TossProperties.java) | `application.yml`의 `payment.toss` 값을 Java 객체로 받습니다. 클라이언트 키·시크릿 키·두 UI variantKey를 보관하고 테스트 키 쌍의 형식을 검사합니다. |
+| [TossPaymentClient.java](../src/main/java/com/example/payment/payment/infrastructure/toss/TossPaymentClient.java) | `confirm()`은 승인 POST, `lookup()`은 결제 GET 조회, `cancel()`은 `/v1/payments/{paymentKey}/cancel`에 전액 취소 POST를 보냅니다. 승인·조회 응답은 `readConfirmationResult()`·`readLookupResult()`가 각각 검사하며, 별도 GET에서 같은 거래의 승인 금액·통화 불일치를 확인한 경우 `CANCEL_PENDING`을 반환합니다. 취소 완료는 `CANCELED`·잔액 0·성공한 취소 이력까지 확인합니다. |
 
-이 파일 안의 `TossPaymentResponse`는 결제 응답, `TossCancellation`은 취소 이력, `TossErrorResponse`는 오류 응답을 읽는 내부 record입니다. 승인·즉시 재조회·취소의 호출 순서와 DB 저장은 `PaymentService`가 담당합니다.
+`TossPaymentClient` 안의 `TossPaymentResponse`는 결제 응답, `TossCancellation`은 취소 이력, `TossErrorResponse`는 오류 응답을 읽는 내부 record입니다. 호출 순서와 DB 저장은 `payment/application/`의 서비스가 담당합니다.
 
 ### 2.5. `product/`: 판매 상품 조회
 
@@ -189,17 +197,24 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 
 ### 2.7. `payment/`: 승인·즉시 재조회·취소 결과 관리
 
-결제수단 인증이 끝난 주문을 승인하고, 결과가 불확실하면 같은 요청에서 재조회·조건부 취소와 결과 저장을 이어서 처리합니다. `PaymentController`가 HTTP 진입점입니다.
+결제수단 인증이 끝난 주문을 승인하고, 결과가 불확실하면 같은 요청에서 재조회·조건부 취소와 결과 저장을 이어서 처리합니다. `api/`는 HTTP 요청, `application/`은 처리 순서, `domain/`은 상태·규칙, `persistence/`는 DB 저장소를 맡습니다. 토스 연결은 위의 `infrastructure/toss/`에 있습니다.
 
 | 파일 | 역할 |
 | --- | --- |
-| [PaymentController.java](../src/main/java/com/example/payment/payment/PaymentController.java) | `/payment-config`, `/payments/confirm` 요청을 받습니다. 공개 설정과 승인 결과를 반환하며 수동 PG 재확인 API는 제공하지 않습니다. |
-| [PaymentService.java](../src/main/java/com/example/payment/payment/PaymentService.java) | 주문·금액 검증 → 결제 키 저장 → 토스 승인 순서를 관리합니다. 결과가 불확실하면 같은 요청에서 GET 재조회 후 필요할 때 취소 의도 저장 → 토스 취소 → 최종 결과 저장을 이어서 수행합니다. |
-| [PaymentRepository.java](../src/main/java/com/example/payment/payment/PaymentRepository.java) | `findById(orderId)`, `saveAndFlush()` 등으로 한 주문의 결제를 저장·조회하는 Spring Data JPA 인터페이스입니다. |
-| [Payment.java](../src/main/java/com/example/payment/payment/Payment.java) | 결제 상태, 실제 승인 금액·통화, 승인·취소 시각, 취소 멱등키를 보관합니다. `applyResult()`로 결과를 반영하며, `@Version`이 늦은 저장으로 다른 결과를 덮어쓰지 못하게 합니다. |
-| [ConfirmPaymentRequest.java](../src/main/java/com/example/payment/payment/ConfirmPaymentRequest.java) | 프론트가 승인 요청에 보내는 `orderId`, `paymentKey`, `amount`를 받는 DTO입니다. 빈 값·길이·숫자 범위 같은 입력 형식을 검사합니다. DB 금액과의 비교는 `PaymentService`가 합니다. |
-| [PaymentResult.java](../src/main/java/com/example/payment/payment/PaymentResult.java) | 해석한 토스 응답을 두 결제 서비스에 전달합니다. 서비스 상태·PG 상태·오류 코드·승인 시각·실제 승인 금액·통화·취소 시각을 담습니다. `unknown()`, `failed()`, `reviewRequired()`는 해당 결과 객체를 만드는 정적 메서드입니다. |
-| [PaymentStatus.java](../src/main/java/com/example/payment/payment/PaymentStatus.java) | `READY`, `PROCESSING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`, `CANCEL_PENDING`, `CANCELED`, `REVIEW_REQUIRED`를 정의합니다. `READY`는 결제 행이 없는 주문을 응답에서 표현하는 상태입니다. |
+| [PaymentController.java](../src/main/java/com/example/payment/payment/api/PaymentController.java) | `/payment-config`, `/payments/confirm` 요청을 받습니다. 공개 설정과 승인 결과를 반환하며 수동 PG 재확인 API는 제공하지 않습니다. |
+| [PaymentAttemptController.java](../src/main/java/com/example/payment/payment/api/PaymentAttemptController.java) | 결제 시도 시작과 인증 취소·실패 기록 요청을 받습니다. |
+| [PaymentService.java](../src/main/java/com/example/payment/payment/application/PaymentService.java) | 주문·금액 검증 → 결제 키 저장 → 토스 승인 순서를 관리합니다. 결과가 불확실하면 같은 요청에서 GET 재조회 후 필요할 때 취소 의도 저장 → 토스 취소 → 최종 결과 저장을 이어서 수행합니다. |
+| [PaymentAttemptService.java](../src/main/java/com/example/payment/payment/application/PaymentAttemptService.java) | 주문에 연결된 결제 시도를 만들고 인증 취소·실패를 기록합니다. |
+| [PaymentPreparationService.java](../src/main/java/com/example/payment/payment/application/PaymentPreparationService.java) | 토스 호출 전에 거래를 만들고 시도를 `PROCESSING`으로 바꿉니다. |
+| [PaymentSettlementService.java](../src/main/java/com/example/payment/payment/application/PaymentSettlementService.java) | 승인 결과를 결제·시도·주문에 한 트랜잭션으로 반영합니다. |
+| [PaymentRepository.java](../src/main/java/com/example/payment/payment/persistence/PaymentRepository.java) | 결제 ID·결제 키·주문번호로 거래를 조회하고 저장하는 Spring Data JPA 인터페이스입니다. |
+| [PaymentAttemptRepository.java](../src/main/java/com/example/payment/payment/persistence/PaymentAttemptRepository.java) | 주문의 결제 시도 이력을 조회·저장합니다. |
+| [Payment.java](../src/main/java/com/example/payment/payment/domain/Payment.java) | 결제 상태, 실제 승인 금액·통화, 승인·취소 시각, 취소 멱등키를 보관합니다. `applyResult()`로 결과를 반영하며, `@Version`이 늦은 저장으로 다른 결과를 덮어쓰지 못하게 합니다. |
+| [PaymentAttempt.java](../src/main/java/com/example/payment/payment/domain/PaymentAttempt.java) | 결제창을 연 한 번의 시도와 인증·승인 결과를 보관합니다. |
+| [ConfirmPaymentRequest.java](../src/main/java/com/example/payment/payment/api/ConfirmPaymentRequest.java) | 프론트가 승인 요청에 보내는 `orderId`, `paymentKey`, `amount`를 받는 DTO입니다. 빈 값·길이·숫자 범위 같은 입력 형식을 검사합니다. DB 금액과의 비교는 `PaymentService`가 합니다. |
+| [PaymentResult.java](../src/main/java/com/example/payment/payment/domain/PaymentResult.java) | 해석한 토스 응답을 두 결제 서비스에 전달합니다. 서비스 상태·PG 상태·오류 코드·승인 시각·실제 승인 금액·통화·취소 시각을 담습니다. `unknown()`, `failed()`, `reviewRequired()`는 해당 결과 객체를 만드는 정적 메서드입니다. |
+| [PaymentStatus.java](../src/main/java/com/example/payment/payment/domain/PaymentStatus.java) | `READY`, `PROCESSING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`, `CANCEL_PENDING`, `CANCELED`, `REVIEW_REQUIRED`를 정의합니다. `READY`는 결제 행이 없는 주문을 응답에서 표현하는 상태입니다. |
+| [PaymentAttemptStatus.java](../src/main/java/com/example/payment/payment/domain/PaymentAttemptStatus.java) | 결제 시도의 시작·인증 취소·인증 실패·승인 결과 상태를 정의합니다. |
 
 자동 취소는 카드·국내 간편결제에서 **주문번호와 결제키가 모두 일치하는 거래의 승인 금액·통화 불일치**를 확인했을 때 수행합니다. 식별자 불일치, 부분 취소 상태, 미지원 결제수단은 운영자 확인 대상으로 남깁니다. 취소 응답을 잃으면 같은 요청에서 GET으로 한 번 더 확인합니다.
 
@@ -245,14 +260,13 @@ Flyway가 서버 시작 시 아직 적용하지 않은 SQL 파일을 버전 순�
 | 폴더 | 목적 |
 | --- | --- |
 | 기본 테스트 패키지 | HTTP 요청부터 업무 처리·DB 저장까지 연결한 통합 테스트를 둡니다. |
-| `config/` | 토스 설정값의 허용·거부를 확인합니다. |
-| `gateway/` | 외부 HTTP 요청 형식과 응답 해석을 확인합니다. |
+| `payment/infrastructure/toss/` | 토스 설정 검증과 외부 HTTP 요청·응답 해석을 확인합니다. |
 
 | 파일 | 역할 |
 | --- | --- |
 | [PaymentIntegrationTest.java](../src/test/java/com/example/payment/PaymentIntegrationTest.java) | 별도 PostgreSQL에서 승인 요청 안의 즉시 재조회, 취소 의도 선저장, 취소 응답 유실 뒤 확인 조회, 운영 확인 상태와 마이그레이션을 검증합니다. 토스 호출은 모의 객체로 바꿉니다. |
-| [config/TossPropertiesTest.java](../src/test/java/com/example/payment/config/TossPropertiesTest.java) | 신규 제품용 테스트 키의 허용, 기존 제품·운영·불완전한 키의 거부, UI 설정값 처리, 키 원문이 문자열 출력에 노출되지 않는지를 확인합니다. |
-| [gateway/TossPaymentClientTest.java](../src/test/java/com/example/payment/gateway/TossPaymentClientTest.java) | 승인·조회·취소 URL, 인증·멱등키·요청 본문과 응답 해석을 모의 HTTP로 검증합니다. 재조회 후 취소 판단, 다른 거래의 취소 차단, 취소 상태·잔액·이력 검증, 응답 유실도 다룹니다. |
+| [TossPropertiesTest.java](../src/test/java/com/example/payment/payment/infrastructure/toss/TossPropertiesTest.java) | 신규 제품용 테스트 키의 허용, 기존 제품·운영·불완전한 키의 거부, UI 설정값 처리, 키 원문이 문자열 출력에 노출되지 않는지를 확인합니다. |
+| [TossPaymentClientTest.java](../src/test/java/com/example/payment/payment/infrastructure/toss/TossPaymentClientTest.java) | 승인·조회·취소 URL, 인증·멱등키·요청 본문과 응답 해석을 모의 HTTP로 검증합니다. 재조회 후 취소 판단, 다른 거래의 취소 차단, 취소 상태·잔액·이력 검증, 응답 유실도 다룹니다. |
 
 ## 5. 프론트엔드: `frontend/`
 
@@ -412,12 +426,12 @@ Node 내장 테스트 도구를 사용합니다. 브라우저 저장소·SDK·�
 | --- | --- |
 | 주문 상품·수량·금액 변경 | `order/OrderService.java`, `PurchaseOrder.java`, DB 제약조건과 프론트 상품·주문 표시 |
 | 주문·결제 API 경로 확인 | `OrderController.java`, `PaymentController.java`, `frontend/src/api/paymentApi.ts` |
-| 서버의 승인 처리 순서 확인 | `payment/PaymentService.java` |
-| 승인 결과 불확실 시 즉시 처리 순서 확인 | `payment/PaymentService.java`의 `verifyAndCancelIfNeeded()`, [재조회·취소](payment-recovery.md) |
-| 자동 취소 조건과 토스 취소 응답 검증 | `gateway/TossPaymentClient.java`의 `readLookupResult()`, `readCancellationLookupResult()`, `cancel()`, `canceledResult()` |
-| 취소 멱등키·취소 의도 저장 확인 | `payment/Payment.java`, `PaymentRepository.java`, V3·V4 마이그레이션 |
-| 토스에 보내는 HTTP 요청 확인 | `gateway/TossPaymentClient.java`, `config/PaymentConfiguration.java` |
-| 토스 키·결제 UI 설정 변경 | `application.yml`, `config/TossProperties.java`, [환경변수 문서](environment-variables.md) |
+| 서버의 승인 처리 순서 확인 | `payment/application/PaymentService.java` |
+| 승인 결과 불확실 시 즉시 처리 순서 확인 | `payment/application/PaymentService.java`의 `verifyAndCancelIfNeeded()`, [재조회·취소](payment-recovery.md) |
+| 자동 취소 조건과 토스 취소 응답 검증 | `payment/infrastructure/toss/TossPaymentClient.java`의 `readLookupResult()`, `readCancellationLookupResult()`, `cancel()`, `canceledResult()` |
+| 취소 멱등키·취소 의도 저장 확인 | `payment/domain/Payment.java`, `payment/persistence/PaymentRepository.java`, V3·V4 마이그레이션 |
+| 토스에 보내는 HTTP 요청 확인 | `payment/infrastructure/toss/TossPaymentClient.java`, `PaymentConfiguration.java` |
+| 토스 키·결제 UI 설정 변경 | `application.yml`, `payment/infrastructure/toss/TossProperties.java`, [환경변수 문서](environment-variables.md) |
 | 결제창 열기·닫기·선택 처리 변경 | `frontend/src/payments/tossPayments.ts`, `paymentWindow.ts` |
 | 인증 후 결과 처리 확인 | `paymentRedirect.ts`, `pages/PaymentResultPage.tsx` |
 | 주문 화면의 저장된 결과 확인 | `frontend/src/api/paymentApi.ts`, `pages/StorePage.tsx`, `pages/PaymentResultPage.tsx` |

@@ -1,12 +1,12 @@
-package com.example.payment.gateway;
+package com.example.payment.payment.infrastructure.toss;
 
-import com.example.payment.payment.Payment;
-import com.example.payment.payment.PaymentResult;
-import com.example.payment.payment.PaymentStatus;
+import com.example.payment.payment.domain.Payment;
+import com.example.payment.payment.domain.PaymentResult;
+import com.example.payment.payment.domain.PaymentStatus;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Qualifier;

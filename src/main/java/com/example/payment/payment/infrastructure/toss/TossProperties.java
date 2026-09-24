@@ -1,4 +1,4 @@
-package com.example.payment.config;
+package com.example.payment.payment.infrastructure.toss;
 
 import jakarta.validation.constraints.AssertTrue;
 import org.springframework.boot.context.properties.ConfigurationProperties;

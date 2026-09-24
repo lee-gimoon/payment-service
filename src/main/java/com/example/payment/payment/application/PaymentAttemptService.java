@@ -1,9 +1,14 @@
-package com.example.payment.payment;
+package com.example.payment.payment.application;
 
 import com.example.payment.api.error.ApiException;
 import com.example.payment.order.OrderRepository;
 import com.example.payment.order.OrderStatus;
 import com.example.payment.order.PurchaseOrder;
+import com.example.payment.payment.domain.PaymentAttempt;
+import com.example.payment.payment.domain.PaymentAttemptStatus;
+import com.example.payment.payment.domain.PaymentStatus;
+import com.example.payment.payment.persistence.PaymentAttemptRepository;
+import com.example.payment.payment.persistence.PaymentRepository;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;

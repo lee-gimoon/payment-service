@@ -1,12 +1,18 @@
-package com.example.payment.payment;
+package com.example.payment.payment.application;
 
 import com.example.payment.api.error.ApiException;
-import com.example.payment.config.TossProperties;
-import com.example.payment.gateway.TossPaymentClient;
 import com.example.payment.order.OrderItemRepository;
 import com.example.payment.order.OrderRepository;
 import com.example.payment.order.OrderResponse;
 import com.example.payment.order.PurchaseOrder;
+import com.example.payment.payment.api.ConfirmPaymentRequest;
+import com.example.payment.payment.domain.Payment;
+import com.example.payment.payment.domain.PaymentResult;
+import com.example.payment.payment.domain.PaymentStatus;
+import com.example.payment.payment.infrastructure.toss.TossPaymentClient;
+import com.example.payment.payment.infrastructure.toss.TossProperties;
+import com.example.payment.payment.persistence.PaymentAttemptRepository;
+import com.example.payment.payment.persistence.PaymentRepository;
 import java.math.BigDecimal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

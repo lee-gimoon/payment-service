@@ -108,10 +108,10 @@ React가 주문번호·결제 키·금액·시도 ID를 JSON으로 `POST /paymen
 | --- | --- | --- |
 | 1 | [OrderController](../src/main/java/com/example/payment/order/OrderController.java) | 요청 URL과 서비스 호출 |
 | 2 | [OrderService](../src/main/java/com/example/payment/order/OrderService.java) | 주문 객체 생성과 저장 |
-| 3 | [PaymentController](../src/main/java/com/example/payment/payment/PaymentController.java) | 인증 성공 후 승인 요청 JSON 받기 |
-| 4 | [PaymentService](../src/main/java/com/example/payment/payment/PaymentService.java) | confirm()과 verifyAndCancelIfNeeded()의 호출·저장 순서 |
-| 5 | [TossPaymentClient](../src/main/java/com/example/payment/gateway/TossPaymentClient.java) | confirm()·lookup()·cancel()과 응답별 해석 메서드 |
-| 6 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java), [Payment](../src/main/java/com/example/payment/payment/Payment.java) | 저장 필드와 applyResult() |
+| 3 | [PaymentController](../src/main/java/com/example/payment/payment/api/PaymentController.java) | 인증 성공 후 승인 요청 JSON 받기 |
+| 4 | [PaymentService](../src/main/java/com/example/payment/payment/application/PaymentService.java) | confirm()과 verifyAndCancelIfNeeded()의 호출·저장 순서 |
+| 5 | [TossPaymentClient](../src/main/java/com/example/payment/payment/infrastructure/toss/TossPaymentClient.java) | confirm()·lookup()·cancel()과 응답별 해석 메서드 |
+| 6 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java), [Payment](../src/main/java/com/example/payment/payment/domain/Payment.java) | 저장 필드와 applyResult() |
 | 7 | [OrderResponse](../src/main/java/com/example/payment/order/OrderResponse.java) | 주문·승인·취소 내역 응답 구성 |
 | 8 | [PaymentResultPage](../frontend/src/pages/PaymentResultPage.tsx) | 승인 요청과 주문 내역 표시 |
 

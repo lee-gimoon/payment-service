@@ -1,4 +1,4 @@
-package com.example.payment.payment;
+package com.example.payment.payment.domain;
 
 /** 결제창을 연 시점부터 인증·승인까지의 시도별 결과다. */
 public enum PaymentAttemptStatus {

@@ -1,11 +1,11 @@
 package com.example.payment.order;
 
-import com.example.payment.payment.Payment;
-import com.example.payment.payment.PaymentAttempt;
-import com.example.payment.payment.PaymentAttemptStatus;
-import com.example.payment.payment.PaymentStatus;
-import java.time.Instant;
+import com.example.payment.payment.domain.Payment;
+import com.example.payment.payment.domain.PaymentAttempt;
+import com.example.payment.payment.domain.PaymentAttemptStatus;
+import com.example.payment.payment.domain.PaymentStatus;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 /** React가 받는 주문 응답이다. record는 데이터를 전달하는 DTO를 간단하게 작성하는 Java 문법이다. */

@@ -7,8 +7,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.example.payment.api.error.ApiException;
-import com.example.payment.payment.PaymentRepository;
-import com.example.payment.payment.PaymentAttemptRepository;
+import com.example.payment.payment.persistence.PaymentAttemptRepository;
+import com.example.payment.payment.persistence.PaymentRepository;
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductCatalog;
 import com.example.payment.product.ProductRepository;

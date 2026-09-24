@@ -1,5 +1,5 @@
 /* 파일 역할: 토스 설정이 허용하는 테스트 키 형식과 키 원문 노출 방지 규칙을 검증한다. */
-package com.example.payment.config;
+package com.example.payment.payment.infrastructure.toss;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

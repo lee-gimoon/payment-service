@@ -1,4 +1,4 @@
-package com.example.payment.payment;
+package com.example.payment.payment.domain;
 
 /** 화면에서 사용하는 결제 상태다. 결제수단 인증만 끝난 상태는 결제 성공이 아니다. */
 public enum PaymentStatus {

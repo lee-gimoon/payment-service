@@ -1,14 +1,14 @@
-package com.example.payment.payment;
+package com.example.payment.payment.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.EnumType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
-import java.time.Instant;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 /** 인증을 마친 한 번의 결제 거래다. 실패 기록을 보존하고 같은 주문의 재시도를 허용한다. */

@@ -1,9 +1,15 @@
-package com.example.payment.payment;
+package com.example.payment.payment.application;
 
 import com.example.payment.api.error.ApiException;
 import com.example.payment.order.OrderRepository;
 import com.example.payment.order.OrderStatus;
 import com.example.payment.order.PurchaseOrder;
+import com.example.payment.payment.domain.Payment;
+import com.example.payment.payment.domain.PaymentAttempt;
+import com.example.payment.payment.domain.PaymentAttemptStatus;
+import com.example.payment.payment.domain.PaymentStatus;
+import com.example.payment.payment.persistence.PaymentAttemptRepository;
+import com.example.payment.payment.persistence.PaymentRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

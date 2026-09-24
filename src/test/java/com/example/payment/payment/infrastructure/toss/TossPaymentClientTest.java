@@ -1,5 +1,5 @@
 /* 파일 역할: 실제 토스 API 대신 모의 HTTP 응답으로 PG 요청 계약과 결제 결과 해석을 검증한다. */
-package com.example.payment.gateway;
+package com.example.payment.payment.infrastructure.toss;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
@@ -10,11 +10,9 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.example.payment.config.PaymentConfiguration;
-import com.example.payment.config.TossProperties;
-import com.example.payment.payment.Payment;
-import com.example.payment.payment.PaymentResult;
-import com.example.payment.payment.PaymentStatus;
+import com.example.payment.payment.domain.Payment;
+import com.example.payment.payment.domain.PaymentResult;
+import com.example.payment.payment.domain.PaymentStatus;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;

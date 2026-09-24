@@ -1,4 +1,4 @@
-package com.example.payment.config;
+package com.example.payment.payment.infrastructure.toss;
 
 import java.net.http.HttpClient;
 import java.time.Duration;

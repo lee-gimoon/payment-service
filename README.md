@@ -208,7 +208,7 @@ Java 21 / Spring Boot 4.1.1 / JPA / PostgreSQL 18 / Flyway / React 19 / TypeScri
 - `product/`: 티셔츠 10종 카탈로그·가격
 - `order/`: 장바구니 가격 계산·주문 항목 저장·조회
 - `payment/`: 승인 흐름·저장·즉시 재조회·조건부 취소 처리
-- `gateway/TossPaymentClient.java`: 토스 승인·조회·취소 HTTP 호출
+- `payment/infrastructure/toss/`: 토스 설정과 승인·조회·취소 HTTP 호출
 - `frontend/src/payments/`: 공식 SDK 호출·복귀 URL 처리
 - `frontend/src/pages/`: 스토어·결제 결과 화면
 

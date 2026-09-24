@@ -1,7 +1,7 @@
-package com.example.payment.payment;
+package com.example.payment.payment.domain;
 
-import java.time.Instant;
 import java.math.BigDecimal;
+import java.time.Instant;
 
 /**
  * 토스 응답이나 통신 오류를 해석해 TossPaymentClient가 PaymentService에 전달하는 내부 결과 DTO다.

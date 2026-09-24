@@ -1,7 +1,8 @@
-package com.example.payment.payment;
+package com.example.payment.payment.api;
 
-import com.example.payment.config.TossProperties;
 import com.example.payment.order.OrderResponse;
+import com.example.payment.payment.application.PaymentService;
+import com.example.payment.payment.infrastructure.toss.TossProperties;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;

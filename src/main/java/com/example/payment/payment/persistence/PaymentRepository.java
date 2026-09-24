@@ -1,6 +1,8 @@
 /* 파일 역할: payments 테이블에 결제 시도를 저장하고 주문번호로 읽는 JPA 저장소를 정의한다. */
-package com.example.payment.payment;
+package com.example.payment.payment.persistence;
 
+import com.example.payment.payment.domain.Payment;
+import com.example.payment.payment.domain.PaymentStatus;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
