@@ -1,8 +1,10 @@
 /** 파일 역할: React 화면에서 사용하는 Spring Boot API 경로, 요청 형식, 공통 응답 처리를 모은다. */
 import type {
+  CartItem,
   ConfirmPaymentCommand,
   Order,
-  PaymentConfig
+  PaymentConfig,
+  Product
 } from "../types/payment";
 
 /** 서버의 공통 오류 응답 형식이다. 예상과 다른 응답에서도 읽을 수 있도록 필드는 선택 사항이다. */
@@ -51,9 +53,17 @@ export function getPaymentConfig(): Promise<PaymentConfig> {
   return request<PaymentConfig>("/payment-config");
 }
 
-/** POST /orders로 주문을 만든다. 상품·수량·금액은 서버가 결정하므로 요청 본문을 보내지 않는다. */
-export function createOrder(): Promise<Order> {
-  return request<Order>("/orders", { method: "POST" });
+/** 상품·사이즈·수량을 보내고 서버 상품 가격으로 계산된 주문을 받는다. */
+export function createOrder(items: CartItem[]): Promise<Order> {
+  return request<Order>("/orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items })
+  });
+}
+
+export function getProducts(): Promise<Product[]> {
+  return request<Product[]>("/products");
 }
 
 /** GET /orders/{orderId}로 우리 서버에 저장된 주문과 결제 상태를 읽는다. */

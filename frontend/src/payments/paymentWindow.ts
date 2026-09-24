@@ -57,7 +57,7 @@ export async function openPaymentWindow(
           }
           await widgets.requestPayment({
             orderId: order.orderId,
-            orderName: `${order.productName} ${order.quantity}장`,
+            orderName: order.items?.length > 1 ? order.productName : `${order.productName} ${order.quantity}장`,
             successUrl: `${resultPageUrl}?flow=success`,
             // 인증 취소 시 토스가 orderId를 생략해도 요청한 주문을 찾을 수 있다.
             failUrl: `${resultPageUrl}?flow=fail&requestedOrderId=${encodeURIComponent(order.orderId)}`

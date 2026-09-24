@@ -4,18 +4,24 @@
 
 ## 1. 주문을 만든다
 
-`POST /orders` → `OrderController.create()` → `OrderService.create()`
+`GET /products` → `ProductController.all()` → `ProductCatalog.all()` → `ProductRepository`가 DB의 `products` 테이블에서 상품을 읽습니다. React는 상품 ID·사이즈·수량을 장바구니에 담습니다.
+
+`POST /orders` → `OrderController.create()` → `OrderService.create(CreateOrderRequest)`
 
 ```java
-PurchaseOrder order = new PurchaseOrder("티셔츠", 1, 10_000);
+Product product = productCatalog.forOrder(item.productId());
+lines.add(new OrderItem(product, item.size(), item.quantity()));
+PurchaseOrder order = new PurchaseOrder(lines);
 order = orderRepository.save(order);
 return OrderResponse.of(order, null);
 ```
 
-- `new PurchaseOrder(...)`: 메모리에 주문 객체를 만듭니다.
-- `save(order)`: DB의 `purchase_orders`에 저장합니다.
+- `ProductCatalog.forOrder(...)`: 클라이언트가 보낸 ID로 판매 중인 `Product`를 DB에서 조회합니다.
+- `new OrderItem(...)`: 선택한 상품·옵션과 주문 시점 가격을 기록하는 엔티티를 만듭니다.
+- `new PurchaseOrder(lines)`: 항목 스냅샷을 합산해 주문 수량·금액을 계산합니다.
+- `save(order)`: DB의 `purchase_orders`에 주문을, `purchase_order_items`에 항목들을 함께 저장합니다.
 - `OrderResponse.of(order, null)`: 아직 결제가 없으므로 `READY`를 반환합니다.
-- 클라이언트가 보내는 상품·금액은 읽지 않습니다. 주문 금액은 서버에서 정합니다.
+- 클라이언트는 상품 ID·사이즈·수량을 보내지만 가격은 보내지 않습니다. 주문 금액은 서버 상품 가격으로 정합니다.
 
 ## 2. 결제수단을 인증한다
 
@@ -126,7 +132,15 @@ React가 세 값을 JSON으로 `POST /payments/confirm`에 보냅니다.
 
 기대 금액은 주문 테이블에, 실제 승인 금액은 결제 테이블에 보관합니다. 주문은 원화이며 불일치한 PG 금액·통화도 취소 검증을 위해 보존합니다. 프론트는 `status`가 READY가 아니면 서버에 결제 기록이 있음을 알고 임시 승인 정보를 지웁니다.
 
-V1·V2는 기존 변경 이력입니다. [V3 마이그레이션](../src/main/resources/db/migration/V3__automatic_payment_recovery.sql)은 취소 기록을 추가했고, [V4 마이그레이션](../src/main/resources/db/migration/V4__remove_periodic_payment_recovery.sql)은 주기적 복구 컬럼을 제거하며 기존 미확정 행을 운영 확인 상태로 옮깁니다.
+V5부터는 `purchase_order_items`에 주문 시점의 상품 ID·이름·사이즈·단가·수량을 함께 저장합니다. 예전 주문은 항목 행이 없어도 요약과 결제 결과를 조회할 수 있습니다.
+
+V6부터 판매 상품은 `products` 테이블의 `Product` 엔티티입니다. 초기 티셔츠 10종은 마이그레이션이 한 번만 넣습니다. 상품 가격을 바꿔도 이미 저장된 `purchase_order_items.unit_price`와 과거 주문 금액은 바뀌지 않습니다.
+
+V7부터 구입 내역 한 줄도 `OrderItem` 엔티티입니다. 각 항목은 고유 `id`를 갖고 `order_id`로 `PurchaseOrder`와 연결됩니다. 기존 주문 항목 행에는 V7 마이그레이션이 ID를 채워 넣습니다.
+
+V8은 주문 버전, 상품 판매 여부, 주문 항목의 상품 외래 키와 사이즈 제약을 추가합니다. 판매 중지 상품은 새 주문에서 제외하지만 과거 주문 항목은 유지합니다. `PurchaseOrder.items`는 필요할 때만 조회하며, 주문 생성 시 항목을 함께 INSERT합니다.
+
+V1·V2는 기존 변경 이력입니다. [V3 마이그레이션](../src/main/resources/db/migration/V3__automatic_payment_recovery.sql)은 취소 기록을 추가했고, [V4 마이그레이션](../src/main/resources/db/migration/V4__remove_periodic_payment_recovery.sql)은 주기적 복구 컬럼을 제거하며 기존 미확정 행을 운영 확인 상태로 옮깁니다. [V5 마이그레이션](../src/main/resources/db/migration/V5__catalog_orders.sql)은 주문 항목 테이블과 가변 주문 금액 제약을 추가합니다. [V6 마이그레이션](../src/main/resources/db/migration/V6__create_products.sql)은 상품 테이블과 초기 10종을 추가합니다. [V7 마이그레이션](../src/main/resources/db/migration/V7__order_items_entity.sql)은 기존 주문 항목에 고유 ID를 부여합니다. [V8 마이그레이션](../src/main/resources/db/migration/V8__product_order_integrity.sql)은 상품과 주문 항목의 연결 및 판매 상태를 보강합니다.
 
 ## 설정과 오류 처리도 함께 읽기
 

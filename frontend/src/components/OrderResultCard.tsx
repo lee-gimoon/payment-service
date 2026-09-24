@@ -41,6 +41,10 @@ export function OrderResultCard({
             {order.productName} {order.quantity}장 · {formatAmount(order.amount)}
           </dd>
         </div>
+        {order.items?.map((item, index) => <div key={`${item.productId}-${item.size}-${index}`}>
+          <dt>상품 {index + 1}</dt>
+          <dd>{item.productName} · {item.size} · {item.quantity}장 · {formatAmount(item.unitPrice * item.quantity)}</dd>
+        </div>)}
         <div>
           <dt>승인 시각</dt>
           <dd>{formatDateTime(order.payment.approvedAt)}</dd>

@@ -1,6 +1,6 @@
 # 프로젝트 디렉토리 구조와 폴더·파일별 역할
 
-이 문서는 현재 `payment-service` 프로젝트에서 **각 폴더에 무엇을 모아 두었는지, 그 안의 파일이 어떤 일을 하는지** 설명합니다. 결제창형 SDK와 승인 요청 안의 즉시 재조회·조건부 취소 흐름을 반영했습니다.
+이 문서는 `payment-service` 프로젝트의 폴더별 역할을 설명합니다. 상품 10종과 장바구니 주문이 추가되기 전 파일 목록도 일부 포함하므로, 현재 상품·주문 경로는 [코드 읽는 순서](code-reading-guide.md)와 `product/`, `order/` 소스를 기준으로 확인하세요. 결제창형 SDK와 승인 요청 안의 즉시 재조회·조건부 취소 흐름은 그대로 적용됩니다.
 
 직접 관리하는 소스·설정·문서는 파일별로 설명하고, 설치·빌드 과정에서 만들어지는 라이브러리와 캐시는 폴더 단위로 설명합니다. 결제 업무 흐름은 [기본 결제 흐름](payment-domain.md), 불확실한 승인 결과의 처리는 [재조회·조건부 취소](payment-recovery.md), 실행 방법은 [README](../README.md)를 함께 참고하세요.
 
@@ -148,14 +148,15 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 
 ### 2.5. `order/`: 주문 생성과 조회
 
-무엇을 얼마에 주문했는지를 관리합니다. 현재 상품은 티셔츠 1장, 금액은 10,000원으로 서버가 결정합니다.
+무엇을 얼마에 주문했는지를 관리합니다. 서버가 판매 중인 상품을 조회하고, 주문 항목의 단가·수량으로 주문 금액을 계산합니다. 현재 구조는 [상품·주문·결제 도메인](shop-domain.md)을 참고하세요.
 
 | 파일 | 역할 |
 | --- | --- |
 | [OrderController.java](../src/main/java/com/example/payment/order/OrderController.java) | `POST /orders`, `GET /orders/{orderId}` 요청을 받습니다. `OrderService`를 호출하고 주문 응답을 반환합니다. |
 | [OrderService.java](../src/main/java/com/example/payment/order/OrderService.java) | 주문을 만들고 저장하거나, 기존 주문과 연결된 결제 결과를 조회합니다. 주문 생성과 조회의 트랜잭션 범위를 지정합니다. |
-| [OrderRepository.java](../src/main/java/com/example/payment/order/OrderRepository.java) | `PurchaseOrder`를 저장·조회하는 Spring Data JPA 인터페이스입니다. `save()`, `findById()` 등의 실제 구현은 Spring Data JPA가 제공합니다. |
-| [PurchaseOrder.java](../src/main/java/com/example/payment/order/PurchaseOrder.java) | `purchase_orders` 테이블과 연결되는 Entity입니다. 주문번호, 상품명, 수량, 총금액, 생성 시각을 보관합니다. 새 주문번호는 UUID로 만듭니다. |
+| [OrderRepository.java](../src/main/java/com/example/payment/order/OrderRepository.java) | `PurchaseOrder`를 저장하고, 응답이 필요할 때 주문 항목을 함께 조회합니다. |
+| [PurchaseOrder.java](../src/main/java/com/example/payment/order/PurchaseOrder.java) | `purchase_orders` 테이블의 Entity입니다. 주문 항목으로 총수량·금액을 계산하고 항목 목록을 보유합니다. |
+| [OrderItem.java](../src/main/java/com/example/payment/order/OrderItem.java) | `purchase_order_items` 테이블의 Entity입니다. 주문·상품 외래 키와 구입 당시 상품명·단가·사이즈·수량을 보관합니다. |
 | [OrderResponse.java](../src/main/java/com/example/payment/order/OrderResponse.java) | 프론트에 반환할 주문·결제 응답 DTO입니다. 상태별 안내와 실제 승인 금액·통화, 승인·취소 시각을 담습니다. 결제 행이 없으면 `READY`로 표현합니다. |
 
 ### 2.6. `payment/`: 승인·즉시 재조회·취소 결과 관리

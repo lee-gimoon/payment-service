@@ -7,24 +7,25 @@ interface AppShellProps {
   children: ReactNode;
   footerText: string;
   mainClassName?: string;
+  cartCount?: number;
 }
 
 /** 공통 브랜드와 바닥글 사이에 전달받은 페이지 본문을 배치하는 레이아웃 컴포넌트다. */
-export function AppShell({ children, footerText, mainClassName }: AppShellProps) {
+export function AppShell({ children, footerText, mainClassName, cartCount = 0 }: AppShellProps) {
   return (
     <>
+      <div className="announcement">시안용 스토어 · 테스트 결제는 실제 청구되지 않습니다</div>
       <header>
         <Link className="brand" to="/">
-          한 장의 티셔츠
-          <span>PAYMENT LAB</span>
+          MODO <span>CLUB</span>
         </Link>
-        <span className="test-badge">테스트 스토어</span>
+        <nav aria-label="주요 메뉴"><a href="/#products">전체 상품</a><a href="/#look-preview">룩 보기</a><a href="/#cart">장바구니 <span>{cartCount}</span></a></nav>
       </header>
 
       <main className={mainClassName}>{children}</main>
 
       <footer>
-        PAYMENT LAB
+        MODO CLUB
         <span>{footerText}</span>
       </footer>
     </>

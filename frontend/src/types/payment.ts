@@ -31,8 +31,34 @@ export interface Order {
   quantity: number;
   amount: number;
   currency: string;
+  items: OrderItem[];
   createdAt: string;
   payment: PaymentDetails;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  subtitle: string;
+  category: string;
+  price: number;
+  color: string;
+  stage: string;
+  artwork: string;
+  badge: string;
+}
+
+export type ShirtSize = "S" | "M" | "L" | "XL";
+
+export interface CartItem {
+  productId: string;
+  size: ShirtSize;
+  quantity: number;
+}
+
+export interface OrderItem extends CartItem {
+  productName: string;
+  unitPrice: number;
 }
 
 /** 브라우저용 키와 결제창형 UI 선택 설정이다. 서버 시크릿 키는 포함하지 않는다. */

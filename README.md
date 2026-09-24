@@ -1,8 +1,8 @@
 # Payment Service
 
-토스페이먼츠의 결제 흐름을 배우는 Spring Boot + React MVP입니다. **주문 → 결제수단 인증 → 서버 승인 → 결과가 불확실하면 즉시 재조회·조건부 취소 → 주문 내역 조회**를 다룹니다.
+토스페이먼츠의 결제 흐름을 배우는 Spring Boot + React MVP입니다. 캐릭터 아바타에 티셔츠를 입혀보고, **상품 10종 선택 → 장바구니 → 주문 → 결제수단 인증 → 서버 승인 → 결과가 불확실하면 즉시 재조회·조건부 취소 → 주문 내역 조회**를 다룹니다.
 
-먼저 [기본 결제 흐름](docs/payment-domain.md)을 읽고, [코드 읽는 순서](docs/code-reading-guide.md)대로 따라가세요.
+먼저 [상품·주문·결제 도메인](docs/shop-domain.md)과 [기본 결제 흐름](docs/payment-domain.md)을 읽고, [코드 읽는 순서](docs/code-reading-guide.md)대로 따라가세요.
 
 ## 어떤 토스 연동인가요?
 
@@ -21,9 +21,9 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant Toss as 토스페이먼츠
 
-    User->>React: 주문 만들기
-    React->>Server: POST /orders
-    Server->>DB: 주문번호·금액 저장
+    User->>React: 티셔츠·사이즈·수량 선택
+    React->>Server: POST /orders (상품 ID·옵션·수량)
+    Server->>DB: 서버 가격으로 계산한 주문·항목 저장
     Server-->>React: orderId, amount
     React->>SDK: widgets(), setAmount(amount), renderPaymentWindow()
     SDK->>Toss: 결제창형 UI 요청
@@ -51,6 +51,8 @@ sequenceDiagram
 서버는 브라우저의 금액을 DB의 주문 금액과 비교하고, 토스에는 DB의 금액으로 승인을 요청합니다. 클라이언트 키는 브라우저에서 사용하고 시크릿 키는 서버에만 둡니다.
 
 ## 실행하기
+
+프런트엔드 화면을 수정하거나 새 화면을 만들 때는 루트의 [디자인 가이드](DESIGN.md)를 참고하세요. [PC·모바일 아바타 시안](docs/design/avatar/README.md)도 볼 수 있습니다.
 
 준비: Java 21, Node.js 22.18 이상, npm, 실행 중인 Docker Desktop.
 
@@ -94,16 +96,29 @@ npm run dev
 
 pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입니다. Vite가 API 요청을 Spring Boot의 8080 포트로 전달합니다.
 
-스토어에서 주문을 만들고 테스트 결제를 진행하세요. 인증 후 바로 승인하며, 결과 화면과 주문 조회의 상태가 같은지 확인합니다. 개인 테스트 상점 키라면 개발자센터 결제내역도 함께 확인할 수 있습니다. 테스트 키로 진행한 결제는 실제 청구되지 않습니다.
+스토어에서 티셔츠를 고른 뒤 아바타에 입혀보고 사이즈를 선택해 장바구니에 담으세요. 주문 생성 후 서버 확정 금액으로 테스트 결제를 진행합니다. 인증 후 바로 승인하며, 결과 화면과 주문 조회의 상태가 같은지 확인합니다. 개인 테스트 상점 키라면 개발자센터 결제내역도 함께 확인할 수 있습니다. 테스트 키로 진행한 결제는 실제 청구되지 않습니다.
 
 ## API와 상태
 
 | Method | Endpoint | 역할 |
 | --- | --- | --- |
-| POST | `/orders` | 서버가 정한 상품·금액으로 주문 생성 |
+| GET | `/products` | 판매 중인 티셔츠와 현재 가격 조회 (초기 10종) |
+| GET | `/products/{id}` | 상품 상세 조회 |
+| POST | `/orders` | 장바구니의 상품 ID·사이즈·수량으로 서버가 금액을 계산해 주문 생성 |
 | GET | `/orders/{orderId}` | DB에 저장된 주문·결제 조회 |
 | GET | `/payment-config` | 공개 클라이언트 키와 결제 가능 여부 |
 | POST | `/payments/confirm` | 인증 성공 후 받은 값을 검증하고 토스에 최종 승인 요청 |
+
+주문 생성 요청에는 가격을 보내지 않습니다. 서버가 `products` 테이블의 `Product` 엔티티에서 현재 가격을 읽어 합계를 계산하고, 주문 당시 상품명·단가를 주문 항목에 복사해 저장합니다. 초기 티셔츠 10종은 Flyway V6가 한 번만 넣습니다. 상품 등록·수정·재고 관리 API는 아직 제공하지 않습니다.
+
+```json
+{
+  "items": [
+    { "productId": "tee-01", "size": "M", "quantity": 2 },
+    { "productId": "tee-04", "size": "L", "quantity": 1 }
+  ]
+}
+```
 
 승인 요청은 다음 세 값을 받습니다. `paymentKey`는 인증 성공 후 `successUrl`로 받은 값을 사용합니다.
 
@@ -111,7 +126,7 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 {
   "orderId": "서버가 생성한 주문번호",
   "paymentKey": "successUrl로 받은 토스 결제 키",
-  "amount": 10000
+  "amount": 65000
 }
 ```
 
@@ -143,7 +158,7 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 - 토스 [타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)에 따라 API 응답 대기는 60초로 설정합니다.
 - 토스 호출 전후의 DB 저장을 분리하고, 유일성 제약과 `@Version`으로 중복·동시 저장을 검사합니다.
 
-주문 테이블 5개 컬럼, 결제 테이블 13개 컬럼을 사용합니다. V3는 취소 기록을 추가했고 V4는 주기적 복구 일정 컬럼을 제거하며 기존 미확정 행을 운영 확인 상태로 옮깁니다. DB 마이그레이션과 상세 동작은 [코드 읽는 순서](docs/code-reading-guide.md)에 있습니다.
+상품 테이블, 주문 테이블, 주문 항목 테이블, 결제 테이블을 사용합니다. V3는 취소 기록을 추가했고 V4는 주기적 복구 일정 컬럼을 제거하며 기존 미확정 행을 운영 확인 상태로 옮깁니다. V5는 고정 10,000원 제약을 제거하고 주문 항목 스냅샷을 추가합니다. V6는 상품 테이블과 초기 10종을 추가하고, V7은 주문 항목에 고유 ID를 부여합니다. V8은 상품 판매 상태와 주문 항목 외래 키를 추가합니다. DB 마이그레이션과 상세 동작은 [코드 읽는 순서](docs/code-reading-guide.md)에 있습니다.
 
 이 프로젝트는 로그인·주문 접근 권한이 없는 로컬 학습 예제입니다. 승인 요청 중의 즉시 재조회·조건부 취소를 제공하며 고객 임의 취소 API는 공개하지 않습니다. 식별자가 다른 거래, 부분 취소, 미지원 결제수단과 확인할 수 없는 결과는 `REVIEW_REQUIRED`로 남기고 오류 로그를 기록합니다. 서버 중단이나 DB 장애로 남은 미확정 결제를 재시작 후 자동 처리하는 기능은 없으므로 실제 서비스에는 운영 알림과 대조 절차가 필요합니다.
 
@@ -176,7 +191,8 @@ npm run build
 
 Java 21 / Spring Boot 4.1.1 / JPA / PostgreSQL 18 / Flyway / React 19 / TypeScript 7 / Vite 8을 사용합니다.
 
-- `order/`: 주문 생성·조회
+- `product/`: 티셔츠 10종 카탈로그·가격
+- `order/`: 장바구니 가격 계산·주문 항목 저장·조회
 - `payment/`: 승인 흐름·저장·즉시 재조회·조건부 취소 처리
 - `gateway/TossPaymentClient.java`: 토스 승인·조회·취소 HTTP 호출
 - `frontend/src/payments/`: 공식 SDK 호출·복귀 URL 처리

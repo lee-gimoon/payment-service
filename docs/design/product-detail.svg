@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1360" viewBox="0 0 1440 1360" role="img" aria-label="Payment Lab 티셔츠 상품 상세 데스크톱 시안">
+  <title>Payment Lab 티셔츠 상품 상세 데스크톱 시안</title><rect x="0" y="0" width="1440" height="1360" rx="0" fill="#f6f5ef" stroke="none"/><rect x="0" y="0" width="1440" height="36" rx="0" fill="#304d3b" stroke="none"/><text x="720" y="24" fill="#ffffff" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="12" font-weight="500" text-anchor="middle">TEST STORE  ·  테스트 결제는 실제로 청구되지 않습니다</text><rect x="0" y="36" width="1440" height="92" rx="0" fill="#f6f5ef" stroke="none"/>
+  <text x="160" y="88" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="24" font-weight="700" >한 장의 티셔츠</text>
+  <text x="161" y="109" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="9" font-weight="600" letter-spacing="1.3">PAYMENT LAB  /  TEE STORE</text>
+  <text x="537" y="86" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="15" font-weight="600" >전체 상품</text>
+  <text x="650" y="86" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="15" font-weight="500" >베이직</text>
+  <text x="743" y="86" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="15" font-weight="500" >릴랙스</text>
+  <text x="844" y="86" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="15" font-weight="500" >브랜드 이야기</text>
+  <rect x="1060" y="57" width="135" height="42" rx="8" fill="#fffef9" stroke="#dedfd5"/>
+  <text x="1080" y="84" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="13" font-weight="400" >상품 검색</text>
+  <rect x="1210" y="57" width="105" height="42" rx="8" fill="#edf2e8" stroke="none"/>
+  <text x="1262" y="84" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="13" font-weight="600" text-anchor="middle">장바구니  0</text>
+  <line x1="0" y1="128" x2="1440" y2="128" stroke="#dedfd5" stroke-width="1"/><text x="160" y="178" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="13" font-weight="400" >전체 상품   /   베이직   /   에브리데이 크루넥</text><rect x="160" y="211" width="560" height="614" rx="18" fill="#eae5da" stroke="none"/><g transform="translate(217 297) scale(1.2444444444444445)">
+    <ellipse cx="180" cy="276" rx="106" ry="10" fill="#cfc8bc" opacity=".65"/>
+    <path d="M127 42 81 63 30 134 79 167 107 129 102 260Q180 277 258 260L253 129 281 167 330 134 279 63 233 42Q180 66 127 42Z" fill="#fffdf7" stroke="#b8b5ab" stroke-width="3"/>
+    <path d="M146 48Q180 94 214 48M127 42 146 48M214 48 233 42" fill="none" stroke="#b8b5ab" stroke-width="3" opacity=".7"/>
+    <path d="M104 248Q180 262 256 248M45 135 78 156M282 156 315 135" fill="none" stroke="#b8b5ab" stroke-width="2" opacity=".35"/>
+  </g><text x="160" y="861" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="12" font-weight="600" >01 / 03</text><text x="720" y="861" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="12" font-weight="600" text-anchor="end">○   ●   ○</text><text x="788" y="252" fill="#304d3b" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="12" font-weight="700" letter-spacing="1.8">REGULAR / IVORY</text><text x="788" y="316" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="38" font-weight="700" >에브리데이 크루넥</text><text x="788" y="360" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="400" >입는 순간 편안한 매일의 기본 티셔츠</text><text x="788" y="431" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="30" font-weight="700" >10,000원</text><line x1="788" y1="461" x2="1280" y2="461" stroke="#dedfd5" stroke-width="1"/><text x="788" y="508" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="14" font-weight="700" >색상</text><text x="843" y="508" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="13" font-weight="400" >아이보리</text><circle cx="808" cy="550" r="16" fill="#fffdf7" stroke="#304d3b" stroke-width="2"/><circle cx="852" cy="550" r="16" fill="#414945" stroke="#dedfd5" stroke-width="1"/><circle cx="896" cy="550" r="16" fill="#8fa489" stroke="#dedfd5" stroke-width="1"/><circle cx="940" cy="550" r="16" fill="#aebfd0" stroke="#dedfd5" stroke-width="1"/><text x="788" y="621" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="14" font-weight="700" >사이즈</text><rect x="788" y="642" width="56" height="46" rx="8" fill="#fffef9" stroke="#dedfd5"/><text x="816" y="672" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">S</text><rect x="855" y="642" width="56" height="46" rx="8" fill="#304d3b" stroke="#304d3b"/><text x="883" y="672" fill="#ffffff" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">M</text><rect x="922" y="642" width="56" height="46" rx="8" fill="#fffef9" stroke="#dedfd5"/><text x="950" y="672" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">L</text><rect x="989" y="642" width="56" height="46" rx="8" fill="#fffef9" stroke="#dedfd5"/><text x="1017" y="672" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">XL</text><rect x="788" y="728" width="103" height="50" rx="8" fill="#fffef9" stroke="#dedfd5"/><text x="840" y="760" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="600" text-anchor="middle">−    1    +</text><rect x="905" y="728" width="375" height="50" rx="8" fill="#304d3b" stroke="none"/><text x="1092" y="761" fill="#ffffff" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="15" font-weight="700" text-anchor="middle">장바구니 담기</text><text x="788" y="823" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="14" font-weight="400" >면 100%  ·  부드러운 촉감  ·  여유로운 일상 핏</text><text x="788" y="854" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="12" font-weight="400" >시안용 상품 정보입니다. 실제 재고·옵션은 구현 시 연결합니다.</text><line x1="160" y1="936" x2="1280" y2="936" stroke="#dedfd5" stroke-width="1"/><text x="160" y="997" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="28" font-weight="700" >함께 보면 좋은 티셔츠</text><g>
+    <rect x="160" y="1020" width="220" height="210" rx="12" fill="#e2e2db" stroke="none"/>
+    <g transform="translate(187 1051.8333333333333) scale(0.46111111111111114)">
+    <ellipse cx="180" cy="276" rx="106" ry="10" fill="#cfc8bc" opacity=".65"/>
+    <path d="M127 42 81 63 30 134 79 167 107 129 102 260Q180 277 258 260L253 129 281 167 330 134 279 63 233 42Q180 66 127 42Z" fill="#414945" stroke="#59615b" stroke-width="3"/>
+    <path d="M146 48Q180 94 214 48M127 42 146 48M214 48 233 42" fill="none" stroke="#59615b" stroke-width="3" opacity=".7"/>
+    <path d="M104 248Q180 262 256 248M45 135 78 156M282 156 315 135" fill="none" stroke="#59615b" stroke-width="2" opacity=".35"/>
+  </g>
+    <text x="160" y="1255" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="10" font-weight="600" letter-spacing="1.1">HEAVY / CHARCOAL</text>
+    <text x="160" y="1279" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="700" >헤비웨이트 코튼</text>
+    <text x="160" y="1305" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="600" >18,000원</text>
+  </g><g>
+    <rect x="440" y="1020" width="220" height="210" rx="12" fill="#e8e8dd" stroke="none"/>
+    <g transform="translate(467 1051.8333333333333) scale(0.46111111111111114)">
+    <ellipse cx="180" cy="276" rx="106" ry="10" fill="#cfc8bc" opacity=".65"/>
+    <path d="M127 42 81 63 30 134 79 167 107 129 102 260Q180 277 258 260L253 129 281 167 330 134 279 63 233 42Q180 66 127 42Z" fill="#8fa489" stroke="#59615b" stroke-width="3"/>
+    <path d="M146 48Q180 94 214 48M127 42 146 48M214 48 233 42" fill="none" stroke="#59615b" stroke-width="3" opacity=".7"/>
+    <path d="M104 248Q180 262 256 248M45 135 78 156M282 156 315 135" fill="none" stroke="#59615b" stroke-width="2" opacity=".35"/>
+  </g>
+    <text x="440" y="1255" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="10" font-weight="600" letter-spacing="1.1">RELAXED / SAGE</text>
+    <text x="440" y="1279" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="700" >릴랙스 핏 티</text>
+    <text x="440" y="1305" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="600" >16,000원</text>
+  </g><g>
+    <rect x="720" y="1020" width="220" height="210" rx="12" fill="#e4e9e8" stroke="none"/>
+    <g transform="translate(747 1051.8333333333333) scale(0.46111111111111114)">
+    <ellipse cx="180" cy="276" rx="106" ry="10" fill="#cfc8bc" opacity=".65"/>
+    <path d="M127 42 81 63 30 134 79 167 107 129 102 260Q180 277 258 260L253 129 281 167 330 134 279 63 233 42Q180 66 127 42Z" fill="#aebfd0" stroke="#59615b" stroke-width="3"/>
+    <path d="M146 48Q180 94 214 48M127 42 146 48M214 48 233 42" fill="none" stroke="#59615b" stroke-width="3" opacity=".7"/>
+    <path d="M104 248Q180 262 256 248M45 135 78 156M282 156 315 135" fill="none" stroke="#59615b" stroke-width="2" opacity=".35"/>
+  </g>
+    <text x="720" y="1255" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="10" font-weight="600" letter-spacing="1.1">OVERSIZED / BLUE</text>
+    <text x="720" y="1279" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="700" >오버사이즈 티</text>
+    <text x="720" y="1305" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="600" >17,000원</text>
+  </g><g>
+    <rect x="1000" y="1020" width="220" height="210" rx="12" fill="#e9e1d6" stroke="none"/>
+    <g transform="translate(1027 1051.8333333333333) scale(0.46111111111111114)">
+    <ellipse cx="180" cy="276" rx="106" ry="10" fill="#cfc8bc" opacity=".65"/>
+    <path d="M127 42 81 63 30 134 79 167 107 129 102 260Q180 277 258 260L253 129 281 167 330 134 279 63 233 42Q180 66 127 42Z" fill="#ceb99b" stroke="#59615b" stroke-width="3"/>
+    <path d="M146 48Q180 94 214 48M127 42 146 48M214 48 233 42" fill="none" stroke="#59615b" stroke-width="3" opacity=".7"/>
+    <path d="M104 248Q180 262 256 248M45 135 78 156M282 156 315 135" fill="none" stroke="#59615b" stroke-width="2" opacity=".35"/>
+  </g>
+    <text x="1000" y="1255" fill="#717a72" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="10" font-weight="600" letter-spacing="1.1">COMPACT / SAND</text>
+    <text x="1000" y="1279" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="700" >컴팩트 코튼</text>
+    <text x="1000" y="1305" fill="#253831" font-family="Noto Sans KR,Malgun Gothic,Segoe UI,sans-serif" font-size="16" font-weight="600" >14,000원</text>
+  </g></svg>

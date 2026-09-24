@@ -101,7 +101,7 @@ export function PaymentResultPage() {
   // 화면 진입 시 인증 결과를 처리한다. 화면을 떠나면 active로 늦게 도착한 응답의 반영을 막는다.
   useEffect(() => {
     let active = true;
-    document.title = "결제 결과 · 한 장의 티셔츠";
+    document.title = "결제 결과 · MODO CLUB";
 
     /**
      * 인증 실패로 돌아오면 저장된 주문만 조회한다. 승인 정보가 있으면 서버에 최종 승인을 요청한다.

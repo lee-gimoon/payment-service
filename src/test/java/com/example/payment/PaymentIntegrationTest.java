@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.payment.gateway.TossPaymentClient;
+import com.example.payment.order.CreateOrderRequest;
 import com.example.payment.order.OrderService;
 import com.example.payment.payment.ConfirmPaymentRequest;
 import com.example.payment.payment.Payment;
@@ -24,6 +25,8 @@ import com.example.payment.payment.PaymentService;
 import com.example.payment.payment.PaymentStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -73,9 +76,126 @@ class PaymentIntegrationTest {
         jdbc.execute("TRUNCATE TABLE payments, purchase_orders CASCADE");
     }
 
+    /** 예전 단일 상품 주문을 DB에 직접 넣어 결제 승인과 이전 주문 조회를 검증한다. */
+    private String legacyOrder() {
+        String id = UUID.randomUUID().toString();
+        jdbc.update("INSERT INTO purchase_orders (id, product_name, quantity, amount, created_at) "
+                + "VALUES (?, '티셔츠', 1, 10000, now())", id);
+        return id;
+    }
+
+    @Test
+    void catalogOrderUsesServerPricesAndStoresSelectedOptions() throws Exception {
+        mvc.perform(get("/products"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(10))
+                .andExpect(jsonPath("$[0].id").value("tee-01"))
+                .andExpect(jsonPath("$[0].price").value(19000));
+
+        mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+                {"items":[
+                  {"productId":"tee-01","size":"M","quantity":2},
+                  {"productId":"tee-04","size":"L","quantity":1}
+                ]}
+                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.amount").value(65000))
+                .andExpect(jsonPath("$.quantity").value(3))
+                .andExpect(jsonPath("$.items[0].unitPrice").value(19000))
+                .andExpect(jsonPath("$.items[1].size").value("L"));
+
+        assertThat(jdbc.queryForObject("SELECT amount FROM purchase_orders", Long.class)).isEqualTo(65000);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order_items", Long.class)).isEqualTo(2);
+    }
+
+    @Test
+    void savedOrderItemsLoadAsEntitiesWithTheirOwnIds() throws Exception {
+        String orderId = orders.create(new CreateOrderRequest(List.of(
+                new CreateOrderRequest.Item("tee-02", "M", 1),
+                new CreateOrderRequest.Item("tee-01", "S", 1)))).orderId();
+
+        assertThat(jdbc.queryForList(
+                "SELECT id FROM purchase_order_items WHERE order_id = ? ORDER BY line_number", String.class, orderId))
+                .hasSize(2).allSatisfy(id -> assertThat(id).hasSize(36));
+        mvc.perform(get("/orders/{id}", orderId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].productId").value("tee-02"))
+                .andExpect(jsonPath("$.items[1].productId").value("tee-01"));
+    }
+
+    @Test
+    void productPriceChangeAffectsNewOrdersButNotPastOrderSnapshot() throws Exception {
+        String oldOrderId = orders.create(new CreateOrderRequest(List.of(
+                new CreateOrderRequest.Item("tee-01", "M", 1)))).orderId();
+        try {
+            jdbc.update("UPDATE products SET price = ? WHERE id = ?", 23_000, "tee-01");
+
+            mvc.perform(get("/products/tee-01"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.price").value(23000));
+            mvc.perform(get("/orders/{id}", oldOrderId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.amount").value(19000))
+                    .andExpect(jsonPath("$.items[0].unitPrice").value(19000));
+            mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+                    {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
+                    """))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.amount").value(23000));
+        } finally {
+            jdbc.update("UPDATE products SET price = ? WHERE id = ?", 19_000, "tee-01");
+        }
+    }
+
+    @Test
+    void discontinuedProductIsHiddenButPastOrderCanStillBeRead() throws Exception {
+        String orderId = orders.create(new CreateOrderRequest(List.of(
+                new CreateOrderRequest.Item("tee-01", "M", 1)))).orderId();
+        try {
+            jdbc.update("UPDATE products SET active = false WHERE id = ?", "tee-01");
+
+            mvc.perform(get("/products"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(9));
+            mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+                    {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
+                    """))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
+            mvc.perform(get("/orders/{id}", orderId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items[0].productId").value("tee-01"))
+                    .andExpect(jsonPath("$.items[0].unitPrice").value(19000));
+            assertThatThrownBy(() -> jdbc.update("DELETE FROM products WHERE id = ?", "tee-01"))
+                    .isInstanceOf(DataAccessException.class);
+        } finally {
+            jdbc.update("UPDATE products SET active = true WHERE id = ?", "tee-01");
+        }
+    }
+
+    @Test
+    void invalidCatalogSelectionsCannotCreateAnOrder() throws Exception {
+        mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+                {"items":[{"productId":"tee-01","size":"XXL","quantity":1}]}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_CART"));
+        mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+                {"items":[{"productId":"missing","size":"M","quantity":1}]}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
+        mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+                {"items":[{"productId":"tee-01","size":"M","quantity":11}]}
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_CART"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_orders", Long.class)).isZero();
+    }
+
     @Test
     void matchingApprovalIsSavedWithoutLookup() throws Exception {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         when(toss.confirm(any(), anyLong())).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(jdbc.queryForObject("SELECT status FROM payments WHERE order_id = ?", String.class, id))
@@ -94,7 +214,7 @@ class PaymentIntegrationTest {
 
     @Test
     void wrongRequestAmountIsRejectedBeforeCallingToss() throws Exception {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
                         .content(confirmJson(id, "payment-key", "9000")))
                 .andExpect(status().isBadRequest())
@@ -105,7 +225,7 @@ class PaymentIntegrationTest {
 
     @Test
     void explicitDeclineDoesNotTriggerLookup() {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         when(toss.confirm(any(), anyLong())).thenReturn(PaymentResult.failed("REJECT_CARD_COMPANY"));
         assertThat(payments.confirm(request(id, "payment-key")).payment().status()).isEqualTo(PaymentStatus.FAILED);
         verify(toss, never()).lookup(any(), anyLong());
@@ -113,7 +233,7 @@ class PaymentIntegrationTest {
 
     @Test
     void uncertainApprovalIsLookedUpImmediatelyAndCanBecomeSuccessful() throws Exception {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         when(toss.confirm(any(), anyLong())).thenReturn(PaymentResult.unknown("PG_COMMUNICATION_ERROR"));
         when(toss.lookup(any(), anyLong())).thenReturn(succeeded());
         mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
@@ -126,7 +246,7 @@ class PaymentIntegrationTest {
 
     @Test
     void mismatchedAmountIsCanceledInTheSameRequestAfterPersistingIntent() throws Exception {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         when(toss.confirm(any(), anyLong())).thenReturn(PaymentResult.unknown("PG_RESPONSE_MISMATCH"));
         when(toss.lookup(any(), anyLong())).thenReturn(cancelRequired());
         when(toss.cancel(any())).thenAnswer(invocation -> {
@@ -150,7 +270,7 @@ class PaymentIntegrationTest {
 
     @Test
     void failedIntentSaveNeverCallsCancel() {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         when(toss.confirm(any(), anyLong())).thenReturn(PaymentResult.unknown("PG_RESPONSE_MISMATCH"));
         when(toss.lookup(any(), anyLong())).thenReturn(cancelRequired());
         jdbc.execute("""
@@ -175,7 +295,7 @@ class PaymentIntegrationTest {
 
     @Test
     void unrelatedPaymentIsNeverCanceled() throws Exception {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         when(toss.confirm(any(), anyLong())).thenReturn(PaymentResult.unknown("PG_RESPONSE_MISMATCH"));
         when(toss.lookup(any(), anyLong())).thenReturn(PaymentResult.reviewRequired("PG_IDENTITY_MISMATCH"));
         mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
@@ -187,7 +307,7 @@ class PaymentIntegrationTest {
 
     @Test
     void unresolvedLookupNeedsReviewAndOrderReadsDoNotCallToss() throws Exception {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         when(toss.confirm(any(), anyLong())).thenReturn(PaymentResult.unknown("PG_COMMUNICATION_ERROR"));
         when(toss.lookup(any(), anyLong())).thenReturn(PaymentResult.unknown("PG_LOOKUP_ERROR"));
         mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
@@ -204,7 +324,7 @@ class PaymentIntegrationTest {
 
     @Test
     void lostCancelResponseIsCheckedOnceBeforeReturning() throws Exception {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         when(toss.confirm(any(), anyLong())).thenReturn(PaymentResult.unknown("PG_RESPONSE_MISMATCH"));
         when(toss.lookup(any(), anyLong())).thenReturn(cancelRequired(), canceled());
         when(toss.cancel(any())).thenReturn(PaymentResult.unknown("PG_CANCEL_UNCONFIRMED"));
@@ -218,7 +338,7 @@ class PaymentIntegrationTest {
 
     @Test
     void unresolvedCancelKeepsIntentAndNeedsReview() {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         when(toss.confirm(any(), anyLong())).thenReturn(PaymentResult.unknown("PG_RESPONSE_MISMATCH"));
         when(toss.lookup(any(), anyLong())).thenReturn(cancelRequired(), cancelRequired());
         when(toss.cancel(any())).thenReturn(PaymentResult.unknown("PG_CANCEL_UNCONFIRMED"));
@@ -232,7 +352,7 @@ class PaymentIntegrationTest {
 
     @Test
     void duplicateRequestDoesNotRepeatConfirmation() throws Exception {
-        String id = orders.create().orderId();
+        String id = legacyOrder();
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         when(toss.confirm(any(), anyLong())).thenAnswer(invocation -> {

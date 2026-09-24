@@ -11,6 +11,7 @@ export default defineConfig({
     // 개발 중 같은 출처의 상대 경로로 보낸 API 요청을 8080 포트의 서버에 전달한다.
     proxy: {
       "/orders": "http://127.0.0.1:8080",
+      "/products": "http://127.0.0.1:8080",
       "/payments": "http://127.0.0.1:8080",
       "/payment-config": "http://127.0.0.1:8080"
     }

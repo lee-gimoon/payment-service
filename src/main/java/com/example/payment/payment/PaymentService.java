@@ -108,7 +108,7 @@ public class PaymentService {
     }
 
     private PurchaseOrder findOrder(String orderId) {
-        return orderRepository.findById(orderId)
+        return orderRepository.findWithItemsById(orderId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
     }
 

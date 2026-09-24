@@ -1,5 +1,7 @@
 # Payment Service JPA 데이터베이스 파이프라인: 실제 소스 읽기 순서
 
+> 이 문서는 초기 단일 상품·10,000원 주문 버전의 학습용 실행 경로를 기록합니다. 현재 상품 10종·장바구니 주문은 [코드 읽는 순서](code-reading-guide.md)와 `Product`·`OrderItem` 엔티티, `OrderService.create(CreateOrderRequest)`를 기준으로 확인하세요.
+
 이 문서는 다음 코드 한 줄이 별도의 구현 클래스 없이 어떻게 PostgreSQL까지 도달하는지 실제 소스 파일 순서로 추적한다.
 
 ```java
