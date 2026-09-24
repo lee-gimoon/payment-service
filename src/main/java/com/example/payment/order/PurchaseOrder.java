@@ -6,9 +6,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /** purchase_orders 테이블의 한 행이다. 주문번호, 총수량, 총금액과 주문 시각을 보관한다. */
@@ -39,29 +36,19 @@ public class PurchaseOrder {
     /** JPA가 DB에서 조회한 객체를 만들 때 사용하는 생성자다. */
     protected PurchaseOrder() {}
 
-    /** 새 주문의 수량·금액은 항목 스냅샷에서 직접 계산해 서로 어긋나지 않게 한다. */
-    public PurchaseOrder(List<OrderItem> items) {
-        if (items == null || items.isEmpty()) {
-            throw new IllegalArgumentException("주문 항목이 필요합니다.");
+    /** 주문 요약과 서버에서 계산한 총수량·금액을 보관한다. */
+    PurchaseOrder(String firstProductName, int productCount, int quantity, long amount) {
+        if (firstProductName == null || firstProductName.isBlank() || productCount < 1
+                || quantity < 1 || quantity > 100 || productCount > quantity || amount <= 0) {
+            throw new IllegalArgumentException("주문 수량과 금액을 확인해주세요.");
         }
         this.id = UUID.randomUUID().toString();
         this.createdAt = Instant.now();
-        Set<String> productIds = new HashSet<>();
-        long totalAmount = 0;
-        for (int lineNumber = 0; lineNumber < items.size(); lineNumber++) {
-            OrderItem item = items.get(lineNumber);
-            this.quantity = Math.addExact(this.quantity, item.getQuantity());
-            totalAmount = Math.addExact(totalAmount, Math.multiplyExact(item.getUnitPrice(), item.getQuantity()));
-            productIds.add(item.getProductId());
-            item.attachTo(this, lineNumber);
-        }
-        if (this.quantity > 100 || totalAmount <= 0) {
-            throw new IllegalArgumentException("주문 수량과 금액을 확인해주세요.");
-        }
-        this.amount = totalAmount;
-        String firstName = items.getFirst().getProductName();
-        String suffix = productIds.size() > 1 ? " 외 " + (productIds.size() - 1) + "종" : "";
-        this.productName = firstName.substring(0, Math.min(firstName.length(), 100 - suffix.length())) + suffix;
+        this.quantity = quantity;
+        this.amount = amount;
+        String suffix = productCount > 1 ? " 외 " + (productCount - 1) + "종" : "";
+        this.productName = firstProductName.substring(0,
+                Math.min(firstProductName.length(), 100 - suffix.length())) + suffix;
     }
 
     public String getId() { return id; }

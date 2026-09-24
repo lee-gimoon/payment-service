@@ -36,9 +36,11 @@ public class OrderService {
         if (request == null || request.items() == null || request.items().isEmpty() || request.items().size() > 20) {
             throw invalidCart();
         }
-        List<OrderItem> lines = new ArrayList<>();
+        List<Product> products = new ArrayList<>();
         Set<String> selectedOptions = new HashSet<>();
+        Set<String> productIds = new HashSet<>();
         int totalQuantity = 0;
+        long totalAmount = 0;
         for (CreateOrderRequest.Item item : request.items()) {
             if (item == null || item.productId() == null || item.size() == null
                     || !Set.of("S", "M", "L", "XL").contains(item.size())
@@ -51,9 +53,17 @@ public class OrderService {
             if (totalQuantity > 100) {
                 throw invalidCart();
             }
-            lines.add(new OrderItem(product, item.size(), item.quantity()));
+            totalAmount = Math.addExact(totalAmount, Math.multiplyExact(product.getPrice(), item.quantity()));
+            products.add(product);
+            productIds.add(product.getId());
         }
-        PurchaseOrder order = orderRepository.save(new PurchaseOrder(lines));
+        PurchaseOrder order = orderRepository.save(new PurchaseOrder(
+                products.getFirst().getName(), productIds.size(), totalQuantity, totalAmount));
+        List<OrderItem> lines = new ArrayList<>();
+        for (int lineNumber = 0; lineNumber < request.items().size(); lineNumber++) {
+            CreateOrderRequest.Item item = request.items().get(lineNumber);
+            lines.add(new OrderItem(order, products.get(lineNumber), item.size(), item.quantity(), lineNumber));
+        }
         orderItemRepository.saveAll(lines);
         return OrderResponse.of(order, lines, null);
     }

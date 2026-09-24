@@ -1,6 +1,6 @@
 # 프로젝트 디렉토리 구조와 폴더·파일별 역할
 
-이 문서는 `payment-service` 프로젝트의 폴더별 역할을 설명합니다. 상품 10종과 장바구니 주문이 추가되기 전 파일 목록도 일부 포함하므로, 현재 상품·주문 경로는 [코드 읽는 순서](code-reading-guide.md)와 `product/`, `order/` 소스를 기준으로 확인하세요. 결제창형 SDK와 승인 요청 안의 즉시 재조회·조건부 취소 흐름은 그대로 적용됩니다.
+이 문서는 `payment-service` 프로젝트의 폴더별 역할을 설명합니다. 현재 상품·주문 처리 순서는 [코드 읽는 순서](code-reading-guide.md)를 함께 확인하세요.
 
 직접 관리하는 소스·설정·문서는 파일별로 설명하고, 설치·빌드 과정에서 만들어지는 라이브러리와 캐시는 폴더 단위로 설명합니다. 결제 업무 흐름은 [기본 결제 흐름](payment-domain.md), 불확실한 승인 결과의 처리는 [재조회·조건부 취소](payment-recovery.md), 실행 방법은 [README](../README.md)를 함께 참고하세요.
 
@@ -25,8 +25,17 @@ payment-service/
 │  │  │  │  ├─ OrderController.java
 │  │  │  │  ├─ OrderService.java
 │  │  │  │  ├─ OrderRepository.java
+│  │  │  │  ├─ OrderItemRepository.java
+│  │  │  │  ├─ CreateOrderRequest.java
 │  │  │  │  ├─ PurchaseOrder.java
+│  │  │  │  ├─ OrderItem.java
 │  │  │  │  └─ OrderResponse.java                주문·승인·취소 내역 응답
+│  │  │  ├─ product/
+│  │  │  │  ├─ Product.java
+│  │  │  │  ├─ ProductCatalog.java
+│  │  │  │  ├─ ProductController.java
+│  │  │  │  ├─ ProductRepository.java
+│  │  │  │  └─ ProductResponse.java
 │  │  │  └─ payment/
 │  │  │     ├─ PaymentController.java
 │  │  │     ├─ PaymentService.java               승인·즉시 재조회·조건부 취소
@@ -41,9 +50,14 @@ payment-service/
 │  │        ├─ V1__create_orders_and_payments.sql
 │  │        ├─ V2__simplify_payment_processing.sql
 │  │        ├─ V3__automatic_payment_recovery.sql
-│  │        └─ V4__remove_periodic_payment_recovery.sql
+│  │        ├─ V4__remove_periodic_payment_recovery.sql
+│  │        ├─ V5__catalog_orders.sql
+│  │        ├─ V6__create_products.sql
+│  │        ├─ V7__order_items_entity.sql
+│  │        └─ V8__product_order_integrity.sql
 │  └─ test/java/com/example/payment/
 │     ├─ PaymentIntegrationTest.java
+│     ├─ order/OrderServiceTest.java
 │     ├─ config/
 │     │  └─ TossPropertiesTest.java
 │     └─ gateway/
@@ -146,21 +160,34 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 
 이 파일 안의 `TossPaymentResponse`는 결제 응답, `TossCancellation`은 취소 이력, `TossErrorResponse`는 오류 응답을 읽는 내부 record입니다. 승인·즉시 재조회·취소의 호출 순서와 DB 저장은 `PaymentService`가 담당합니다.
 
-### 2.5. `order/`: 주문 생성과 조회
+### 2.5. `product/`: 판매 상품 조회
 
-무엇을 얼마에 주문했는지를 관리합니다. 서버가 판매 중인 상품을 조회하고, 주문 항목의 단가·수량으로 주문 금액을 계산합니다. 현재 구조는 [상품·주문·결제 도메인](shop-domain.md)을 참고하세요.
+서버가 저장한 상품 정보와 판매 가격을 읽습니다. 브라우저에서 보낸 가격으로 주문 금액을 계산하지 않습니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| [Product.java](../src/main/java/com/example/payment/product/Product.java) | `products` 테이블의 Entity입니다. 현재 상품명·가격·판매 여부를 보관합니다. |
+| [ProductRepository.java](../src/main/java/com/example/payment/product/ProductRepository.java) | 판매 중인 상품을 DB에서 조회합니다. |
+| [ProductCatalog.java](../src/main/java/com/example/payment/product/ProductCatalog.java) | 주문 요청의 상품 ID로 판매 중인 `Product`를 조회합니다. |
+| [ProductController.java](../src/main/java/com/example/payment/product/ProductController.java) | 상품 목록과 상세 조회 API를 제공합니다. |
+| [ProductResponse.java](../src/main/java/com/example/payment/product/ProductResponse.java) | 화면에 보여 줄 상품 데이터를 담는 응답 DTO입니다. |
+
+### 2.6. `order/`: 주문 생성과 조회
+
+무엇을 얼마에 주문했는지를 관리합니다. 서버가 판매 중인 상품을 조회하고, 그 상품의 현재 단가와 요청 수량으로 주문 금액을 계산합니다. 현재 구조는 [상품·주문·결제 도메인](shop-domain.md)을 참고하세요.
 
 | 파일 | 역할 |
 | --- | --- |
 | [OrderController.java](../src/main/java/com/example/payment/order/OrderController.java) | `POST /orders`, `GET /orders/{orderId}` 요청을 받습니다. `OrderService`를 호출하고 주문 응답을 반환합니다. |
 | [OrderService.java](../src/main/java/com/example/payment/order/OrderService.java) | 주문을 만들고 저장하거나, 기존 주문과 연결된 결제 결과를 조회합니다. 주문 생성과 조회의 트랜잭션 범위를 지정합니다. |
+| [CreateOrderRequest.java](../src/main/java/com/example/payment/order/CreateOrderRequest.java) | 클라이언트가 보낸 상품 ID·사이즈·수량을 받습니다. 가격은 받지 않습니다. |
 | [OrderRepository.java](../src/main/java/com/example/payment/order/OrderRepository.java) | `purchase_orders`의 주문 한 건을 저장하고 조회합니다. |
 | [OrderItemRepository.java](../src/main/java/com/example/payment/order/OrderItemRepository.java) | `purchase_order_items`를 저장하고 `order_id`로 주문 항목을 조회합니다. |
-| [PurchaseOrder.java](../src/main/java/com/example/payment/order/PurchaseOrder.java) | `purchase_orders` 테이블의 Entity입니다. 주문 항목으로 총수량·금액을 계산하고 요약을 저장합니다. |
+| [PurchaseOrder.java](../src/main/java/com/example/payment/order/PurchaseOrder.java) | `purchase_orders` 테이블의 Entity입니다. 서버에서 계산한 총수량·금액과 화면용 요약을 저장합니다. |
 | [OrderItem.java](../src/main/java/com/example/payment/order/OrderItem.java) | `purchase_order_items` 테이블의 Entity입니다. 주문·상품 외래 키와 구입 당시 상품명·단가·사이즈·수량을 보관합니다. |
 | [OrderResponse.java](../src/main/java/com/example/payment/order/OrderResponse.java) | 프론트에 반환할 주문·결제 응답 DTO입니다. 상태별 안내와 실제 승인 금액·통화, 승인·취소 시각을 담습니다. 결제 행이 없으면 `READY`로 표현합니다. |
 
-### 2.6. `payment/`: 승인·즉시 재조회·취소 결과 관리
+### 2.7. `payment/`: 승인·즉시 재조회·취소 결과 관리
 
 결제수단 인증이 끝난 주문을 승인하고, 결과가 불확실하면 같은 요청에서 재조회·조건부 취소와 결과 저장을 이어서 처리합니다. `PaymentController`가 HTTP 진입점입니다.
 
@@ -176,14 +203,14 @@ Spring이 사용할 설정 객체와 공통 도구를 준비하는 폴더입니�
 
 자동 취소는 카드·국내 간편결제에서 **주문번호와 결제키가 모두 일치하는 거래의 승인 금액·통화 불일치**를 확인했을 때 수행합니다. 식별자 불일치, 부분 취소 상태, 미지원 결제수단은 운영자 확인 대상으로 남깁니다. 취소 응답을 잃으면 같은 요청에서 GET으로 한 번 더 확인합니다.
 
-### 2.7. 파일 이름에서 자주 보는 역할
+### 2.8. 파일 이름에서 자주 보는 역할
 
 | 이름·종류 | 이 프로젝트에서 하는 일 | 예 |
 | --- | --- | --- |
 | Controller | HTTP 요청을 받아 Service에 전달하고 응답을 돌려줍니다. | `OrderController` |
 | Service | 업무 규칙과 작업 순서를 처리합니다. | `PaymentService` |
 | Repository | Entity의 DB 저장·조회를 맡습니다. | `PaymentRepository` |
-| Entity | DB 테이블과 연결되는 객체입니다. | `PurchaseOrder`, `Payment` |
+| Entity | DB 테이블과 연결되는 객체입니다. | `Product`, `PurchaseOrder`, `OrderItem`, `Payment` |
 | Request·Response DTO | 요청·응답으로 전달할 데이터 모양입니다. | `ConfirmPaymentRequest`, `OrderResponse` |
 | Client | 외부 서버로 HTTP 요청을 보냅니다. | `TossPaymentClient` |
 | Configuration·Properties | 공통 도구와 설정값을 준비합니다. | `PaymentConfiguration`, `TossProperties` |

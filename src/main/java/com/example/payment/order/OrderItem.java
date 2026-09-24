@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
 import com.example.payment.product.Product;
 import java.util.Set;
 
-/** purchase_order_items 테이블의 한 행. 구입 당시 상품명·단가·옵션을 보관한다. */
+/** 저장되면 purchase_order_items의 한 행이 되는 엔티티. 구입 당시 상품명·단가·옵션을 보관한다. */
 @Entity
 @Table(name = "purchase_order_items")
 public class OrderItem {
@@ -48,23 +48,19 @@ public class OrderItem {
 
     protected OrderItem() {}
 
-    public OrderItem(Product product, String size, int quantity) {
-        if (product == null || !product.isActive() || product.getPrice() <= 0
+    public OrderItem(PurchaseOrder order, Product product, String size, int quantity, int lineNumber) {
+        if (order == null || lineNumber < 0 || product == null || !product.isActive() || product.getPrice() <= 0
                 || size == null || !Set.of("S", "M", "L", "XL").contains(size)
                 || quantity < 1 || quantity > 10) {
             throw new IllegalArgumentException("판매 중인 상품과 유효한 옵션·수량이 필요합니다.");
         }
+        this.order = order;
+        this.lineNumber = lineNumber;
         this.product = product;
         this.productName = product.getName();
         this.size = size;
         this.unitPrice = product.getPrice();
         this.quantity = quantity;
-    }
-
-    /** 주문 생성 시 부모 주문과 항목 순서를 지정한다. */
-    void attachTo(PurchaseOrder order, int lineNumber) {
-        this.order = order;
-        this.lineNumber = lineNumber;
     }
 
     public String getId() { return id; }

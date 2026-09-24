@@ -9,18 +9,34 @@
 `POST /orders` → `OrderController.create()` → `OrderService.create(CreateOrderRequest)`
 
 ```java
-Product product = productCatalog.forOrder(item.productId());
-lines.add(new OrderItem(product, item.size(), item.quantity()));
-PurchaseOrder order = orderRepository.save(new PurchaseOrder(lines));
+List<Product> products = new ArrayList<>();
+Set<String> productIds = new HashSet<>();
+int totalQuantity = 0;
+long totalAmount = 0;
+for (CreateOrderRequest.Item item : request.items()) {
+    // 실제 코드는 여기서 옵션·수량도 검사합니다.
+    Product product = productCatalog.forOrder(item.productId());
+    products.add(product);
+    productIds.add(product.getId());
+    totalQuantity += item.quantity();
+    totalAmount = Math.addExact(totalAmount, Math.multiplyExact(product.getPrice(), item.quantity()));
+}
+PurchaseOrder order = orderRepository.save(new PurchaseOrder(
+        products.getFirst().getName(), productIds.size(), totalQuantity, totalAmount));
+List<OrderItem> lines = new ArrayList<>();
+for (int lineNumber = 0; lineNumber < request.items().size(); lineNumber++) {
+    CreateOrderRequest.Item selected = request.items().get(lineNumber);
+    lines.add(new OrderItem(order, products.get(lineNumber), selected.size(), selected.quantity(), lineNumber));
+}
 orderItemRepository.saveAll(lines);
 return OrderResponse.of(order, lines, null);
 ```
 
 - `ProductCatalog.forOrder(...)`: 클라이언트가 보낸 ID로 판매 중인 `Product`를 DB에서 조회합니다.
-- `new OrderItem(...)`: 선택한 상품·옵션과 주문 시점 가격을 기록하는 엔티티를 만듭니다.
-- `new PurchaseOrder(lines)`: 항목 스냅샷을 합산해 주문 수량·금액을 계산합니다.
-- `save(order)`: DB의 `purchase_orders`에 주문 한 행을 저장합니다.
-- `saveAll(lines)`: 각 항목의 `order_id`와 `product_id`를 `purchase_order_items`에 저장합니다. 두 저장은 같은 DB 트랜잭션에 속합니다.
+- `Product`와 요청의 상품 ID·사이즈·수량으로 총액을 계산합니다. 중간에 별도 엔티티를 만들지 않습니다.
+- `new PurchaseOrder(...)`: 계산한 총수량·금액으로 주문 객체를 만듭니다.
+- `new OrderItem(order, ...)`: 앞에서 만든 주문과 상품을 참조하는 **엔티티 객체**를 메모리에 만듭니다. `new`만으로는 DB 행이 생기지 않습니다.
+- `save(order)`와 `saveAll(lines)`: 한 트랜잭션에서 `purchase_orders`의 주문 행과 `purchase_order_items`의 항목 행을 저장합니다. 항목 행마다 `order_id`와 `product_id`가 들어갑니다. SQL 실행은 JPA가 플러시할 때까지 미뤄질 수 있습니다.
 - `OrderResponse.of(order, lines, null)`: 아직 결제가 없으므로 `READY`를 반환합니다.
 - 클라이언트는 상품 ID·사이즈·수량을 보내지만 가격은 보내지 않습니다. 주문 금액은 서버 상품 가격으로 정합니다.
 

@@ -41,13 +41,13 @@ erDiagram
 
 위 예시에서 주문 `O-100`의 상품은 `purchase_order_items`의 `order_id = O-100`인 두 행이다. `O-200`에는 세 행이 있다. 각 행의 `product_id`는 `products.id`를 가리킨다.
 
-Java에서도 `OrderItem.order`가 `order_id`를 관리한다. `PurchaseOrder`에 항목 목록을 별도로 두지 않고, 주문을 조회할 때 `OrderItemRepository`가 주문번호로 항목을 읽는다. 새 주문은 주문과 항목을 같은 DB 트랜잭션에서 저장한다.
+Java에서도 `OrderItem.order`가 `order_id`를 관리한다. `PurchaseOrder`에 항목 목록을 별도로 두지 않고, 주문을 조회할 때 `OrderItemRepository`가 주문번호로 항목을 읽는다. 새 주문을 만들 때는 요청의 상품 ID로 `Product`를 조회하고 총액을 계산한 다음 `PurchaseOrder` 객체를 만든다. 이어서 그 주문과 상품을 받는 `OrderItem` 객체를 만든다. `new OrderItem(...)`은 메모리의 객체 생성이며, 같은 DB 트랜잭션에서 주문과 항목을 저장할 때 각 테이블의 행이 생긴다.
 
 ## 현재 상품과 구입 당시 값
 
 `OrderItem.product_id`는 `products.id`를 참조한다. 상품 가격·이름이 바뀌어도 과거 주문의 `OrderItem.unit_price`와 `product_name`은 그대로다. 상품을 판매 중지하려면 `products.active = false`로 표시한다. 과거 주문이 참조하는 상품 행을 삭제하는 것은 DB 외래 키가 막는다.
 
-`PurchaseOrder`는 항목의 수량과 단가를 합산해 주문 총수량·금액을 만든다. React가 보낸 가격은 사용하지 않는다. `payments.order_id`도 `purchase_orders.id`를 참조한다. 결제 API가 주문번호로 결제를 다루므로 `Payment`에는 주문 ID만 두고 JPA 양방향 연관관계는 만들지 않았다.
+`OrderService`는 선택한 상품의 서버 가격과 수량으로 주문 총수량·금액을 계산해 `PurchaseOrder`에 저장한다. `OrderItem`은 같은 상품의 이름·단가를 구입 당시 값으로 보존한다. React가 보낸 가격은 사용하지 않는다. `payments.order_id`도 `purchase_orders.id`를 참조한다. 결제 API가 주문번호로 결제를 다루므로 `Payment`에는 주문 ID만 두고 JPA 양방향 연관관계는 만들지 않았다.
 
 ## 운영 범위
 

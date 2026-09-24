@@ -1,6 +1,6 @@
-# Payment Service JPA 데이터베이스 파이프라인: 실제 소스 읽기 순서
+# Payment Service JPA 데이터베이스 파이프라인: 초기 구현 기록
 
-> 이 문서는 초기 단일 상품·10,000원 주문 버전의 학습용 실행 경로를 기록합니다. 현재 상품 10종·장바구니 주문은 [코드 읽는 순서](code-reading-guide.md)와 `Product`·`OrderItem` 엔티티, `OrderService.create(CreateOrderRequest)`를 기준으로 확인하세요.
+> 이 문서는 초기 단일 상품·10,000원 주문 버전의 **옛 실행 경로**를 기록합니다. 아래의 생성자, 줄 번호, `merge()`·SELECT 추적은 현재 주문 코드에 적용되지 않습니다. 현재는 서버가 `products`에서 상품 가격을 읽어 주문과 항목을 만들고, 새 `PurchaseOrder`의 `@Version` 값이 `null`이므로 Spring Data JPA가 새 엔티티로 판단해 `persist()`합니다. 현재 흐름은 [코드 읽는 순서](code-reading-guide.md)와 [상품·주문·결제 도메인](shop-domain.md)을 확인하세요.
 
 이 문서는 다음 코드 한 줄이 별도의 구현 클래스 없이 어떻게 PostgreSQL까지 도달하는지 실제 소스 파일 순서로 추적한다.
 
@@ -832,7 +832,7 @@ org\springframework\orm\jpa\JpaTransactionManager.java
 
 실제 `EntityManager`는 Hibernate의 `SessionImpl`이다. JDBC Connection은 연결 처리 방식에 따라 이 시점 또는 첫 SQL 실행 시점에 지연 획득될 수 있다.
 
-## 2.3 실제 OrderService 코드 실행
+## 2.3 당시 OrderService 코드 실행
 
 파일:
 
@@ -960,7 +960,7 @@ else {
 
 ---
 
-# 4. 이 프로젝트가 `persist()`가 아니라 `merge()`로 가는 이유
+# 4. 당시 구현이 `persist()`가 아니라 `merge()`로 갔던 이유
 
 ## 4.1 새 엔티티 판정
 
@@ -988,7 +988,7 @@ org\springframework\data\repository\core\support\AbstractEntityInformation.java
 → 객체 타입 ID가 null이 아니면 false
 ```
 
-이 프로젝트의 실제 판정:
+당시 구현의 판정:
 
 ```text
 new PurchaseOrder(...)
@@ -1000,7 +1000,7 @@ new PurchaseOrder(...)
 → entityManager.merge(order)
 ```
 
-일반적인 “새 엔티티 save는 무조건 persist” 설명과 이 프로젝트의 실제 실행 경로가 다른 이유다.
+당시에는 선할당된 ID와 `@Version` 부재 때문에 새 주문도 `merge()`로 갔다. 현재 `PurchaseOrder`에는 `@Version`이 있어 새 주문은 `persist()` 경로로 간다.
 
 `merge()`는 전달한 객체 자체가 아닌 영속 상태의 복사본을 반환할 수 있다. 따라서 다음 재대입이 중요하다.
 
