@@ -4,37 +4,36 @@
 
 ```mermaid
 erDiagram
-    products ||..o{ purchase_order_items : "product_id"
-    purchase_orders ||..o{ purchase_order_items : "order_id"
-    purchase_orders ||--o| payments : "order_id"
+    direction TB
+    products ||..o{ purchase_order_items : "주문 항목에 담긴다"
+    purchase_order_items }o..|| purchase_orders : "주문에 속한다"
+    purchase_orders ||--o| payments : "결제로 이어진다"
+
+    products {
+        string id PK
+        string name
+        long price
+        boolean active
+    }
+    purchase_order_items {
+        string id PK
+        string product_id FK
+        string order_id FK
+        string size
+        int quantity
+        long unit_price
+    }
+    purchase_orders {
+        string id PK
+        int quantity
+        long amount
+    }
+    payments {
+        string order_id PK,FK
+        long amount
+        string status
+    }
 ```
-
-## 연결선 기호 읽는 법
-
-이 그림은 관계의 양 끝에 **상대 테이블의 한 행과 연결될 수 있는 행의 수**를 표시하는 까마귀발(Crow's Foot) 표기법이다. 화살표가 아니므로 양쪽 방향으로 읽는다.
-
-| 기호 | 뜻 | 이 그림에서 읽는 예 |
-| --- | --- | --- |
-| `||` | 반드시 1개 | 주문 항목 한 행은 주문 한 건에 속한다. |
-| `o{` | 0개 이상 | 상품 한 종류는 아직 팔리지 않았을 수도 있고, 여러 주문 항목에 등장할 수도 있다. |
-| `o|` | 0개 또는 1개 | 주문 한 건에는 결제가 아직 없거나 한 건 있다. |
-| `..` (점선) | 비식별 관계: 부모의 키가 자식 기본 키의 일부가 아님 | 주문 항목은 자체 `id`가 기본 키이고 `product_id`·`order_id`는 외래 키다. |
-| `--` (실선) | 식별 관계: 부모의 키가 자식의 식별에 쓰임 | 결제의 `order_id`는 주문 외래 키이면서 결제의 기본 키다. |
-
-예를 들어 `purchase_orders ||..o{ purchase_order_items`는 **주문 항목 하나가 속한 주문은 정확히 하나**, **주문 하나에 연결된 항목은 0개 이상**이라는 뜻이다. `products ||..o{ purchase_order_items`도 마찬가지로 항목 하나가 참조하는 상품은 정확히 하나이고, 상품 하나는 여러 항목에서 참조될 수 있다. `purchase_orders ||--o| payments`는 결제 한 건이 주문 한 건에 속하고, 주문 한 건에는 결제가 최대 한 건이라는 뜻이다. 연결선에는 화살표가 없으며, 점선과 실선은 데이터가 흐르는 방향을 나타내지 않는다.
-
-선 옆의 `product_id`, `order_id`는 **연결에 사용하는 외래 키 열 이름**이다. `purchase_order_items`의 `product_id`와 `order_id`, `payments`의 `order_id`가 각각 부모 행을 가리킨다. 특히 `payments.order_id`는 기본 키이기도 해서 한 주문에 결제 두 행을 저장할 수 없다.
-
-그림의 `o{`에서 `0개`는 DB 관계의 허용 범위다. 실제 새 주문은 애플리케이션에서 항목을 최소 1개 넣도록 검사한다. 이전 버전에서 생성된 주문에는 항목이 없을 수 있다.
-
-표기법 참고: [Mermaid ER 다이어그램 문서](https://mermaid.js.org/syntax/entityRelationshipDiagram).
-
-| 테이블 / Java 엔티티 | 한 행의 뜻 | 중요한 값 |
-| --- | --- | --- |
-| `products` / `Product` | 현재 판매 상품 한 종류 | 상품명, 현재 가격, 판매 여부 |
-| `purchase_orders` / `PurchaseOrder` | 주문 한 건 | 주문번호, 총수량, 확정 금액 |
-| `purchase_order_items` / `OrderItem` | 그 주문에서 구입한 상품·사이즈 한 줄 | 주문 ID, 상품 ID, 사이즈, 수량, 구입 당시 상품명·단가 |
-| `payments` / `Payment` | 주문에 연결된 결제 한 건 | 주문 ID, 결제 키, 승인·취소 상태 |
 
 ## 왜 주문 안에 `List<OrderItem>`이 있나요?
 
