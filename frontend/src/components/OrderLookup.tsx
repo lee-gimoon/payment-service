@@ -26,8 +26,8 @@ export function OrderLookup({
     <section className="lookup-card" aria-labelledby="lookup-title">
       <div>
         <p className="eyebrow">ORDER STATUS</p>
-        <h2 id="lookup-title">결제 결과 다시 확인하기</h2>
-        <p className="subtle">주문번호로 저장된 결과를 언제든 확인하세요.</p>
+        <h2 id="lookup-title">주문번호로 조회하기</h2>
+        <p className="subtle">서버에 저장된 주문과 결제 결과를 확인하세요.</p>
       </div>
 
       <form onSubmit={handleSubmit}>

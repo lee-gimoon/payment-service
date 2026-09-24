@@ -1,5 +1,5 @@
 /** 파일 역할: 여러 화면에서 금액·날짜·결제 상태를 같은 표현으로 표시하게 하는 도우미를 제공한다. */
-import type { PaymentStatus } from "../types/payment";
+import type { PaymentAttemptStatus, PaymentStatus } from "../types/payment";
 
 const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   READY: "결제 대기",
@@ -18,6 +18,21 @@ const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
  */
 export function paymentStatusLabel(status: PaymentStatus): string {
   return PAYMENT_STATUS_LABELS[status];
+}
+
+const ATTEMPT_STATUS_LABELS: Record<PaymentAttemptStatus, string> = {
+  STARTED: "결제창 진행 중",
+  AUTH_CANCELED: "결제 인증 취소",
+  AUTH_FAILED: "결제 인증 실패",
+  PROCESSING: "승인 처리 중",
+  SUCCEEDED: "승인 완료",
+  FAILED: "승인 실패",
+  CANCELED: "승인 후 결제 취소",
+  REVIEW_REQUIRED: "결제 확인 필요"
+};
+
+export function paymentAttemptStatusLabel(status: PaymentAttemptStatus): string {
+  return ATTEMPT_STATUS_LABELS[status];
 }
 
 /**

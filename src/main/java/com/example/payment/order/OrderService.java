@@ -2,6 +2,7 @@ package com.example.payment.order;
 
 import com.example.payment.api.error.ApiException;
 import com.example.payment.payment.Payment;
+import com.example.payment.payment.PaymentAttemptRepository;
 import com.example.payment.payment.PaymentRepository;
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductCatalog;
@@ -19,14 +20,17 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final PaymentRepository paymentRepository;
+    private final PaymentAttemptRepository paymentAttemptRepository;
     private final ProductCatalog productCatalog;
 
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                         PaymentRepository paymentRepository,
+                        PaymentAttemptRepository paymentAttemptRepository,
                         ProductCatalog productCatalog) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
+        this.paymentAttemptRepository = paymentAttemptRepository;
         this.productCatalog = productCatalog;
     }
 
@@ -65,7 +69,7 @@ public class OrderService {
             lines.add(new OrderItem(order, products.get(lineNumber), item.size(), item.quantity(), lineNumber));
         }
         orderItemRepository.saveAll(lines);
-        return OrderResponse.of(order, lines, null);
+        return OrderResponse.of(order, lines, null, null);
     }
 
     private ApiException invalidCart() {
@@ -77,7 +81,8 @@ public class OrderService {
     public OrderResponse get(String orderId) {
         PurchaseOrder order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
-        Payment payment = paymentRepository.findById(orderId).orElse(null);
-        return OrderResponse.of(order, orderItemRepository.findByOrderId(orderId), payment);
+        Payment payment = paymentRepository.findFirstByOrderIdOrderByCreatedAtDescIdDesc(orderId).orElse(null);
+        return OrderResponse.of(order, orderItemRepository.findByOrderId(orderId), payment,
+                paymentAttemptRepository.findFirstByOrderIdOrderByStartedAtDesc(orderId).orElse(null));
     }
 }

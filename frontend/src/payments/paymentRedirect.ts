@@ -12,6 +12,7 @@ export type PaymentRedirectFlow = "success" | "fail" | null;
 /** 결과 화면이 승인 요청 또는 주문 조회 중 무엇을 할지 판단하는 데 필요한 데이터다. */
 export interface PaymentRedirectState {
   orderId: string | null;
+  attemptId: string | null;
   flow: PaymentRedirectFlow;
   confirmation: ConfirmPaymentCommand | null;
   storageKey: string | null;
@@ -21,6 +22,7 @@ export interface PaymentRedirectState {
 
 const ORDER_ID_PATTERN = /^[a-zA-Z0-9_-]{6,64}$/;
 const AMOUNT_PATTERN = /^\d{1,12}$/;
+const ATTEMPT_ID_PATTERN = /^[a-fA-F0-9-]{36}$/;
 
 /** 출처를 신뢰할 수 없는 값이 해당 주문의 승인 요청 형식인지 검사한다. 실제 주문 금액 검증은 서버가 한다. */
 function isConfirmation(
@@ -41,6 +43,8 @@ function isConfirmation(
     Number.isInteger(command.amount) &&
     command.amount >= 1 &&
     command.amount <= 999_999_999_999
+    && (command.attemptId === undefined ||
+      (typeof command.attemptId === "string" && ATTEMPT_ID_PATTERN.test(command.attemptId)))
   );
 }
 
@@ -70,6 +74,8 @@ export function readPaymentRedirect(): PaymentRedirectState {
   const parameters = new URLSearchParams(window.location.search);
   const rawOrderId = parameters.get("orderId") || parameters.get("requestedOrderId");
   const orderId = rawOrderId && ORDER_ID_PATTERN.test(rawOrderId) ? rawOrderId : null;
+  const rawAttemptId = parameters.get("attemptId");
+  const attemptId = rawAttemptId && ATTEMPT_ID_PATTERN.test(rawAttemptId) ? rawAttemptId : null;
   const rawFlow = parameters.get("flow");
   const flow: PaymentRedirectFlow =
     rawFlow === "success" || rawFlow === "fail" ? rawFlow : null;
@@ -93,7 +99,8 @@ export function readPaymentRedirect(): PaymentRedirectState {
       const candidate: ConfirmPaymentCommand = {
         orderId,
         paymentKey,
-        amount: Number(amount)
+        amount: Number(amount),
+        ...(attemptId ? { attemptId } : {})
       };
 
       if (isConfirmation(candidate, orderId)) {
@@ -111,5 +118,5 @@ export function readPaymentRedirect(): PaymentRedirectState {
     : "/payment/result";
   window.history.replaceState(null, "", safeUrl);
 
-  return { orderId, flow, confirmation, storageKey, errorCode, errorMessage };
+  return { orderId, attemptId, flow, confirmation, storageKey, errorCode, errorMessage };
 }

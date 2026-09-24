@@ -40,7 +40,7 @@ public class TossPaymentClient {
     /**
      * 토스 결제창 인증 후 받은 paymentKey와 주문의 orderId·금액을
      * 토스의 결제 승인 API({@code POST /v1/payments/confirm})로 보내 최종 승인을 요청하는 메서드다.
-     * 같은 주문의 중복 승인을 막도록 orderId를 멱등키로 보내며,
+     * 같은 시도의 재호출에는 같은 attemptId를 멱등키로 보내며,
      * 토스의 성공·실패 응답이나 통신 오류를 내부 형식인 PaymentResult로 변환하여 반환한다.
      * 결제 결과를 DB에 저장하는 작업은 이 메서드가 아니라 PaymentService가 담당한다.
      */
@@ -48,7 +48,7 @@ public class TossPaymentClient {
         try {
             TossPaymentResponse response = client.post() // POST 요청의 설정 객체를 얻는다. 아직 서버로 보내지 않는다.
                     .uri("/v1/payments/confirm") // 미리 설정된 토스 서버 주소에 이 경로를 붙여 요청할 URL을 정한다.
-                    .header("Idempotency-Key", payment.getOrderId()) // 같은 주문을 재요청할 때도 같은 orderId를 멱등키 헤더로 보낸다.
+                    .header("Idempotency-Key", payment.getAttemptId()) // 재시도마다 다른 키, 같은 시도의 재호출에는 같은 키를 쓴다.
                     .contentType(MediaType.APPLICATION_JSON) // 요청 본문이 JSON임을 Content-Type 헤더에 표시한다.
                     .body(Map.of("orderId", payment.getOrderId(),
                             "paymentKey", payment.getPaymentKey(), "amount", amount)) // 이 값들을 보낼 본문으로 설정한다. 전송할 때 JSON으로 변환된다.

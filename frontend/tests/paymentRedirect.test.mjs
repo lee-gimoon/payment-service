@@ -32,6 +32,15 @@ test("인증 성공은 승인 요청 정보를 보관하고 URL에서 paymentKey
   assert.deepEqual(readPaymentRedirect().confirmation, redirect.confirmation);
 });
 
+test("인증 복귀의 결제 시도 ID를 승인 요청에 연결한다", () => {
+  const attemptId = "123e4567-e89b-12d3-a456-426614174000";
+  window.location.search = `?flow=success&orderId=order-123&paymentKey=test-payment&amount=10000&attemptId=${attemptId}`;
+  const redirect = readPaymentRedirect();
+  assert.equal(redirect.attemptId, attemptId);
+  assert.equal(redirect.confirmation.attemptId, attemptId);
+  assert.equal(window.location.search, "?orderId=order-123");
+});
+
 test("인증 취소에서 orderId가 빠져도 요청한 주문번호와 오류 사유를 읽는다", () => {
   window.location.search = "?flow=fail&requestedOrderId=order-123&code=PAY_PROCESS_CANCELED&message=Cancelled";
   const redirect = readPaymentRedirect();

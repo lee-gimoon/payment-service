@@ -16,4 +16,9 @@ import java.math.BigDecimal;
 public record ConfirmPaymentRequest(
         @NotBlank @Pattern(regexp = "[a-zA-Z0-9_-]{6,64}") String orderId,
         @NotBlank @Size(max = 200) String paymentKey,
-        @NotNull @DecimalMin("1") @Digits(integer = 12, fraction = 0) BigDecimal amount) {}
+        @NotNull @DecimalMin("1") @Digits(integer = 12, fraction = 0) BigDecimal amount,
+        @Pattern(regexp = "[a-fA-F0-9-]{36}") String attemptId) {
+    public ConfirmPaymentRequest(String orderId, String paymentKey, BigDecimal amount) {
+        this(orderId, paymentKey, amount, null);
+    }
+}

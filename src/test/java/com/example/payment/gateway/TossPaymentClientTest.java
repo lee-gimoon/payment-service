@@ -33,7 +33,7 @@ import org.springframework.web.client.RestClient;
 /** 토스 전용 클라이언트의 요청 헤더·본문과 성공·거절·미확정 응답 처리를 검증한다. */
 class TossPaymentClientTest {
     private static final String BASE = "https://api.tosspayments.com/v1/payments";
-    private static final Payment PAYMENT = new Payment("order-123", "payment-key");
+    private static final Payment PAYMENT = new Payment("order-123", "payment-key", "attempt-123", 10000);
     private static final String DONE = """
             {"orderId":"order-123","paymentKey":"payment-key","totalAmount":10000,"currency":"KRW",
              "status":"DONE","method":"카드","approvedAt":"2026-09-11T10:00:00+09:00","futureField":"ignored"}
@@ -59,7 +59,7 @@ class TossPaymentClientTest {
     void sendsExactContractAndValidatesApproval() {
         server.expect(requestTo(BASE + "/confirm")).andExpect(method(HttpMethod.POST))
                 .andExpect(header("Authorization", "Basic " + Base64.getEncoder().encodeToString("test_gsk_gateway:".getBytes(StandardCharsets.UTF_8))))
-                .andExpect(header("Idempotency-Key", "order-123"))
+                .andExpect(header("Idempotency-Key", "attempt-123"))
                 .andExpect(content().json(""" 
                         {"orderId":"order-123","paymentKey":"payment-key","amount":10000}
                         """))
@@ -240,7 +240,7 @@ class TossPaymentClientTest {
     }
 
     private Payment pendingCancel() {
-        Payment payment = new Payment("order-123", "payment-key");
+        Payment payment = new Payment("order-123", "payment-key", "attempt-123", 10000);
         payment.applyResult(new PaymentResult(PaymentStatus.CANCEL_PENDING, "DONE", "PG_AMOUNT_MISMATCH",
                 java.time.Instant.parse("2026-09-11T01:00:00Z"), java.math.BigDecimal.valueOf(9000), "KRW", null));
         return payment;

@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * 결제수단 인증이 끝난 뒤 결제를 승인한다. confirm()을 위에서 아래로 읽으면 처리 순서를 볼 수 있다.
- * saveAndFlush() 호출마다 저장소가 트랜잭션을 처리하므로, 토스 응답을 기다리는 동안 DB 잠금을 잡지 않는다.
+ * 준비·결과 저장은 각각 짧은 트랜잭션으로 끝내므로 토스 응답을 기다리는 동안 DB 잠금을 잡지 않는다.
  */
 @Service
 public class PaymentService {
@@ -23,15 +23,23 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final PaymentRepository paymentRepository;
+    private final PaymentAttemptRepository paymentAttemptRepository;
+    private final PaymentPreparationService preparation;
+    private final PaymentSettlementService settlement;
     private final TossPaymentClient tossPaymentClient;
     private final TossProperties tossProperties;
 
     public PaymentService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                           PaymentRepository paymentRepository,
+                          PaymentAttemptRepository paymentAttemptRepository,
+                          PaymentPreparationService preparation, PaymentSettlementService settlement,
                           TossPaymentClient tossPaymentClient, TossProperties tossProperties) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
+        this.paymentAttemptRepository = paymentAttemptRepository;
+        this.preparation = preparation;
+        this.settlement = settlement;
         this.tossPaymentClient = tossPaymentClient;
         this.tossProperties = tossProperties;
     }
@@ -46,30 +54,31 @@ public class PaymentService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "AMOUNT_MISMATCH", "주문 금액과 결제 금액이 다릅니다.");
         }
 
-        // 3. 같은 요청이 다시 오면 토스를 재호출하지 않고 저장된 결과를 반환한다.
-        Payment payment = paymentRepository.findById(order.getId()).orElse(null);
-        if (payment != null) {
-            if (!payment.getPaymentKey().equals(request.paymentKey())) {
-                throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_CONFLICT", "이미 다른 결제 요청이 연결된 주문입니다.");
+        // 3. 같은 결제 키의 재요청은 이미 저장된 결과를 돌려준다.
+        Payment existing = paymentRepository.findByPaymentKey(request.paymentKey()).orElse(null);
+        if (existing != null) {
+            if (!existing.getOrderId().equals(order.getId())
+                    || (request.attemptId() != null && !existing.getAttemptId().equals(request.attemptId()))) {
+                throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_CONFLICT", "다른 주문 또는 시도에 연결된 결제 키입니다.");
             }
-            return response(order, payment);
+            return response(order.getId(), existing);
         }
         requirePaymentConfig();
 
-        // 4. 통신이 끊겨도 결과를 재확인할 수 있도록 주문번호와 paymentKey를 먼저 저장한다.
-        payment = new Payment(order.getId(), request.paymentKey());
-        payment = paymentRepository.saveAndFlush(payment);
+        // 4. PG 호출 전에 주문 잠금 아래에서 결제 거래와 시도를 원자적으로 저장한다.
+        PaymentPreparationService.Prepared prepared = preparation.prepare(order.getId(), request.paymentKey(), request.attemptId());
+        Payment payment = prepared.payment();
+        if (!prepared.newPayment()) return response(order.getId(), payment);
 
         // 5. 결제수단 인증 결과로 토스에 최종 승인을 요청한다.
         PaymentResult result = tossPaymentClient.confirm(payment, order.getAmount());
 
         // 6. 승인 결과를 먼저 저장한다. 응답이 불확실하면 저장된 결제키로 즉시 재조회한다.
-        payment.applyResult(result);
-        payment = paymentRepository.saveAndFlush(payment);
+        payment = settlement.record(payment, result);
         if (result.status() == PaymentStatus.UNKNOWN) {
             payment = verifyAndCancelIfNeeded(payment, order.getAmount());
         }
-        return response(order, payment);
+        return response(order.getId(), payment);
     }
 
     /** 승인 결과가 불확실하면 같은 요청에서 GET 재조회 → 취소 의도 저장 → 취소 → 결과 저장을 이어서 수행한다. */
@@ -79,8 +88,7 @@ public class PaymentService {
 
         // 2. 승인 금액이나 통화가 주문과 다르면 취소 요청 전에 취소 의도와 실제 승인 정보를 저장한다.
         if (result.status() == PaymentStatus.CANCEL_PENDING) {
-            payment.applyResult(result);
-            payment = paymentRepository.saveAndFlush(payment);
+            payment = settlement.record(payment, result);
 
             // 3. 저장한 취소 멱등키로 토스에 취소를 요청한다.
             result = tossPaymentClient.cancel(payment);
@@ -98,8 +106,7 @@ public class PaymentService {
         }
 
         // 6. 최종 결과를 결제 객체에 반영하고 DB에 저장한다.
-        payment.applyResult(result);
-        payment = paymentRepository.saveAndFlush(payment);
+        payment = settlement.record(payment, result);
 
         // 7. 수동 확인이 필요한 결제는 주문번호와 사유, 취소 요청 여부를 로그에 남긴다.
         if (payment.getStatus() == PaymentStatus.REVIEW_REQUIRED) {
@@ -116,8 +123,10 @@ public class PaymentService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
     }
 
-    private OrderResponse response(PurchaseOrder order, Payment payment) {
-        return OrderResponse.of(order, orderItemRepository.findByOrderId(order.getId()), payment);
+    private OrderResponse response(String orderId, Payment payment) {
+        PurchaseOrder order = findOrder(orderId);
+        return OrderResponse.of(order, orderItemRepository.findByOrderId(orderId), payment,
+                paymentAttemptRepository.findFirstByOrderIdOrderByStartedAtDesc(orderId).orElse(null));
     }
 
     private void requirePaymentConfig() {

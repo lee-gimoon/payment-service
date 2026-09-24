@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.example.payment.api.error.ApiException;
 import com.example.payment.payment.PaymentRepository;
+import com.example.payment.payment.PaymentAttemptRepository;
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductCatalog;
 import com.example.payment.product.ProductRepository;
@@ -31,7 +32,7 @@ class OrderServiceTest {
                 "tee-04", "블루 스타 티", "BLUE / BOXY", "그래픽", 27_000,
                 "#4e78d7", "#dbe9fa", "star", "", 4)));
         service = new OrderService(orders, mock(OrderItemRepository.class),
-                mock(PaymentRepository.class), new ProductCatalog(products));
+                mock(PaymentRepository.class), mock(PaymentAttemptRepository.class), new ProductCatalog(products));
     }
 
     @Test

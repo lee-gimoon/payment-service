@@ -13,7 +13,9 @@ export async function openPaymentWindow(
   widgets: TossPaymentsWidgets,
   order: Order,
   config: PaymentConfig,
-  signal: AbortSignal
+  signal: AbortSignal,
+  attemptId?: string,
+  onCancel?: () => Promise<void>
 ): Promise<void> {
   if (signal.aborted) return;
   await widgets.setAmount({ currency: "KRW", value: order.amount });
@@ -46,7 +48,12 @@ export async function openPaymentWindow(
       signal.addEventListener("abort", onAbort, { once: true });
       paymentWindow.on("cancel", async () => {
         closedByUser = true;
-        finish();
+        try {
+          await onCancel?.();
+          finish();
+        } catch (error) {
+          finish(error);
+        }
       });
       paymentWindow.on("paymentRequest", async ({ paymentMethod }) => {
         if (settled || requesting) return;
@@ -58,9 +65,9 @@ export async function openPaymentWindow(
           await widgets.requestPayment({
             orderId: order.orderId,
             orderName: order.items?.length > 1 ? order.productName : `${order.productName} ${order.quantity}장`,
-            successUrl: `${resultPageUrl}?flow=success`,
+            successUrl: `${resultPageUrl}?flow=success${attemptId ? `&attemptId=${encodeURIComponent(attemptId)}` : ""}`,
             // 인증 취소 시 토스가 orderId를 생략해도 요청한 주문을 찾을 수 있다.
-            failUrl: `${resultPageUrl}?flow=fail&requestedOrderId=${encodeURIComponent(order.orderId)}`
+            failUrl: `${resultPageUrl}?flow=fail&requestedOrderId=${encodeURIComponent(order.orderId)}${attemptId ? `&attemptId=${encodeURIComponent(attemptId)}` : ""}`
           });
           finish();
         } catch (error) {

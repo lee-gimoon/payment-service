@@ -7,7 +7,11 @@ import {
   Routes
 } from "react-router-dom";
 import { PaymentResultPage } from "./pages/PaymentResultPage";
+import { CartPage } from "./pages/CartPage";
+import { OrderPage } from "./pages/OrderPage";
+import { ProductDetailPage } from "./pages/ProductDetailPage";
 import { StorePage } from "./pages/StorePage";
+import { ShopProvider } from "./lib/shop";
 import "./styles.css";
 
 const root = document.getElementById("root");
@@ -16,13 +20,18 @@ if (!root) {
   throw new Error("React 루트 요소를 찾을 수 없습니다.");
 }
 
-// /는 스토어, /payment/result는 결제창 복귀 화면으로 연결하고 그 외 경로는 스토어로 보낸다.
 createRoot(root).render(
   <BrowserRouter>
-    <Routes>
-      <Route path="/" element={<StorePage />} />
-      <Route path="/payment/result" element={<PaymentResultPage />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <ShopProvider>
+      <Routes>
+        <Route path="/" element={<StorePage />} />
+        <Route path="/products/:productId" element={<ProductDetailPage />} />
+        <Route path="/cart" element={<CartPage />} />
+        <Route path="/orders" element={<OrderPage />} />
+        <Route path="/orders/:orderId" element={<OrderPage />} />
+        <Route path="/payment/result" element={<PaymentResultPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </ShopProvider>
   </BrowserRouter>
 );

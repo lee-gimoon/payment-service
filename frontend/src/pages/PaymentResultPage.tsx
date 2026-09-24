@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   confirmPayment,
-  getOrder
+  getOrder,
+  recordAuthenticationResult
 } from "../api/paymentApi";
 import { AppShell } from "../components/AppShell";
 import {
@@ -14,7 +15,7 @@ import {
   formatDateTime,
   paymentStatusLabel
 } from "../lib/formatters";
-import { removeSessionValue, writeLocalValue } from "../lib/storage";
+import { removeLocalValue, removeSessionValue, writeLocalValue } from "../lib/storage";
 import { readPaymentRedirect } from "../payments/paymentRedirect";
 import type { ConfirmPaymentCommand, Order } from "../types/payment";
 
@@ -52,10 +53,15 @@ export function PaymentResultPage() {
    */
   function showOrder(nextOrder: Order) {
     setOrder(nextOrder);
-    setTitle(paymentStatusLabel(nextOrder.payment.status));
-    setMessage(nextOrder.payment.message);
+    setTitle(nextOrder.payment.status === "SUCCEEDED" ? "결제가 완료되었습니다." : paymentStatusLabel(nextOrder.payment.status));
+    setMessage(nextOrder.payment.status === "SUCCEEDED"
+      ? "결제가 정상적으로 승인되었습니다. 주문 내역에서 상품과 결제 정보를 확인하세요."
+      : nextOrder.payment.message);
     setError("");
     writeLocalValue(LAST_ORDER_ID_KEY, nextOrder.orderId);
+    if (["SUCCEEDED", "CANCELED"].includes(nextOrder.payment.status)) {
+      removeLocalValue("pendingOrderId");
+    }
 
     if (nextOrder.payment.status !== "READY") {
       setConfirmation(null);
@@ -110,6 +116,11 @@ export function PaymentResultPage() {
     async function initializeResult() {
       try {
         if (redirect.flow === "fail") {
+          if (redirect.attemptId) {
+            await recordAuthenticationResult(redirect.attemptId,
+              redirect.errorCode === "PAY_PROCESS_CANCELED" ? "AUTH_CANCELED" : "AUTH_FAILED",
+              redirect.errorCode);
+          }
           const failedOrder = redirect.orderId ? await getOrder(redirect.orderId) : null;
           if (!active) {
             return;
@@ -129,7 +140,7 @@ export function PaymentResultPage() {
         }
 
         if (!redirect.orderId) {
-          throw new Error("주문번호가 없습니다. 스토어에서 주문번호로 조회해주세요.");
+          throw new Error("주문번호가 없습니다. 주문 확인 페이지에서 주문번호로 조회해주세요.");
         }
         if (redirect.flow === "success" && !redirect.confirmation) {
           throw new Error("인증 결과의 결제 키 또는 금액이 올바르지 않습니다. 주문 결과를 조회해주세요.");
@@ -193,6 +204,10 @@ export function PaymentResultPage() {
       <h1>{title}</h1>
       <p role="status">{message}</p>
 
+      <Link className="primary-button result-cta" to={order?.orderId || redirect.orderId ? `/orders/${order?.orderId ?? redirect.orderId}` : "/orders"}>
+        {order?.payment.status === "SUCCEEDED" ? "결제 확인하기" : "주문 상태 확인하기"} <span aria-hidden="true">↗</span>
+      </Link>
+
       <section className="result-card" aria-live="polite" aria-busy={busy}>
         <dl className="result-details">
           <div>
@@ -247,9 +262,7 @@ export function PaymentResultPage() {
         </p>
       )}
 
-      <Link className="back-link" to="/">
-        ← 스토어로 돌아가기
-      </Link>
+      <Link className="back-link" to="/">← 스토어로 돌아가기</Link>
     </AppShell>
   );
 }

@@ -15,10 +15,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.payment.gateway.TossPaymentClient;
+import com.example.payment.api.error.ApiException;
 import com.example.payment.order.CreateOrderRequest;
 import com.example.payment.order.OrderService;
 import com.example.payment.payment.ConfirmPaymentRequest;
 import com.example.payment.payment.Payment;
+import com.example.payment.payment.PaymentAttemptService;
+import com.example.payment.payment.PaymentAttemptStatus;
 import com.example.payment.payment.PaymentRepository;
 import com.example.payment.payment.PaymentResult;
 import com.example.payment.payment.PaymentService;
@@ -67,6 +70,7 @@ class PaymentIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired OrderService orders;
     @Autowired PaymentService payments;
+    @Autowired PaymentAttemptService attempts;
     @Autowired PaymentRepository paymentRepository;
     @Autowired JdbcTemplate jdbc;
     @MockitoBean TossPaymentClient toss;
@@ -268,7 +272,7 @@ class PaymentIntegrationTest {
         when(toss.cancel(any())).thenAnswer(invocation -> {
             Payment sent = invocation.getArgument(0);
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            Payment saved = paymentRepository.findById(id).orElseThrow();
+            Payment saved = paymentRepository.findFirstByOrderIdOrderByCreatedAtDescIdDesc(id).orElseThrow();
             assertThat(saved.getStatus()).isEqualTo(PaymentStatus.CANCEL_PENDING);
             assertThat(saved.getCancelIdempotencyKey()).isEqualTo(sent.getCancelIdempotencyKey()).isNotBlank();
             assertThat(saved.getPgAmount()).isEqualByComparingTo("9000");
@@ -305,7 +309,7 @@ class PaymentIntegrationTest {
             jdbc.execute("DROP TRIGGER reject_cancel_intent ON payments");
             jdbc.execute("DROP FUNCTION reject_cancel_intent()");
         }
-        assertThat(paymentRepository.findById(id).orElseThrow().getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
+        assertThat(paymentRepository.findFirstByOrderIdOrderByCreatedAtDescIdDesc(id).orElseThrow().getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
         verify(toss, never()).cancel(any());
     }
 
@@ -360,7 +364,7 @@ class PaymentIntegrationTest {
         when(toss.cancel(any())).thenReturn(PaymentResult.unknown("PG_CANCEL_UNCONFIRMED"));
         assertThat(payments.confirm(request(id, "payment-key")).payment().status())
                 .isEqualTo(PaymentStatus.REVIEW_REQUIRED);
-        Payment saved = paymentRepository.findById(id).orElseThrow();
+        Payment saved = paymentRepository.findFirstByOrderIdOrderByCreatedAtDescIdDesc(id).orElseThrow();
         assertThat(saved.getCancelIdempotencyKey()).isNotBlank();
         assertThat(saved.getPgAmount()).isEqualByComparingTo("9000");
         verify(toss).cancel(any());
@@ -391,6 +395,45 @@ class PaymentIntegrationTest {
     }
 
     @Test
+    void closingWindowIsStoredWithoutCreatingPaymentAndOrderCanBeRetried() {
+        String id = legacyOrder();
+        var first = attempts.start(id);
+        attempts.authenticationResult(first.id(),
+                new PaymentAttemptService.AuthenticationResult(PaymentAttemptStatus.AUTH_CANCELED, "WINDOW_CLOSED"));
+        assertThat(orders.get(id).status().name()).isEqualTo("PENDING_PAYMENT");
+        assertThat(orders.get(id).latestAttempt().status()).isEqualTo(PaymentAttemptStatus.AUTH_CANCELED);
+        assertThat(paymentRepository.count()).isZero();
+
+        var retry = attempts.start(id);
+        when(toss.confirm(any(), anyLong())).thenReturn(succeeded());
+        var result = payments.confirm(new ConfirmPaymentRequest(id, "retry-key", BigDecimal.valueOf(10000), retry.id()));
+        assertThat(result.status().name()).isEqualTo("CONFIRMED");
+        assertThat(result.payment().status()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(jdbc.queryForList("SELECT status FROM payment_attempts WHERE order_id = ? ORDER BY started_at", String.class, id))
+                .containsExactly("AUTH_CANCELED", "SUCCEEDED");
+        assertThatThrownBy(() -> attempts.start(id)).isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void failedApprovalKeepsHistoryAndAllowsNewTransactionForSameOrder() {
+        String id = legacyOrder();
+        var first = attempts.start(id);
+        when(toss.confirm(any(), anyLong())).thenReturn(PaymentResult.failed("REJECT_CARD_COMPANY"), succeeded());
+        assertThat(payments.confirm(new ConfirmPaymentRequest(id, "failed-key", BigDecimal.valueOf(10000), first.id()))
+                .payment().status()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(orders.get(id).status().name()).isEqualTo("PENDING_PAYMENT");
+
+        var retry = attempts.start(id);
+        assertThat(payments.confirm(new ConfirmPaymentRequest(id, "success-key", BigDecimal.valueOf(10000), retry.id()))
+                .payment().status()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(jdbc.queryForList("SELECT status FROM payments WHERE order_id = ? ORDER BY created_at", String.class, id))
+                .containsExactly("FAILED", "SUCCEEDED");
+        assertThat(paymentRepository.count()).isEqualTo(2);
+        assertThatThrownBy(() -> payments.confirm(new ConfirmPaymentRequest(id, "third-key", BigDecimal.valueOf(10000))))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test
     void migrationPreservesOldPaymentAndRemovesPollingColumns() {
         Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas("upgrade_test").defaultSchema("upgrade_test").target("1").load().migrate();
@@ -413,6 +456,10 @@ class PaymentIntegrationTest {
         assertThat(jdbc.queryForMap("SELECT payment_key, status, pg_status FROM upgrade_test.payments WHERE order_id = 'old-order'"))
                 .containsEntry("payment_key", "old-key").containsEntry("status", "SUCCEEDED")
                 .containsEntry("pg_status", "DONE");
+        assertThat(jdbc.queryForObject("SELECT status FROM upgrade_test.purchase_orders WHERE id = 'old-order'", String.class))
+                .isEqualTo("CONFIRMED");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM upgrade_test.payment_attempts", Long.class))
+                .isEqualTo(2);
         assertThat(jdbc.queryForMap("SELECT payment_key, status, error_code FROM upgrade_test.payments WHERE order_id = 'old-pending'"))
                 .containsEntry("payment_key", "pending-key").containsEntry("status", "REVIEW_REQUIRED")
                 .containsEntry("error_code", "PG_RECONCILIATION_REQUIRED");

@@ -2,6 +2,7 @@
 import {
   formatAmount,
   formatDateTime,
+  paymentAttemptStatusLabel,
   paymentStatusLabel
 } from "../lib/formatters";
 import type { Order } from "../types/payment";
@@ -35,6 +36,14 @@ export function OrderResultCard({
           <dt>주문번호</dt>
           <dd>{order.orderId}</dd>
         </div>
+        <div>
+          <dt>주문 상태</dt>
+          <dd>{order.status === "CONFIRMED" ? "주문 확정" : order.status === "CANCELED" ? "주문 취소" : "결제 대기"}</dd>
+        </div>
+        {order.latestAttempt && <div>
+          <dt>최근 결제 시도</dt>
+          <dd>{paymentAttemptStatusLabel(order.latestAttempt.status)} · {formatDateTime(order.latestAttempt.startedAt ?? null)}</dd>
+        </div>}
         <div>
           <dt>주문 내용</dt>
           <dd>

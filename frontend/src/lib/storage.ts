@@ -25,6 +25,14 @@ export function writeLocalValue(key: string, value: string): void {
   }
 }
 
+export function removeLocalValue(key: string): void {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // 저장소 접근이 제한되더라도 현재 화면의 진행에는 영향이 없다.
+  }
+}
+
 /** 같은 탭의 새로고침에도 유지되는 sessionStorage에서 임시 값을 읽는다. */
 export function readSessionValue(key: string): string | null {
   try {

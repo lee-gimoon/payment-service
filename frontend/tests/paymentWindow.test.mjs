@@ -77,6 +77,27 @@ test("구매자가 창을 닫으면 작업을 끝내고 같은 주문으로 다�
   assert.equal(fake.calls.filter(([type]) => type === "request").length, 1);
 });
 
+test("결제 시도 ID를 복귀 URL에 넣고 창 닫기를 서버 기록 콜백으로 전달한다", async () => {
+  const attemptId = "123e4567-e89b-12d3-a456-426614174000";
+  let canceled = 0;
+  const first = fakeWidgets();
+  const closing = openPaymentWindow(first.widgets, order, config, new AbortController().signal,
+    attemptId, async () => { canceled++; });
+  await first.ready;
+  await first.events.cancel();
+  await closing;
+  assert.equal(canceled, 1);
+
+  const second = fakeWidgets();
+  const requesting = openPaymentWindow(second.widgets, order, config, new AbortController().signal, attemptId);
+  await second.ready;
+  await second.events.paymentRequest({ paymentMethod: { code: "CARD" } });
+  await requesting;
+  const request = second.calls.find(([kind]) => kind === "request")[1];
+  assert.match(request.successUrl, /attemptId=123e4567-e89b-12d3-a456-426614174000/);
+  assert.match(request.failUrl, /attemptId=123e4567-e89b-12d3-a456-426614174000/);
+});
+
 test("가상계좌·브랜드페이 등 미지원 수단은 인증 요청 전에 차단한다", async () => {
   for (const code of ["VIRTUAL_ACCOUNT", "TRANSFER", "BRANDPAY", "PAYPAL", "UNKNOWN_METHOD"]) {
     const fake = fakeWidgets();

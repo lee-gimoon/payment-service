@@ -25,6 +25,9 @@ sequenceDiagram
     React->>Server: POST /orders (상품 ID·옵션·수량)
     Server->>DB: 서버 가격으로 계산한 주문·항목 저장
     Server-->>React: orderId, amount
+    React->>Server: POST /orders/{orderId}/payment-attempts
+    Server->>DB: 결제 시도 STARTED 저장
+    Server-->>React: attemptId
     React->>SDK: widgets(), setAmount(amount), renderPaymentWindow()
     SDK->>Toss: 결제창형 UI 요청
     User->>SDK: 결제수단 선택
@@ -32,8 +35,8 @@ sequenceDiagram
     React->>SDK: requestPayment(orderId, URLs)
     Toss->>User: 카드·간편결제 인증
     Toss-->>React: successUrl (paymentKey, orderId, amount)
-    React->>Server: POST /payments/confirm
-    Server->>DB: 주문 금액 비교·paymentKey 저장
+    React->>Server: POST /payments/confirm (attemptId 포함)
+    Server->>DB: 주문 금액 비교·시도에 결제 거래 연결
     Server->>Toss: POST /v1/payments/confirm
     Toss-->>Server: 승인 결과 (DONE)
     Server->>DB: 승인 완료 저장
@@ -96,7 +99,15 @@ npm run dev
 
 pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입니다. Vite가 API 요청을 Spring Boot의 8080 포트로 전달합니다.
 
-스토어에서 티셔츠를 고른 뒤 아바타에 입혀보고 사이즈를 선택해 장바구니에 담으세요. 주문 생성 후 서버 확정 금액으로 테스트 결제를 진행합니다. 인증 후 바로 승인하며, 결과 화면과 주문 조회의 상태가 같은지 확인합니다. 개인 테스트 상점 키라면 개발자센터 결제내역도 함께 확인할 수 있습니다. 테스트 키로 진행한 결제는 실제 청구되지 않습니다.
+스토어에서 티셔츠를 고르면 별도 상품 상세 페이지에서 아바타 착용 모습과 사이즈를 확인할 수 있습니다. `장바구니 담기`를 누르면 장바구니 페이지로 이동합니다. 장바구니의 `결제하기`는 서버 주문과 결제 시도를 생성하고 서버 확정 금액으로 토스 테스트 결제창을 엽니다. 결제창 닫기·인증 실패는 시도에 기록하며, 명확한 승인 실패 뒤에는 같은 주문에서 새 시도를 만들 수 있습니다. 인증 후 서버 승인 결과 페이지에서 완료 여부를 확인하고 `결제 확인하기`로 주문 상세를 조회합니다. 개인 테스트 상점 키라면 개발자센터 결제내역도 함께 확인할 수 있습니다. 테스트 키로 진행한 결제는 실제 청구되지 않습니다.
+
+| 프런트엔드 경로 | 화면 |
+| --- | --- |
+| `/` | 랜딩·상품 목록 |
+| `/products/:productId` | 아바타 착용·사이즈 선택 |
+| `/cart` | 장바구니·결제 시작 |
+| `/payment/result` | 인증 복귀·서버 승인 결과 |
+| `/orders`, `/orders/:orderId` | 주문번호 조회·주문 상세 |
 
 ## API와 상태
 
@@ -106,6 +117,8 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 | GET | `/products/{id}` | 상품 상세 조회 |
 | POST | `/orders` | 장바구니의 상품 ID·사이즈·수량으로 서버가 금액을 계산해 주문 생성 |
 | GET | `/orders/{orderId}` | DB에 저장된 주문·결제 조회 |
+| POST | `/orders/{orderId}/payment-attempts` | 결제창을 열기 전 시도 생성 |
+| POST | `/payment-attempts/{attemptId}/authentication-result` | 결제창 닫기·인증 실패 기록 |
 | GET | `/payment-config` | 공개 클라이언트 키와 결제 가능 여부 |
 | POST | `/payments/confirm` | 인증 성공 후 받은 값을 검증하고 토스에 최종 승인 요청 |
 
@@ -120,13 +133,14 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 }
 ```
 
-승인 요청은 다음 세 값을 받습니다. `paymentKey`는 인증 성공 후 `successUrl`로 받은 값을 사용합니다.
+승인 요청은 다음 값을 받습니다. `paymentKey`는 인증 성공 후 `successUrl`로 받은 값을 사용합니다. `attemptId`는 결제창을 열기 직전에 서버가 만든 시도 ID입니다. 이전 클라이언트와의 호환을 위해 생략할 수 있지만, 새 화면은 항상 전달합니다.
 
 ```json
 {
   "orderId": "서버가 생성한 주문번호",
   "paymentKey": "successUrl로 받은 토스 결제 키",
-  "amount": 65000
+  "amount": 65000,
+  "attemptId": "결제 시도 UUID"
 }
 ```
 
@@ -134,7 +148,7 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 
 | 상태 | 의미 |
 | --- | --- |
-| READY | 주문 생성 후, 서버 승인 요청 전 |
+| READY | 아직 승인 거래가 없음. 결제창 취소·인증 실패는 `latestAttempt`에서 구분 |
 | PROCESSING | 승인 요청 정보를 저장했고 처리 중 |
 | SUCCEEDED | 주문·키·금액·통화와 토스 DONE 결과를 확인하고 저장 |
 | FAILED | 명시적인 카드 거절 또는 토스 ABORTED·EXPIRED 확인 |
@@ -153,12 +167,12 @@ pgAdmin 로컬 계정은 `admin@payment-service.com` / `payment_admin_local`입�
 - 주문 금액과 `paymentKey`를 서버에 저장하고 승인 전후 정보를 검증합니다.
 - 결제창형의 카드·국내 간편결제를 처리합니다. 간편결제는 계좌·포인트를 사용할 수도 있습니다.
 - 결제창이 열린 동안 중복 실행을 막고, 닫기·오류·화면 이탈 시 작업과 창을 정리합니다.
-- 같은 승인 요청은 저장된 결과를 반환합니다. 다른 결제 키로 기존 주문의 결제를 교체하지 않습니다.
-- UUID 주문번호를 토스의 `Idempotency-Key`로 사용합니다.
+- 같은 승인 요청은 저장된 결과를 반환합니다. 명확히 실패한 거래만 같은 주문에서 새 결제 시도를 허용합니다.
+- 결제 시도 UUID를 토스 승인 요청의 `Idempotency-Key`로 사용합니다. 같은 시도의 재호출은 같은 키를 사용합니다.
 - 토스 [타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)에 따라 API 응답 대기는 60초로 설정합니다.
 - 토스 호출 전후의 DB 저장을 분리하고, 유일성 제약과 `@Version`으로 중복·동시 저장을 검사합니다.
 
-상품 테이블, 주문 테이블, 주문 항목 테이블, 결제 테이블을 사용합니다. V3는 취소 기록을 추가했고 V4는 주기적 복구 일정 컬럼을 제거하며 기존 미확정 행을 운영 확인 상태로 옮깁니다. V5는 고정 10,000원 제약을 제거하고 주문 항목 스냅샷을 추가합니다. V6는 상품 테이블과 초기 10종을 추가하고, V7은 주문 항목에 고유 ID를 부여합니다. V8은 상품 판매 상태와 주문 항목 외래 키를 추가합니다. DB 마이그레이션과 상세 동작은 [코드 읽는 순서](docs/code-reading-guide.md)에 있습니다.
+상품, 주문, 주문 항목, 결제 시도, 결제 거래 테이블을 사용합니다. V3는 취소 기록을 추가했고 V4는 주기적 복구 일정 컬럼을 제거하며 기존 미확정 행을 운영 확인 상태로 옮깁니다. V5는 고정 10,000원 제약을 제거하고 주문 항목 스냅샷을 추가합니다. V6는 상품 테이블과 초기 10종을 추가하고, V7은 주문 항목에 고유 ID를 부여합니다. V8은 상품 판매 상태와 주문 항목 외래 키를 추가합니다. V9는 주문 상태·결제 시도 이력을 추가하고 결제 거래를 주문당 여러 건으로 확장하며 기존 행을 이관합니다. V10은 주문·거래의 요청 금액과 통화, 결제 시도와 거래의 주문 일치 제약을 추가합니다. DB 마이그레이션과 상세 동작은 [상품·주문·결제 도메인](docs/shop-domain.md)에 있습니다.
 
 이 프로젝트는 로그인·주문 접근 권한이 없는 로컬 학습 예제입니다. 승인 요청 중의 즉시 재조회·조건부 취소를 제공하며 고객 임의 취소 API는 공개하지 않습니다. 식별자가 다른 거래, 부분 취소, 미지원 결제수단과 확인할 수 없는 결과는 `REVIEW_REQUIRED`로 남기고 오류 로그를 기록합니다. 서버 중단이나 DB 장애로 남은 미확정 결제를 재시작 후 자동 처리하는 기능은 없으므로 실제 서비스에는 운영 알림과 대조 절차가 필요합니다.
 
@@ -182,7 +196,7 @@ npm run build
 
 브라우저 수동 확인은 올바른 테스트 키로 다음 순서대로 진행합니다.
 
-1. 새 주문에서 결제창을 열고 닫은 뒤, 같은 주문으로 다시 열 수 있는지 확인합니다.
+1. 새 주문에서 결제창을 열고 닫은 뒤, `payment_attempts`에 인증 취소가 남고 같은 주문으로 다시 열 수 있는지 확인합니다.
 2. 카드와 국내 간편결제로 각각 인증하고 결과 화면·DB·본인 상점의 개발자센터에서 승인 결과를 비교합니다. 문서 공용 키의 결제내역은 본인 상점 내역과 별개입니다.
 3. 인증 취소·실패 시 오류가 표시되고 서버 승인 요청이 발생하지 않는지 확인합니다.
 4. UI에 미지원 수단이 있다면 선택 시 안내가 나오고 인증 요청이 발생하지 않는지 확인합니다.

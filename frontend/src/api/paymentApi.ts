@@ -3,6 +3,8 @@ import type {
   CartItem,
   ConfirmPaymentCommand,
   Order,
+  PaymentAttempt,
+  PaymentAttemptStatus,
   PaymentConfig,
   Product
 } from "../types/payment";
@@ -69,6 +71,22 @@ export function getProducts(): Promise<Product[]> {
 /** GET /orders/{orderId}로 우리 서버에 저장된 주문과 결제 상태를 읽는다. */
 export function getOrder(orderId: string): Promise<Order> {
   return request<Order>(`/orders/${encodeURIComponent(orderId)}`);
+}
+
+export function startPaymentAttempt(orderId: string): Promise<PaymentAttempt> {
+  return request<PaymentAttempt>(`/orders/${encodeURIComponent(orderId)}/payment-attempts`, { method: "POST" });
+}
+
+export function recordAuthenticationResult(
+  attemptId: string,
+  status: Extract<PaymentAttemptStatus, "AUTH_CANCELED" | "AUTH_FAILED">,
+  errorCode: string | null = null
+): Promise<PaymentAttempt> {
+  return request<PaymentAttempt>(`/payment-attempts/${encodeURIComponent(attemptId)}/authentication-result`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, errorCode })
+  });
 }
 
 /**

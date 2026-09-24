@@ -33,7 +33,21 @@ export interface Order {
   currency: string;
   items: OrderItem[];
   createdAt: string;
+  status: "PENDING_PAYMENT" | "CONFIRMED" | "CANCELED";
+  latestAttempt: PaymentAttempt | null;
   payment: PaymentDetails;
+}
+
+export type PaymentAttemptStatus = "STARTED" | "AUTH_CANCELED" | "AUTH_FAILED" |
+  "PROCESSING" | "SUCCEEDED" | "FAILED" | "CANCELED" | "REVIEW_REQUIRED";
+
+export interface PaymentAttempt {
+  id: string;
+  orderId?: string;
+  status: PaymentAttemptStatus;
+  startedAt?: string;
+  finishedAt?: string | null;
+  errorCode?: string | null;
 }
 
 export interface Product {
@@ -74,4 +88,5 @@ export interface ConfirmPaymentCommand {
   orderId: string;
   paymentKey: string;
   amount: number;
+  attemptId?: string;
 }

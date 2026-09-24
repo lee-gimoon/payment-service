@@ -1,6 +1,8 @@
 package com.example.payment.order;
 
 import com.example.payment.payment.Payment;
+import com.example.payment.payment.PaymentAttempt;
+import com.example.payment.payment.PaymentAttemptStatus;
 import com.example.payment.payment.PaymentStatus;
 import java.time.Instant;
 import java.math.BigDecimal;
@@ -8,10 +10,12 @@ import java.util.List;
 
 /** React가 받는 주문 응답이다. record는 데이터를 전달하는 DTO를 간단하게 작성하는 Java 문법이다. */
 public record OrderResponse(String orderId, String productName, int quantity, long amount, String currency,
-                            List<ItemResponse> items, Instant createdAt, PaymentResponse payment) {
+                            List<ItemResponse> items, Instant createdAt, OrderStatus status,
+                            AttemptResponse latestAttempt, PaymentResponse payment) {
 
     /** 주문만 있으면 READY, 결제가 있으면 DB에 저장된 결제 결과를 담는다. */
-    public static OrderResponse of(PurchaseOrder order, List<OrderItem> orderItems, Payment payment) {
+    public static OrderResponse of(PurchaseOrder order, List<OrderItem> orderItems, Payment payment,
+                                   PaymentAttempt attempt) {
         PaymentResponse paymentResponse;
         if (payment == null) {
             paymentResponse = new PaymentResponse(PaymentStatus.READY, null, null, null, null,
@@ -26,7 +30,9 @@ public record OrderResponse(String orderId, String productName, int quantity, lo
                 new ItemResponse(item.getProductId(), item.getProductName(), item.getSize(),
                         item.getUnitPrice(), item.getQuantity())).toList();
         return new OrderResponse(order.getId(), order.getProductName(), order.getQuantity(),
-                order.getAmount(), "KRW", items, order.getCreatedAt(), paymentResponse);
+                order.getAmount(), order.getCurrency(), items, order.getCreatedAt(), order.getStatus(),
+                attempt == null ? null : new AttemptResponse(attempt.getId(), attempt.getStatus(),
+                        attempt.getStartedAt(), attempt.getFinishedAt(), attempt.getErrorCode()), paymentResponse);
     }
 
     private static String message(PaymentStatus status) {
@@ -44,6 +50,9 @@ public record OrderResponse(String orderId, String productName, int quantity, lo
 
     /** 구입 당시의 상품과 옵션을 반환한다. */
     public record ItemResponse(String productId, String productName, String size, long unitPrice, int quantity) {}
+
+    public record AttemptResponse(String id, PaymentAttemptStatus status, Instant startedAt,
+                                  Instant finishedAt, String errorCode) {}
 
     public record PaymentResponse(PaymentStatus status, String pgStatus, Instant approvedAt,
                                   Instant checkedAt, String errorCode, String message,
