@@ -35,7 +35,7 @@ erDiagram
     }
 ```
 
-![상품 5종, 주문 2건, 주문 항목 5행의 예시](shop-order-tables.png)
+<img src="shop-order-tables.png" alt="상품 5종, 주문 2건, 주문 항목 5행의 예시" width="700">
 
 ## 왜 주문 안에 `List<OrderItem>`이 있나요?
 
