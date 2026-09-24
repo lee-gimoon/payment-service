@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/** purchase_orders 테이블의 한 행이다. 주문번호, 상품, 수량, 총금액과 주문 시각을 보관한다. */
+/** purchase_orders 테이블의 한 행이다. 주문번호, 총수량, 총금액과 주문 시각을 보관한다. */
 @Entity
 @Table(name = "purchase_orders")
 public class PurchaseOrder {
@@ -24,6 +24,7 @@ public class PurchaseOrder {
     @Column(length = 64)
     private String id;
 
+    // 화면용 주문 요약명. 실제 구매 상품은 items에 있다.
     @Column(nullable = false, length = 100)
     private String productName;
 
@@ -40,11 +41,8 @@ public class PurchaseOrder {
     @Version
     private Long version;
 
-    // 외래 키 order_id는 항목 테이블의 각 행에 있다. 이 List는 같은 주문 ID의 항목들을 Java에서 모아 본 것이다.
-    // mappedBy="order"는 그 외래 키를 관리하는 OrderItem.order 필드를 가리킨다.
-    // 새 주문 저장 시 항목도 INSERT한다. 결제 기록이므로 항목 제거만으로 DB 행을 삭제하지 않는다.
+    // OrderItem.order의 order_id로 연결한다. 새 주문과 함께 저장하고, 조회할 때는 필요 시 불러온다.
     @OneToMany(mappedBy = "order", cascade = CascadeType.PERSIST, fetch = FetchType.LAZY)
-    // DB에서 다시 읽을 때 주문 당시의 항목 순서를 유지한다.
     @OrderBy("lineNumber ASC")
     private List<OrderItem> items = new ArrayList<>();
 

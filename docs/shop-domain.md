@@ -35,9 +35,11 @@ erDiagram
     }
 ```
 
+![상품 5종, 주문 2건, 주문 항목 5행의 예시](shop-order-tables.png)
+
 ## 왜 주문 안에 `List<OrderItem>`이 있나요?
 
-주문 `O-1`에 두 티셔츠를 담으면 `purchase_orders`에는 `O-1` 한 행이, `purchase_order_items`에는 `order_id = O-1`인 두 행이 생긴다. **외래 키는 항목 행 각각에 하나씩** 들어 있다. Java에서 그 두 행을 한 주문의 목록으로 보는 것이 `PurchaseOrder.items`다. `@OneToMany(mappedBy = "order")`의 `order`는 `OrderItem.order` 필드를 가리킨다.
+위 예시에서 `purchase_orders`의 `O-100`은 한 행이고, `purchase_order_items`에는 `order_id = O-100`인 두 행이 있다. `O-200`에는 세 행이 연결된다. **외래 키는 항목 행 각각에 하나씩** 들어 있다. Java에서 같은 주문의 항목들을 목록으로 보는 것이 `PurchaseOrder.items`다. `@OneToMany(mappedBy = "order")`의 `order`는 `OrderItem.order` 필드를 가리킨다.
 
 반대로 `Product`에는 모든 구입 내역을 담는 `List<OrderItem>`을 두지 않았다. 한 상품의 과거 주문이 계속 늘어나므로 상품을 조회할 때 전체 구입 내역을 읽을 이유가 없기 때문이다.
 
