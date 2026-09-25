@@ -19,7 +19,7 @@ import org.springframework.web.client.RestClient;
  */
 @Configuration
 @EnableConfigurationProperties(TossProperties.class)
-public class PaymentConfiguration {
+public class TossPaymentConfiguration {
     /**
      * RestClient는 저수준 HTTP 클라이언트의 차이를 감추고 JSON 변환·오류 처리·헤더 설정을
      * 일관된 방식으로 제공하는 Spring Framework의 동기식 HTTP 요청 API다.

@@ -52,7 +52,7 @@ payment-service/
 │  │  │     │  ├─ PaymentRepository.java
 │  │  │     │  └─ PaymentAttemptRepository.java
 │  │  │     └─ infrastructure/toss/             토스 설정·HTTP 통신
-│  │  │        ├─ PaymentConfiguration.java
+│  │  │        ├─ TossPaymentConfiguration.java
 │  │  │        ├─ TossProperties.java
 │  │  │        └─ TossPaymentClient.java
 │  │  └─ resources/
@@ -162,7 +162,7 @@ Spring Boot 서버에서 실행하는 Java 코드입니다. 승인 응답이 불
 
 | 파일 | 역할 |
 | --- | --- |
-| [PaymentConfiguration.java](../src/main/java/com/example/payment/payment/infrastructure/toss/PaymentConfiguration.java) | 토스 전용 `RestClient`를 만듭니다. 토스 서버 주소, 시크릿 키를 사용하는 Basic 인증, 연결·응답 대기 시간을 설정합니다. |
+| [TossPaymentConfiguration.java](../src/main/java/com/example/payment/payment/infrastructure/toss/TossPaymentConfiguration.java) | 토스 전용 `RestClient`를 만듭니다. 토스 서버 주소, 시크릿 키를 사용하는 Basic 인증, 연결·응답 대기 시간을 설정합니다. |
 | [TossProperties.java](../src/main/java/com/example/payment/payment/infrastructure/toss/TossProperties.java) | `application.yml`의 `payment.toss` 값을 Java 객체로 받습니다. 클라이언트 키·시크릿 키·두 UI variantKey를 보관하고 테스트 키 쌍의 형식을 검사합니다. |
 | [TossPaymentClient.java](../src/main/java/com/example/payment/payment/infrastructure/toss/TossPaymentClient.java) | `confirm()`은 승인 POST, `lookup()`은 결제 GET 조회, `cancel()`은 `/v1/payments/{paymentKey}/cancel`에 전액 취소 POST를 보냅니다. 승인·조회 응답은 `readConfirmationResult()`·`readLookupResult()`가 각각 검사하며, 별도 GET에서 같은 거래의 승인 금액·통화 불일치를 확인한 경우 `CANCEL_PENDING`을 반환합니다. 취소 완료는 `CANCELED`·잔액 0·성공한 취소 이력까지 확인합니다. |
 
@@ -228,7 +228,7 @@ Spring Boot 서버에서 실행하는 Java 코드입니다. 승인 응답이 불
 | Entity | DB 테이블과 연결되는 객체입니다. | `Product`, `PurchaseOrder`, `OrderItem`, `Payment` |
 | Request·Response DTO | 요청·응답으로 전달할 데이터 모양입니다. | `ConfirmPaymentRequest`, `OrderResponse` |
 | Client | 외부 서버로 HTTP 요청을 보냅니다. | `TossPaymentClient` |
-| Configuration·Properties | 공통 도구와 설정값을 준비합니다. | `PaymentConfiguration`, `TossProperties` |
+| Configuration·Properties | 공통 도구와 설정값을 준비합니다. | `TossPaymentConfiguration`, `TossProperties` |
 
 `PaymentResult`처럼 서버 내부 전달에 쓰는 DTO도 있습니다. `record`는 이런 데이터 객체를 간단히 작성하는 Java 문법이며, 이름이 `record`라고 해서 DB에 저장되는 것은 아닙니다.
 
@@ -430,7 +430,7 @@ Node 내장 테스트 도구를 사용합니다. 브라우저 저장소·SDK·�
 | 승인 결과 불확실 시 즉시 처리 순서 확인 | `payment/application/PaymentService.java`의 `verifyAndCancelIfNeeded()`, [재조회·취소](payment-recovery.md) |
 | 자동 취소 조건과 토스 취소 응답 검증 | `payment/infrastructure/toss/TossPaymentClient.java`의 `readLookupResult()`, `readCancellationLookupResult()`, `cancel()`, `canceledResult()` |
 | 취소 멱등키·취소 의도 저장 확인 | `payment/domain/Payment.java`, `payment/persistence/PaymentRepository.java`, V3·V4 마이그레이션 |
-| 토스에 보내는 HTTP 요청 확인 | `payment/infrastructure/toss/TossPaymentClient.java`, `PaymentConfiguration.java` |
+| 토스에 보내는 HTTP 요청 확인 | `payment/infrastructure/toss/TossPaymentClient.java`, `TossPaymentConfiguration.java` |
 | 토스 키·결제 UI 설정 변경 | `application.yml`, `payment/infrastructure/toss/TossProperties.java`, [환경변수 문서](environment-variables.md) |
 | 결제창 열기·닫기·선택 처리 변경 | `frontend/src/payments/tossPayments.ts`, `paymentWindow.ts` |
 | 인증 후 결과 처리 확인 | `paymentRedirect.ts`, `pages/PaymentResultPage.tsx` |

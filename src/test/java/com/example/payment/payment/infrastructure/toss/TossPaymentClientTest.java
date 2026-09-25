@@ -43,7 +43,7 @@ class TossPaymentClientTest {
     @BeforeEach
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
-        new PaymentConfiguration().tossRestClient(builder, new TossProperties("test_gck_gateway", "test_gsk_gateway", null, null));
+        new TossPaymentConfiguration().tossRestClient(builder, new TossProperties("test_gck_gateway", "test_gsk_gateway", null, null));
         server = MockRestServiceServer.bindTo(builder).build();
         gateway = new TossPaymentClient(builder.build());
     }

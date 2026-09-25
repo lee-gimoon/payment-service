@@ -175,7 +175,7 @@ V1·V2는 기존 변경 이력입니다. [V3 마이그레이션](../src/main/res
 
 - `ApiExceptionHandler`: 잘못된 입력과 저장 오류를 React용 JSON 메시지로 바꿉니다.
 - `Payment.version`의 `@Version`: 두 요청이 동시에 결과를 저장하면, 오래된 결과의 덮어쓰기를 JPA가 거부합니다. 이 경우 화면에서 저장된 결과를 다시 조회합니다.
-- `TossProperties`, `PaymentConfiguration`: 결제창형 테스트 키, UI의 variantKey, 토스 주소, 연결 3초·응답 60초 제한 시간을 설정합니다.
+- `TossProperties`, `TossPaymentConfiguration`: 결제창형 테스트 키, UI의 variantKey, 토스 주소, 연결 3초·응답 60초 제한 시간을 설정합니다.
 
 ## MVP의 처리 규칙
 

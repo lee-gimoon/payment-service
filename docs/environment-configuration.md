@@ -129,7 +129,7 @@ React는 `/payment-config`로 사용 가능 여부, 공개 클라이언트 키, 
 
 서버는 승인 `/v1/payments/confirm`, 조회 `/v1/payments/{paymentKey}`, 취소 `/v1/payments/{paymentKey}/cancel`을 사용합니다. SDK v2와 서버 API 버전은 별개이며 결제창형 키의 API 응답 버전은 공식 문서상 `2022-11-16`으로 고정됩니다. [API 키와 버전](https://docs.tosspayments.com/reference/using-api/api-keys)
 
-`PaymentConfiguration`에서 토스 연결 제한은 3초, 응답 대기는 60초로 설정합니다. 응답 대기 60초는 [토스 타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)의 권장값입니다. 승인 응답이 불확실하면 같은 요청에서 GET으로 한 번 재조회합니다. 취소 응답이 불확실할 때도 한 번 더 조회합니다.
+`TossPaymentConfiguration`에서 토스 연결 제한은 3초, 응답 대기는 60초로 설정합니다. 응답 대기 60초는 [토스 타임아웃 가이드](https://docs.tosspayments.com/resources/glossary/timeout)의 권장값입니다. 승인 응답이 불확실하면 같은 요청에서 GET으로 한 번 재조회합니다. 취소 응답이 불확실할 때도 한 번 더 조회합니다.
 
 ### 승인 결과 확인
 
