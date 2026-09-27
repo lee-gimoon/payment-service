@@ -1,0 +1,19 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Payment Service",
+      "Group": "Local Development",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "payment_service",
+      "Username": "payment",
+      "SSLMode": "disable",
+      "ConnectionParameters": {
+        "sslmode": "disable",
+        "connect_timeout": 10,
+        "passfile": ".pgpass"
+      },
+      "Comment": "Docker Compose의 로컬 PostgreSQL"
+    }
+  }
+}
