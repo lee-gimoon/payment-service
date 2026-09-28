@@ -5,6 +5,7 @@
 | 문서 | 읽을 때 |
 | --- | --- |
 | [아키텍처](architecture.md) | 결제 규칙, 상태, 복구 정책, 설계 결정을 볼 때 ([도메인 그림](payment-domain-target.png) 포함) |
+| [중복 결제 방지](duplicate-payment-prevention.md) | 같은 주문의 중복 승인을 막는 단계와 각 단계의 역할을 볼 때 |
 | [API](api.md) | 클라이언트를 연동하거나 요청·응답 계약을 바꿀 때 |
 | [설정](configuration.md) | 토스 키, DB 연결, 복구 작업, 개발 서버 주소를 설정할 때 |
 | [개발 가이드](development.md) | 테스트·빌드·마이그레이션을 하고 변경을 제출할 때 |

@@ -130,6 +130,7 @@ npm run build
 | 문서 | 내용 |
 | --- | --- |
 | [아키텍처](docs/architecture.md) | 결제 도메인 그림, 핵심 규칙, 상태, 복구 정책, 설계 결정 |
+| [중복 결제 방지](docs/duplicate-payment-prevention.md) | 같은 주문의 중복 승인을 막는 5단계 |
 | [API](docs/api.md) | 엔드포인트, 요청 예시, 응답 상태와 오류 |
 | [설정](docs/configuration.md) | 환경변수, 토스 키, 로컬 DB·pgAdmin 연결 |
 | [개발 가이드](docs/development.md) | 테스트, 빌드, 스키마 변경, 기여 시 확인 사항 |
