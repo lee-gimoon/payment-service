@@ -44,6 +44,11 @@ class MigrationUpgradeTest {
         order(jdbc, "order-waiting", "PENDING_PAYMENT");
         attempt(jdbc, "a-started", "order-waiting", "STARTED", "NULL");
 
+        // V1은 수동 확인 대상에도 완료 시각을 기록했다.
+        order(jdbc, "order-review", "PENDING_PAYMENT");
+        attempt(jdbc, "a-review", "order-review", "REVIEW_REQUIRED", "now()");
+        payment(jdbc, "a-review", "order-review", "key-review", "REVIEW_REQUIRED", "NULL", "NULL", "NULL", "NULL");
+
         Flyway.configure().dataSource(dataSource).load().migrate();
 
         // V2가 옛 거래 테이블을 지우고, V3가 성공한 결제만 새 payments로 다시 만든다.
@@ -63,6 +68,10 @@ class MigrationUpgradeTest {
         assertAttempt(jdbc, "a-unknown", "UNKNOWN", "key-unknown");
         assertAttempt(jdbc, "a-approving", "APPROVING", "key-approving");
         assertAttempt(jdbc, "a-started", "STARTED", null);
+        assertOrder(jdbc, "order-review", "PAYMENT_IN_PROGRESS", "a-review", false);
+        assertAttempt(jdbc, "a-review", "REVIEW_REQUIRED", "key-review");
+        assertThat(jdbc.queryForList("SELECT id FROM payment_attempts WHERE finished_at IS NOT NULL ORDER BY id",
+                String.class)).containsExactly("a-closed", "a-declined", "a-paid");
         assertThat(jdbc.queryForMap("SELECT amount, currency, pg_status, pg_amount FROM payment_attempts WHERE id = 'a-paid'"))
                 .containsEntry("amount", 19000L).containsEntry("currency", "KRW").containsEntry("pg_status", "DONE")
                 .hasEntrySatisfying("pg_amount", amount -> assertThat(amount.toString()).startsWith("19000"));

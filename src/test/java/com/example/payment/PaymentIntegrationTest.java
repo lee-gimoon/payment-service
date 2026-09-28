@@ -92,7 +92,7 @@ class PaymentIntegrationTest {
     @Test
     void freshDatabaseAppliesAllMigrations() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success AND version IS NOT NULL "
-                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3");
+                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4");
         assertThat(columns("payment_attempts")).contains("amount", "currency", "payment_key", "approval_requested_at",
                 "last_checked_at", "pg_status", "pg_approved_at", "pg_amount", "pg_currency");
         assertThat(columns("purchase_orders")).contains("approval_attempt_id", "paid_at");
@@ -712,6 +712,19 @@ class PaymentIntegrationTest {
     }
 
     @Test
+    void databaseKeepsFinishTimeOnlyOnFinalAttempts() {
+        Checkout checkout = checkout(order());
+        assertThatThrownBy(() -> jdbc.update("UPDATE payment_attempts SET finished_at = now() WHERE id = ?",
+                checkout.attemptId())).isInstanceOf(DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE payment_attempts SET status = 'AUTH_CANCELED' WHERE id = ?",
+                checkout.attemptId())).isInstanceOf(DataAccessException.class);
+        markApproving(checkout.attemptId(), "payment-key");
+        assertThatThrownBy(() -> jdbc.update("UPDATE payment_attempts SET status = 'REVIEW_REQUIRED', "
+                + "finished_at = now() WHERE id = ?", checkout.attemptId())).isInstanceOf(DataAccessException.class);
+        assertThat(attemptStatus(checkout.attemptId())).isEqualTo("APPROVING");
+    }
+
+    @Test
     void databaseRejectsSuccessWithoutMatchingApprovalEvidence() {
         Checkout checkout = checkout(order());
         markApproving(checkout.attemptId(), "payment-key");
@@ -722,8 +735,8 @@ class PaymentIntegrationTest {
                 "pg_status = 'DONE', pg_amount = 19000, pg_currency = NULL",
                 "pg_status = NULL, pg_amount = 19000, pg_currency = 'KRW'")) {
             assertThatThrownBy(() -> jdbc.update("UPDATE payment_attempts SET status = 'SUCCEEDED', "
-                    + "pg_approved_at = now(), last_checked_at = now(), " + evidence + " WHERE id = ?",
-                    checkout.attemptId())).isInstanceOf(DataAccessException.class);
+                    + "finished_at = now(), pg_approved_at = now(), last_checked_at = now(), " + evidence
+                    + " WHERE id = ?", checkout.attemptId())).isInstanceOf(DataAccessException.class);
         }
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("APPROVING");
     }
