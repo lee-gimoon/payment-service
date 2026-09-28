@@ -18,7 +18,7 @@
 
 | 제약 | 막는 것 |
 | --- | --- |
-| `payment_attempts(order_id)` 부분 유니크 인덱스 (승인 중·결과 불명·성공 상태만 대상) | 한 주문에 살아 있는 승인이 2개 |
+| `payment_attempts(order_id)` 부분 유니크 인덱스 (승인 중·결과 불명·성공 상태만 대상, [설명](#참고-부분-유니크-인덱스)) | 한 주문에 살아 있는 승인이 2개 |
 | `payment_attempts.payment_key` UNIQUE | 결제 키 하나가 시도 두 개에 연결됨 |
 | `payments.order_id` UNIQUE | 한 주문에 결제 기록이 2개 |
 | 슬롯 외래 키·CHECK 제약 | 슬롯이 다른 주문의 시도를 가리킴, 주문 상태와 슬롯이 어긋남 |
@@ -51,3 +51,43 @@
 - 장바구니로 주문을 따로 두 번 만들면 주문마다 슬롯이 따로 있어 서로를 막지 않는다. 주문 생성에는 멱등키가 없다.
 - PG 승인과 DB 저장은 한 트랜잭션이 아니므로, DB 제약만으로 외부 청구까지 보장하지는 않는다. 불일치는 복구 작업이 토스 조회로 해소한다.
 - 프런트엔드도 처리 중에는 버튼을 비활성화하고 결제창이 두 번 열리지 않게 막는다. 다만 우회할 수 있으므로 안전장치가 아니라 사용자 편의 기능이다.
+
+## 참고: 부분 유니크 인덱스
+
+### 인덱스
+
+책 뒤의 찾아보기처럼, DB가 특정 컬럼 값을 정렬해 따로 관리하는 목록이다. 찾아보기가 없으면 책을 처음부터 넘겨야 하듯, 인덱스가 없으면 DB는 모든 행을 처음부터 읽는다. `order_id` 인덱스가 있으면 정렬된 목록에서 해당 주문번호를 바로 찾는다.
+
+```text
+payment_attempts (실제 데이터)        order_id 인덱스 (DB가 따로 관리하는 찾아보기)
+id  order_id  status                  order_id → 행
+a1  O-200     FAILED                  O-100 → a2
+a2  O-100     SUCCEEDED               O-200 → a1
+```
+
+- 인덱스는 테이블에 컬럼을 추가하지 않는다. DB가 테이블 옆에 따로 두는 목록이다.
+- 행을 넣거나 고치거나 지울 때마다 DB가 목록을 자동으로 갱신한다.
+
+### 유니크 인덱스와 부분 인덱스
+
+- **유니크 인덱스:** 찾아보기에 "같은 값 두 번 금지" 규칙을 더한 것이다. 목록에 이미 있는 값을 또 넣으려 하면 DB가 저장을 거부한다.
+- **부분 인덱스:** 모든 행이 아니라 `WHERE` 조건에 맞는 행만 목록에 올린다. 목록에 없는 행은 중복 검사 대상도 아니다.
+
+### 이 프로젝트의 인덱스
+
+[V2 마이그레이션](../src/main/resources/db/migration/V2__merge_payments_into_attempts.sql)에서 만든다.
+
+```sql
+CREATE UNIQUE INDEX payment_attempts_one_live_per_order_idx ON payment_attempts (order_id)
+    WHERE status IN ('APPROVING', 'UNKNOWN', 'REVIEW_REQUIRED', 'SUCCEEDED');
+```
+
+| 부분 | 뜻 |
+| --- | --- |
+| `CREATE UNIQUE INDEX` | 같은 값 두 번 금지 규칙이 있는 인덱스를 만든다 |
+| `payment_attempts_one_live_per_order_idx` | 인덱스 이름. 주문당(per order) 살아 있는 승인(live)은 하나(one)라는 뜻이며, `idx`는 index의 줄임말 |
+| `ON payment_attempts` | 대상 테이블 |
+| `(order_id)` | 목록에 올릴 값, 즉 겹치면 안 되는 값 |
+| `WHERE status IN (...)` | 상태가 승인 중·결과 불명·성공인 행만 목록에 올린다 |
+
+즉 **승인 중·결과 불명·성공 상태인 결제 시도만 모아 주문번호 목록을 만들고, 그 목록에서는 같은 주문번호가 두 번 나올 수 없다.**
