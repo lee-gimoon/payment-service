@@ -39,7 +39,7 @@ public class PaymentController {
 
     private ResponseEntity<OrderResponse> response(OrderResponse order) {
         return switch (order.payment().status()) {
-            case PROCESSING, UNKNOWN, REVIEW_REQUIRED -> ResponseEntity.accepted().body(order);
+            case APPROVING, UNKNOWN, REVIEW_REQUIRED -> ResponseEntity.accepted().body(order);
             case FAILED -> ResponseEntity.unprocessableContent().body(order);
             default -> ResponseEntity.ok(order);
         };

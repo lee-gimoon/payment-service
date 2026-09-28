@@ -1,8 +1,8 @@
 package com.example.payment.payment.infrastructure.toss;
 
-import com.example.payment.payment.domain.Payment;
+import com.example.payment.payment.domain.ApprovalRequest;
 import com.example.payment.payment.domain.PaymentResult;
-import com.example.payment.payment.domain.PaymentStatus;
+import com.example.payment.payment.domain.PaymentResult.Outcome;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -22,17 +22,17 @@ public class TossPaymentClient {
         this.client = client;
     }
 
-    public PaymentResult confirm(Payment payment) {
+    public PaymentResult confirm(ApprovalRequest approval) {
         try {
             TossPaymentResponse response = client.post()
                     .uri("/v1/payments/confirm")
-                    .header("Idempotency-Key", payment.getAttemptId())
+                    .header("Idempotency-Key", approval.attemptId())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("orderId", payment.getOrderId(), "paymentKey", payment.getPaymentKey(),
-                            "amount", payment.getRequestedAmount()))
+                    .body(Map.of("orderId", approval.orderId(), "paymentKey", approval.paymentKey(),
+                            "amount", approval.amount()))
                     .retrieve()
                     .body(TossPaymentResponse.class);
-            return readResult(payment, response, false);
+            return readResult(approval, response, false);
         } catch (RestClientResponseException exception) {
             return readConfirmationError(exception);
         } catch (RestClientException exception) {
@@ -40,21 +40,21 @@ public class TossPaymentClient {
         }
     }
 
-    public PaymentResult lookup(Payment payment) {
+    public PaymentResult lookup(ApprovalRequest approval) {
         try {
             TossPaymentResponse response = client.get()
-                    .uri("/v1/payments/{paymentKey}", payment.getPaymentKey())
+                    .uri("/v1/payments/{paymentKey}", approval.paymentKey())
                     .retrieve()
                     .body(TossPaymentResponse.class);
-            return readResult(payment, response, true);
+            return readResult(approval, response, true);
         } catch (RestClientException exception) {
             return PaymentResult.unknown("PG_LOOKUP_ERROR");
         }
     }
 
-    private PaymentResult readResult(Payment payment, TossPaymentResponse response, boolean lookup) {
+    private PaymentResult readResult(ApprovalRequest approval, TossPaymentResponse response, boolean lookup) {
         if (response == null) return PaymentResult.unknown("PG_EMPTY_RESPONSE");
-        if (!payment.getOrderId().equals(response.orderId()) || !payment.getPaymentKey().equals(response.paymentKey())) {
+        if (!approval.orderId().equals(response.orderId()) || !approval.paymentKey().equals(response.paymentKey())) {
             return lookup ? PaymentResult.reviewRequired("PG_IDENTITY_MISMATCH")
                     : PaymentResult.unknown("PG_RESPONSE_MISMATCH");
         }
@@ -65,32 +65,32 @@ public class TossPaymentClient {
         }
 
         return switch (response.status()) {
-            case "DONE" -> readApproval(payment, response, lookup);
-            case "ABORTED", "EXPIRED" -> result(PaymentStatus.FAILED, "PG_" + response.status(), response);
+            case "DONE" -> readApproval(approval, response, lookup);
+            case "ABORTED", "EXPIRED" -> result(Outcome.FAILED, "PG_" + response.status(), response);
             // 취소된 거래의 주문 처리는 수동 확인이 필요하다.
             case "CANCELED", "PARTIAL_CANCELED" -> lookup
-                    ? result(PaymentStatus.REVIEW_REQUIRED, "PG_UNEXPECTED_STATUS", response)
+                    ? result(Outcome.REVIEW_REQUIRED, "PG_UNEXPECTED_STATUS", response)
                     : PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
             default -> PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
         };
     }
 
-    private PaymentResult readApproval(Payment payment, TossPaymentResponse response, boolean lookup) {
+    private PaymentResult readApproval(ApprovalRequest approval, TossPaymentResponse response, boolean lookup) {
         if (response.approvedAt() == null) return PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
         if (!"카드".equals(response.method()) && !"간편결제".equals(response.method())) {
-            return lookup ? result(PaymentStatus.REVIEW_REQUIRED, "PG_UNSUPPORTED_METHOD", response)
+            return lookup ? result(Outcome.REVIEW_REQUIRED, "PG_UNSUPPORTED_METHOD", response)
                     : PaymentResult.unknown("PG_RESULT_UNCONFIRMED");
         }
-        if (response.totalAmount().compareTo(BigDecimal.valueOf(payment.getRequestedAmount())) != 0
-                || !payment.getRequestedCurrency().equals(response.currency())) {
-            return lookup ? result(PaymentStatus.REVIEW_REQUIRED, "PG_AMOUNT_MISMATCH", response)
+        if (response.totalAmount().compareTo(BigDecimal.valueOf(approval.amount())) != 0
+                || !approval.currency().equals(response.currency())) {
+            return lookup ? result(Outcome.REVIEW_REQUIRED, "PG_AMOUNT_MISMATCH", response)
                     : PaymentResult.unknown("PG_RESPONSE_MISMATCH");
         }
-        return result(PaymentStatus.SUCCEEDED, null, response);
+        return result(Outcome.SUCCEEDED, null, response);
     }
 
-    private PaymentResult result(PaymentStatus status, String errorCode, TossPaymentResponse response) {
-        return new PaymentResult(status, response.status(), errorCode,
+    private PaymentResult result(Outcome outcome, String errorCode, TossPaymentResponse response) {
+        return new PaymentResult(outcome, response.status(), errorCode,
                 response.approvedAt() == null ? null : response.approvedAt().toInstant(),
                 response.totalAmount(), response.currency());
     }

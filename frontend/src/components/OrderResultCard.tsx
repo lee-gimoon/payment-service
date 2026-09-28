@@ -1,6 +1,7 @@
 import {
   formatAmount,
   formatDateTime,
+  orderStatusLabel,
   paymentAttemptStatusLabel,
   paymentStatusLabel
 } from "../lib/formatters";
@@ -33,7 +34,7 @@ export function OrderResultCard({
         </div>
         <div>
           <dt>주문 상태</dt>
-          <dd>{order.status === "CONFIRMED" ? "주문 확정" : "결제 대기"}</dd>
+          <dd>{orderStatusLabel(order.status)}</dd>
         </div>
         {order.latestAttempt && <div>
           <dt>최근 결제 시도</dt>

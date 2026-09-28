@@ -38,6 +38,12 @@ public class PurchaseOrder {
     @Column(nullable = false, length = 24)
     private OrderStatus status;
 
+    // 승인 슬롯. 진행 중이거나 성공한 승인의 시도 ID이며, 주문당 하나만 둘 수 있다.
+    @Column(length = 36)
+    private String approvalAttemptId;
+
+    private Instant paidAt;
+
     @Version
     private Long version;
 
@@ -66,9 +72,37 @@ public class PurchaseOrder {
     public String getCurrency() { return currency; }
     public Instant getCreatedAt() { return createdAt; }
     public OrderStatus getStatus() { return status; }
+    public String getApprovalAttemptId() { return approvalAttemptId; }
+    public Instant getPaidAt() { return paidAt; }
 
-    public void confirm() {
-        if (status != OrderStatus.PENDING_PAYMENT) throw new IllegalStateException("결제 대기 주문만 확정할 수 있습니다.");
-        status = OrderStatus.CONFIRMED;
+    /** 진행 중이거나 성공한 승인이 없을 때만 새 결제 시도와 승인을 받는다. */
+    public boolean acceptsNewPayment() {
+        return status == OrderStatus.PENDING_PAYMENT;
+    }
+
+    public void claimApproval(String attemptId) {
+        if (!acceptsNewPayment()) throw new IllegalStateException("이 주문은 다른 승인이 진행 중이거나 완료되었습니다.");
+        status = OrderStatus.PAYMENT_IN_PROGRESS;
+        approvalAttemptId = attemptId;
+    }
+
+    /** 슬롯을 잡은 시도의 실패가 PG에서 확인된 뒤에만 슬롯을 돌려준다. */
+    public void releaseApproval(String attemptId) {
+        requireSlotHolder(attemptId);
+        status = OrderStatus.PENDING_PAYMENT;
+        approvalAttemptId = null;
+    }
+
+    public void markPaid(String attemptId) {
+        if (status == OrderStatus.PAID && attemptId.equals(approvalAttemptId)) return;
+        requireSlotHolder(attemptId);
+        status = OrderStatus.PAID;
+        paidAt = Instant.now();
+    }
+
+    private void requireSlotHolder(String attemptId) {
+        if (status != OrderStatus.PAYMENT_IN_PROGRESS || !attemptId.equals(approvalAttemptId)) {
+            throw new IllegalStateException("주문의 승인 슬롯을 가진 결제 시도가 아닙니다.");
+        }
     }
 }

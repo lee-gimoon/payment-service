@@ -26,6 +26,9 @@ payment:
     secret-key: ${TOSS_SECRET_KEY:}
     payment-method-variant-key: ${TOSS_PAYMENT_METHOD_VARIANT_KEY:}
     agreement-variant-key: ${TOSS_AGREEMENT_VARIANT_KEY:}
+  # 결과를 모르는 승인을 1분마다 토스 조회로 확정한다.
+  recovery:
+    enabled: ${PAYMENT_RECOVERY_ENABLED:true}
 
 server:
   address: ${PAYMENT_BIND_ADDRESS:127.0.0.1}

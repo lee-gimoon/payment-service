@@ -1,6 +1,6 @@
 export type PaymentStatus =
   | "READY"
-  | "PROCESSING"
+  | "APPROVING"
   | "SUCCEEDED"
   | "FAILED"
   | "UNKNOWN"
@@ -25,13 +25,15 @@ export interface Order {
   currency: string;
   items: OrderItem[];
   createdAt: string;
-  status: "PENDING_PAYMENT" | "CONFIRMED";
+  status: OrderStatus;
   latestAttempt: PaymentAttempt | null;
   payment: PaymentDetails;
 }
 
+export type OrderStatus = "PENDING_PAYMENT" | "PAYMENT_IN_PROGRESS" | "PAID";
+
 export type PaymentAttemptStatus = "STARTED" | "AUTH_CANCELED" | "AUTH_FAILED" |
-  "PROCESSING" | "SUCCEEDED" | "FAILED" | "REVIEW_REQUIRED";
+  "APPROVING" | "UNKNOWN" | "REVIEW_REQUIRED" | "SUCCEEDED" | "FAILED";
 
 export interface PaymentAttempt {
   id: string;

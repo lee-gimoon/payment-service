@@ -1,5 +1,5 @@
 package com.example.payment.order;
 
 public enum OrderStatus {
-    PENDING_PAYMENT, CONFIRMED
+    PENDING_PAYMENT, PAYMENT_IN_PROGRESS, PAID
 }

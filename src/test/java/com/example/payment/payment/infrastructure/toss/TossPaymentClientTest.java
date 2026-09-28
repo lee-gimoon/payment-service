@@ -9,9 +9,9 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.example.payment.payment.domain.Payment;
+import com.example.payment.payment.domain.ApprovalRequest;
 import com.example.payment.payment.domain.PaymentResult;
-import com.example.payment.payment.domain.PaymentStatus;
+import com.example.payment.payment.domain.PaymentResult.Outcome;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -29,7 +29,7 @@ import org.springframework.web.client.RestClient;
 
 class TossPaymentClientTest {
     private static final String BASE = "https://api.tosspayments.com/v1/payments";
-    private static final Payment PAYMENT = new Payment("order-123", "payment-key", "attempt-123", 10000);
+    private static final ApprovalRequest PAYMENT = new ApprovalRequest("attempt-123", "order-123", "payment-key", 10000, "KRW");
     private static final String DONE = """
             {"orderId":"order-123","paymentKey":"payment-key","totalAmount":10000,"currency":"KRW",
              "status":"DONE","method":"카드","approvedAt":"2026-09-11T10:00:00+09:00","futureField":"ignored"}
@@ -61,9 +61,9 @@ class TossPaymentClientTest {
                         {"orderId":"order-123","paymentKey":"payment-key","amount":15000}
                         """))
                 .andRespond(withSuccess(DONE.replace("10000", "15000"), MediaType.APPLICATION_JSON));
-        Payment payment = new Payment("order-123", "payment-key", "attempt-123", 15000);
+        ApprovalRequest payment = new ApprovalRequest("attempt-123", "order-123", "payment-key", 15000, "KRW");
         PaymentResult result = gateway.confirm(payment);
-        assertThat(result.status()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(result.outcome()).isEqualTo(Outcome.SUCCEEDED);
         assertThat(result.pgAmount()).isEqualByComparingTo("15000");
         assertThat(result.approvedAt()).hasToString("2026-09-11T01:00:00Z");
     }
@@ -74,21 +74,21 @@ class TossPaymentClientTest {
     void neverMarksMismatchedOrUnapprovedResponseAsPaid(String from, String to) {
         server.expect(requestTo(BASE + "/confirm"))
                 .andRespond(withSuccess(DONE.replace(from, to), MediaType.APPLICATION_JSON));
-        assertThat(gateway.confirm(PAYMENT).status()).isEqualTo(PaymentStatus.UNKNOWN);
+        assertThat(gateway.confirm(PAYMENT).outcome()).isEqualTo(Outcome.UNKNOWN);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"{}", "null", "{invalid-json}", ""})
     void missingOrMalformedResponsesStayUnknown(String response) {
         server.expect(requestTo(BASE + "/confirm")).andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
-        assertThat(gateway.confirm(PAYMENT).status()).isEqualTo(PaymentStatus.UNKNOWN);
+        assertThat(gateway.confirm(PAYMENT).outcome()).isEqualTo(Outcome.UNKNOWN);
     }
 
     @Test
     void doneWithoutApprovalTimeIsUnknown() {
         server.expect(requestTo(BASE + "/confirm")).andRespond(withSuccess(
                 DONE.replace("\"2026-09-11T10:00:00+09:00\"", "null"), MediaType.APPLICATION_JSON));
-        assertThat(gateway.confirm(PAYMENT).status()).isEqualTo(PaymentStatus.UNKNOWN);
+        assertThat(gateway.confirm(PAYMENT).outcome()).isEqualTo(Outcome.UNKNOWN);
     }
 
     @ParameterizedTest
@@ -96,7 +96,7 @@ class TossPaymentClientTest {
     void authoritativeTerminalFailureIsFailed(String status) {
         server.expect(requestTo(BASE + "/payment-key")).andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(DONE.replace("DONE", status), MediaType.APPLICATION_JSON));
-        assertThat(gateway.lookup(PAYMENT).status()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(gateway.lookup(PAYMENT).outcome()).isEqualTo(Outcome.FAILED);
     }
 
     @ParameterizedTest
@@ -122,7 +122,7 @@ class TossPaymentClientTest {
         String response = DONE.replace("카드", "간편결제")
                 .replace("\"futureField\":\"ignored\"", "\"card\":" + card);
         server.expect(requestTo(BASE + "/confirm")).andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
-        assertThat(gateway.confirm(PAYMENT).status()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(gateway.confirm(PAYMENT).outcome()).isEqualTo(Outcome.SUCCEEDED);
     }
 
     @Test
@@ -143,14 +143,14 @@ class TossPaymentClientTest {
     void malformedErrorBodyStaysUnknown() {
         server.expect(requestTo(BASE + "/confirm")).andRespond(withStatus(HttpStatus.BAD_GATEWAY)
                 .contentType(MediaType.TEXT_HTML).body("<html>gateway unavailable</html>"));
-        assertThat(gateway.confirm(PAYMENT).status()).isEqualTo(PaymentStatus.UNKNOWN);
+        assertThat(gateway.confirm(PAYMENT).outcome()).isEqualTo(Outcome.UNKNOWN);
     }
 
     @Test
     void lookupRestoresSuccessfulPayment() {
         server.expect(requestTo(BASE + "/payment-key")).andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(DONE, MediaType.APPLICATION_JSON));
-        assertThat(gateway.lookup(PAYMENT).status()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(gateway.lookup(PAYMENT).outcome()).isEqualTo(Outcome.SUCCEEDED);
     }
 
     @ParameterizedTest
@@ -160,9 +160,9 @@ class TossPaymentClientTest {
         server.expect(requestTo(BASE + "/confirm")).andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
         server.expect(requestTo(BASE + "/payment-key")).andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
-        assertThat(gateway.confirm(PAYMENT).status()).isEqualTo(PaymentStatus.UNKNOWN);
+        assertThat(gateway.confirm(PAYMENT).outcome()).isEqualTo(Outcome.UNKNOWN);
         PaymentResult result = gateway.lookup(PAYMENT);
-        assertThat(result.status()).isEqualTo(PaymentStatus.REVIEW_REQUIRED);
+        assertThat(result.outcome()).isEqualTo(Outcome.REVIEW_REQUIRED);
         assertThat(result.errorCode()).isEqualTo("PG_AMOUNT_MISMATCH");
         assertThat(result.pgAmount()).isEqualByComparingTo(from.equals("10000") ? "9000" : "10000");
         assertThat(result.pgCurrency()).isEqualTo(from.equals("KRW") ? "USD" : "KRW");
@@ -183,7 +183,7 @@ class TossPaymentClientTest {
         server.expect(requestTo(BASE + "/payment-key"))
                 .andRespond(withSuccess(DONE.replace("DONE", status), MediaType.APPLICATION_JSON));
         PaymentResult result = gateway.lookup(PAYMENT);
-        assertThat(result.status()).isEqualTo(PaymentStatus.REVIEW_REQUIRED);
+        assertThat(result.outcome()).isEqualTo(Outcome.REVIEW_REQUIRED);
         assertThat(result.pgStatus()).isEqualTo(status);
     }
 

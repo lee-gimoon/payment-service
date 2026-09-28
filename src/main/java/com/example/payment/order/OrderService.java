@@ -1,9 +1,7 @@
 package com.example.payment.order;
 
 import com.example.payment.api.error.ApiException;
-import com.example.payment.payment.domain.Payment;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
-import com.example.payment.payment.persistence.PaymentRepository;
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductCatalog;
 import java.util.ArrayList;
@@ -18,17 +16,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
-    private final PaymentRepository paymentRepository;
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final ProductCatalog productCatalog;
 
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
-                        PaymentRepository paymentRepository,
                         PaymentAttemptRepository paymentAttemptRepository,
                         ProductCatalog productCatalog) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
-        this.paymentRepository = paymentRepository;
         this.paymentAttemptRepository = paymentAttemptRepository;
         this.productCatalog = productCatalog;
     }
@@ -78,8 +73,9 @@ public class OrderService {
     public OrderResponse get(String orderId) {
         PurchaseOrder order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
-        Payment payment = paymentRepository.findFirstByOrderIdOrderByCreatedAtDescIdDesc(orderId).orElse(null);
-        return OrderResponse.of(order, orderItemRepository.findByOrderId(orderId), payment,
+        return OrderResponse.of(order, orderItemRepository.findByOrderId(orderId),
+                paymentAttemptRepository.findFirstByOrderIdAndApprovalRequestedAtNotNullOrderByApprovalRequestedAtDesc(orderId)
+                        .orElse(null),
                 paymentAttemptRepository.findFirstByOrderIdOrderByStartedAtDesc(orderId).orElse(null));
     }
 }
