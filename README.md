@@ -21,6 +21,7 @@ Spring Boot와 React로 구성한 티셔츠 쇼핑몰의 주문·결제 서비�
 - 주문 잠금, 주문의 승인 슬롯, DB 제약으로 한 주문에 진행 중이거나 성공한 승인을 하나만 둡니다.
 - 승인 요청을 먼저 기록한 뒤 토스를 호출하며, 금액과 주문은 서버에 저장된 값만 사용합니다.
 - 결과를 모르면 실패로 보지 않고, 새 결제를 막은 채 토스 조회로 성공·실패를 확정합니다.
+- 결제 시도는 모두 이력으로 남기고, 성공한 결제만 별도 결제 기록으로 남깁니다. DB가 주문당 결제 기록을 하나만 허용합니다.
 
 결제수단 인증 성공만으로 주문을 완료하지 않습니다. 규칙별 구현과 설계 결정은 [아키텍처](docs/architecture.md)에 있습니다.
 
@@ -54,7 +55,7 @@ docker compose up -d
 
 PostgreSQL과 pgAdmin이 실행됩니다. 기본 연결 정보는 [설정 문서](docs/configuration.md)에 있습니다.
 
-처음 백엔드를 시작하면 Flyway가 [V1 초기 스키마](src/main/resources/db/migration/V1__initial_schema.sql)와 [V2 결제 시도 통합](src/main/resources/db/migration/V2__merge_payments_into_attempts.sql)을 적용하고 상품 10종을 등록합니다.
+처음 백엔드를 시작하면 Flyway가 [마이그레이션](src/main/resources/db/migration/)(V1 초기 스키마, V2 결제 시도 통합, V3 결제 기록)을 차례로 적용하고 상품 10종을 등록합니다.
 
 ### 2. 토스 설정과 백엔드 실행
 

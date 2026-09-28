@@ -2,25 +2,30 @@ package com.example.payment.payment.application;
 
 import com.example.payment.order.OrderRepository;
 import com.example.payment.order.PurchaseOrder;
+import com.example.payment.payment.domain.Payment;
 import com.example.payment.payment.domain.PaymentAttempt;
 import com.example.payment.payment.domain.PaymentAttemptStatus;
 import com.example.payment.payment.domain.PaymentResult;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
+import com.example.payment.payment.persistence.PaymentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** PG 결과를 시도와 주문에 함께 기록한다. 승인 요청과 복구가 모두 이 경로를 쓴다. */
+/** PG 결과를 시도·주문·결제 기록에 함께 반영한다. 승인 요청과 복구가 모두 이 경로를 쓴다. */
 @Service
 public class PaymentSettlementService {
     private static final Logger log = LoggerFactory.getLogger(PaymentSettlementService.class);
 
     private final PaymentAttemptRepository attempts;
+    private final PaymentRepository payments;
     private final OrderRepository orders;
 
-    public PaymentSettlementService(PaymentAttemptRepository attempts, OrderRepository orders) {
+    public PaymentSettlementService(PaymentAttemptRepository attempts, PaymentRepository payments,
+                                    OrderRepository orders) {
         this.attempts = attempts;
+        this.payments = payments;
         this.orders = orders;
     }
 
@@ -37,6 +42,8 @@ public class PaymentSettlementService {
                 if (attempt.matchesApproval(result)) {
                     attempt.succeed(result);
                     order.markPaid(attempt.getId());
+                    // 시도·주문 상태와 같은 트랜잭션에서 실제 결제 기록을 남긴다.
+                    payments.save(Payment.approved(attempt));
                 } else {
                     attempt.requireReview(new PaymentResult(PaymentResult.Outcome.REVIEW_REQUIRED, result.pgStatus(),
                             "PG_EVIDENCE_MISMATCH", result.approvedAt(), result.pgAmount(), result.pgCurrency()));

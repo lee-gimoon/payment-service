@@ -23,12 +23,14 @@ import com.example.payment.payment.application.PaymentPreparationService;
 import com.example.payment.payment.application.PaymentRecoveryService;
 import com.example.payment.payment.application.PaymentService;
 import com.example.payment.payment.domain.ApprovalRequest;
+import com.example.payment.payment.domain.Payment;
 import com.example.payment.payment.domain.PaymentAttempt;
 import com.example.payment.payment.domain.PaymentAttemptStatus;
 import com.example.payment.payment.domain.PaymentResult;
 import com.example.payment.payment.domain.PaymentResult.Outcome;
 import com.example.payment.payment.infrastructure.toss.TossPaymentClient;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
+import com.example.payment.payment.persistence.PaymentRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -78,22 +80,24 @@ class PaymentIntegrationTest {
     @Autowired PaymentPreparationService preparation;
     @Autowired PaymentRecoveryService recovery;
     @Autowired PaymentAttemptRepository attemptRepository;
+    @Autowired PaymentRepository paymentRepository;
     @Autowired JdbcTemplate jdbc;
     @MockitoBean TossPaymentClient toss;
 
     @BeforeEach
     void cleanDatabase() {
-        jdbc.execute("TRUNCATE TABLE payment_attempts, purchase_orders CASCADE");
+        jdbc.execute("TRUNCATE TABLE payments, payment_attempts, purchase_orders CASCADE");
     }
 
     @Test
-    void freshDatabaseAppliesBothMigrations() {
+    void freshDatabaseAppliesAllMigrations() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success AND version IS NOT NULL "
-                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2");
-        assertThat(jdbc.queryForObject("SELECT to_regclass('public.payments') IS NULL", Boolean.class)).isTrue();
+                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3");
         assertThat(columns("payment_attempts")).contains("amount", "currency", "payment_key", "approval_requested_at",
                 "last_checked_at", "pg_status", "pg_approved_at", "pg_amount", "pg_currency");
         assertThat(columns("purchase_orders")).contains("approval_attempt_id", "paid_at");
+        assertThat(columns("payments")).containsExactlyInAnyOrder("id", "order_id", "attempt_id", "payment_key",
+                "amount", "currency", "approved_at", "created_at");
     }
 
     @Test
@@ -248,6 +252,7 @@ class PaymentIntegrationTest {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(attemptStatus(checkout.attemptId())).isEqualTo("APPROVING");
             assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
+            assertThat(paymentCount()).isZero();
             assertThat(sent).isEqualTo(new ApprovalRequest(checkout.attemptId(), checkout.orderId(),
                     "payment-key", 19_000, "KRW"));
             return succeeded(19_000);
@@ -259,7 +264,34 @@ class PaymentIntegrationTest {
                 .andExpect(jsonPath("$.payment.status").value("SUCCEEDED"));
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("SUCCEEDED");
         assertThat(slot(checkout.orderId())).isEqualTo(checkout.attemptId());
+        Payment payment = paymentRepository.findByOrderId(checkout.orderId()).orElseThrow();
+        assertThat(payment.getAttemptId()).isEqualTo(checkout.attemptId());
+        assertThat(payment.getPaymentKey()).isEqualTo("payment-key");
+        assertThat(payment.getAmount()).isEqualTo(19_000);
+        assertThat(payment.getApprovedAt()).isEqualTo(Instant.parse("2026-09-11T01:00:00Z"));
         verify(toss, never()).lookup(any());
+    }
+
+    @Test
+    void paymentRecordRollsBackWithAttemptAndOrder() {
+        Checkout checkout = checkout(order());
+        when(toss.confirm(any())).thenReturn(succeeded(19_000));
+        jdbc.execute("""
+                CREATE FUNCTION reject_payment_record() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN RAISE EXCEPTION 'payment storage unavailable'; END $$
+                """);
+        jdbc.execute("CREATE TRIGGER reject_payment_record BEFORE INSERT ON payments "
+                + "FOR EACH ROW EXECUTE FUNCTION reject_payment_record()");
+        try {
+            assertThatThrownBy(() -> payments.confirm(request(checkout, "payment-key")))
+                    .isInstanceOf(DataAccessException.class);
+        } finally {
+            jdbc.execute("DROP TRIGGER reject_payment_record ON payments");
+            jdbc.execute("DROP FUNCTION reject_payment_record()");
+        }
+        assertThat(paymentCount()).isZero();
+        assertThat(attemptStatus(checkout.attemptId())).isEqualTo("APPROVING");
+        assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
     }
 
     @Test
@@ -348,6 +380,7 @@ class PaymentIntegrationTest {
         // PG는 승인했지만 DB에 반영하지 못했다. 슬롯이 남아 있어 새 결제는 막힌다.
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("APPROVING");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
+        assertThat(paymentCount()).isZero();
         assertThatThrownBy(() -> attempts.start(checkout.orderId())).isInstanceOf(ApiException.class);
         verify(toss, never()).lookup(any());
 
@@ -356,6 +389,7 @@ class PaymentIntegrationTest {
         assertThat(recovery.recoverUnresolved()).isEqualTo(1);
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("SUCCEEDED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAID");
+        assertThat(paymentCount()).isEqualTo(1);
         verify(toss).confirm(any());
     }
 
@@ -367,6 +401,7 @@ class PaymentIntegrationTest {
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("FAILED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PENDING_PAYMENT");
         assertThat(slot(checkout.orderId())).isNull();
+        assertThat(paymentCount()).isZero();
         verify(toss, never()).lookup(any());
     }
 
@@ -383,6 +418,7 @@ class PaymentIntegrationTest {
         assertThat(payments.confirm(request(checkout, "payment-key")).payment().status()).isEqualTo(PaymentState.SUCCEEDED);
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("SUCCEEDED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAID");
+        assertThat(paymentCount()).isEqualTo(1);
         verify(toss).lookup(any());
     }
 
@@ -402,6 +438,7 @@ class PaymentIntegrationTest {
         assertThat(saved.getPgAmount()).isEqualByComparingTo(lookupResult.pgAmount());
         assertThat(saved.getPgCurrency()).isEqualTo(lookupResult.pgCurrency());
         assertThat(saved.getStatus()).isEqualTo(PaymentAttemptStatus.REVIEW_REQUIRED);
+        assertThat(paymentCount()).isZero();
         assertThatThrownBy(() -> attempts.start(checkout.orderId())).isInstanceOf(ApiException.class);
         verify(toss).confirm(any());
         verify(toss).lookup(any());
@@ -428,6 +465,7 @@ class PaymentIntegrationTest {
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
         assertThat(jdbc.queryForObject("SELECT error_code FROM payment_attempts WHERE id = ?", String.class,
                 checkout.attemptId())).isEqualTo("PG_EVIDENCE_MISMATCH");
+        assertThat(paymentCount()).isZero();
     }
 
     @Test
@@ -445,6 +483,7 @@ class PaymentIntegrationTest {
                 .andExpect(jsonPath("$.payment.status").value("UNKNOWN"));
         payments.confirm(request(checkout, "payment-key"));
         assertThatThrownBy(() -> attempts.start(checkout.orderId())).isInstanceOf(ApiException.class);
+        assertThat(paymentCount()).isZero();
         verify(toss).confirm(any());
         verify(toss).lookup(any());
     }
@@ -475,6 +514,7 @@ class PaymentIntegrationTest {
             assertThat(first.get(10, TimeUnit.SECONDS).payment().status()).isEqualTo(PaymentState.SUCCEEDED);
         }
         assertThat(approvalCount()).isEqualTo(1);
+        assertThat(paymentCount()).isEqualTo(1);
         verify(toss).confirm(any());
     }
 
@@ -509,6 +549,10 @@ class PaymentIntegrationTest {
                 + "ORDER BY approval_requested_at", String.class, first.orderId())).containsExactly("FAILED", "SUCCEEDED");
         assertThat(approvalCount()).isEqualTo(2);
         assertThat(slot(first.orderId())).isEqualTo(retry.attemptId());
+        // 시도는 둘이지만 실제 결제 기록은 성공한 시도 하나뿐이다.
+        assertThat(paymentCount()).isEqualTo(1);
+        assertThat(paymentRepository.findByOrderId(first.orderId()).orElseThrow().getAttemptId())
+                .isEqualTo(retry.attemptId());
         assertThatThrownBy(() -> attempts.start(first.orderId())).isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> payments.confirm(request(first, "third-key"))).isInstanceOf(ApiException.class);
     }
@@ -535,6 +579,7 @@ class PaymentIntegrationTest {
         assertThat(recovery.recoverUnresolved()).isEqualTo(1);
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("SUCCEEDED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAID");
+        assertThat(paymentCount()).isEqualTo(1);
         verify(toss, never()).confirm(any());
     }
 
@@ -619,6 +664,20 @@ class PaymentIntegrationTest {
     }
 
     @Test
+    void databaseAllowsOnlyOnePaymentPerOrder() {
+        Checkout first = checkout(order());
+        Checkout second = checkout(first.orderId());
+        Checkout other = checkout(order());
+        insertPayment(first.orderId(), first.attemptId(), "first-key");
+        assertThatThrownBy(() -> insertPayment(second.orderId(), second.attemptId(), "second-key"))
+                .isInstanceOf(DataAccessException.class);
+        // 다른 주문의 시도로는 결제 기록을 만들 수 없다.
+        assertThatThrownBy(() -> insertPayment(other.orderId(), second.attemptId(), "other-key"))
+                .isInstanceOf(DataAccessException.class);
+        assertThat(paymentCount()).isEqualTo(1);
+    }
+
+    @Test
     void databaseRejectsOrderSlotPointingToAnotherOrdersAttempt() {
         String orderId = order();
         Checkout other = checkout(order());
@@ -697,6 +756,17 @@ class PaymentIntegrationTest {
 
     private long approvalCount() {
         return jdbc.queryForObject("SELECT count(*) FROM payment_attempts WHERE payment_key IS NOT NULL", Long.class);
+    }
+
+    private long paymentCount() {
+        return jdbc.queryForObject("SELECT count(*) FROM payments", Long.class);
+    }
+
+    private void insertPayment(String orderId, String attemptId, String paymentKey) {
+        jdbc.update("""
+                INSERT INTO payments (id, order_id, attempt_id, payment_key, amount, currency, approved_at, created_at)
+                VALUES (gen_random_uuid()::text, ?, ?, ?, 19000, 'KRW', now(), now())
+                """, orderId, attemptId, paymentKey);
     }
 
     private void markApproving(String attemptId, String paymentKey) {

@@ -11,14 +11,14 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-/** V1 스키마에 쌓인 주문·시도·거래가 V2에서 같은 의미의 시도와 주문 슬롯으로 옮겨지는지 확인한다. */
+/** V1 스키마에 쌓인 주문·시도·거래가 이후 마이그레이션에서 시도, 주문 슬롯, 성공한 결제로 옮겨지는지 확인한다. */
 @Testcontainers
 class MigrationUpgradeTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine");
 
     @Test
-    void v2MovesExistingPaymentsIntoAttemptsAndOrderSlots() {
+    void existingPaymentsMoveIntoAttemptsOrderSlotsAndCompletedPayments() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         Flyway.configure().dataSource(dataSource).target("1").load().migrate();
@@ -46,7 +46,11 @@ class MigrationUpgradeTest {
 
         Flyway.configure().dataSource(dataSource).load().migrate();
 
-        assertThat(jdbc.queryForObject("SELECT to_regclass('public.payments') IS NULL", Boolean.class)).isTrue();
+        // V2가 옛 거래 테이블을 지우고, V3가 성공한 결제만 새 payments로 다시 만든다.
+        assertThat(jdbc.queryForList("SELECT attempt_id FROM payments", String.class)).containsExactly("a-paid");
+        assertThat(jdbc.queryForMap("SELECT order_id, payment_key, amount, currency FROM payments"))
+                .containsEntry("order_id", "order-paid").containsEntry("payment_key", "key-paid")
+                .containsEntry("amount", 19000L).containsEntry("currency", "KRW");
         assertOrder(jdbc, "order-paid", "PAID", "a-paid", true);
         assertOrder(jdbc, "order-retry", "PENDING_PAYMENT", null, false);
         assertOrder(jdbc, "order-unknown", "PAYMENT_IN_PROGRESS", "a-unknown", false);

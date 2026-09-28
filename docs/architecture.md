@@ -19,6 +19,7 @@
 | 인증 | 구매자가 토스 결제창에서 결제수단 사용을 확인하는 절차. 서비스 로그인이 아니다. 성공하면 결제 키(`paymentKey`)를 받지만 돈은 움직이지 않는다. |
 | 승인 | 서버가 시크릿 키로 토스 승인 API를 호출하는 것. 돈이 움직이는 유일한 지점이다. |
 | 결제 시도 | 결제창을 열기 전에 만드는 기록(`PaymentAttempt`). 인증부터 승인 확정까지 담으며, 승인은 시도마다 최대 한 번이다. |
+| 결제 | 실제로 돈이 나간 기록(`Payment`). 승인이 성공으로 확정된 시도에 대해서만 만들며 주문당 최대 하나다. |
 | 승인 관문 | 주문 잠금 아래에서 승인 요청을 검증하고, 승인 슬롯을 잡아 `APPROVING`을 커밋하는 단계(`PaymentPreparationService`). |
 | 승인 슬롯 | 주문의 `approval_attempt_id`. 진행 중이거나 성공한 승인의 시도 ID이며 주문당 하나다. |
 | 미확정 | 승인을 요청했지만 결과가 확정되지 않은 상태. `APPROVING`, `UNKNOWN`, `REVIEW_REQUIRED`가 해당한다. |
@@ -29,6 +30,7 @@
 | 규칙 | 지키는 장치 |
 | --- | --- |
 | 한 주문에 진행 중이거나 성공한 승인은 하나뿐이다. | 주문 행 잠금, 주문의 승인 슬롯, DB 부분 유니크 인덱스 |
+| 한 주문의 실제 결제는 하나뿐이다. | `payments.order_id` 유니크 제약. 성공 확정과 같은 트랜잭션에서만 결제 기록 생성 |
 | 승인 요청을 커밋한 뒤에만 토스 승인을 호출한다. | 승인 관문 트랜잭션을 커밋한 뒤 트랜잭션 밖에서 호출 |
 | 금액·주문은 서버 저장값만 사용한다. | 시도에 주문 금액을 복사, 요청 금액은 비교에만 사용, 토스 응답과 대조 |
 | 결과를 모르면 실패가 아니다. | 미확정 시도는 슬롯을 유지, `FAILED`는 토스가 거절·만료를 확인할 때만 기록 |
@@ -42,13 +44,21 @@
 | `Product` / `products` | V1에서 등록한 상품 10개. 새 주문에는 `active = true`인 상품만 사용한다. | — |
 | `PurchaseOrder` / `purchase_orders` | 주문번호, 서버가 계산한 총액·통화·총수량, 결제창 요약명, 주문 상태 | `status`, `approval_attempt_id`, `paid_at` |
 | `OrderItem` / `purchase_order_items` | 상품 ID와 주문 당시 상품명·단가·사이즈·수량, 항목 순서 | — |
-| `PaymentAttempt` / `payment_attempts` | 결제 시도. 인증 결과, 승인 요청, 토스가 알려준 증거와 확정 결과 | `status`, `amount`, `currency`, `payment_key`, `approval_requested_at`, `last_checked_at`, `pg_*`, `error_code` |
+| `PaymentAttempt` / `payment_attempts` | 결제 시도. 인증 결과, 승인 요청, 토스가 알려준 증거와 확정 결과. 진행 중·미확정·실패 상태는 여기에만 있다. | `status`, `amount`, `currency`, `payment_key`, `approval_requested_at`, `last_checked_at`, `pg_*`, `error_code` |
+| `Payment` / `payments` | 실제 결제. 성공한 시도의 결제 키, 승인 금액·통화, 승인 시각을 남긴다. 상태 전이가 없다. | `order_id`, `attempt_id`, `payment_key`, `amount`, `currency`, `approved_at` |
 
 주문 요청은 상품 ID·사이즈·수량만 받는다. `OrderService`가 판매 중인 상품의 DB 가격으로 총액을 계산하고 주문과 항목을 한 트랜잭션에서 저장한다. 주문 금액은 이후 바꾸지 않으며, 주문 당시 상품명과 단가는 `OrderItem`에 따로 저장한다.
 
-인증만 하다 끝난 시도에는 결제 키가 없고, 승인 관문을 통과한 시도에만 결제 키와 승인 요청 시각이 기록된다. 승인이 명확히 실패해 다시 결제할 때는 새 시도를 만든다. 같은 주문에 여러 시도와 실패한 승인이 남을 수 있지만 이전 시도를 다시 승인하지는 않는다.
+인증만 하다 끝난 시도에는 결제 키가 없고, 승인 관문을 통과한 시도에만 결제 키와 승인 요청 시각이 기록된다. 승인이 명확히 실패해 다시 결제할 때는 새 시도를 만든다. 같은 주문에 여러 시도와 실패한 승인이 남을 수 있지만 이전 시도를 다시 승인하지는 않는다. 결제 기록은 그중 성공한 시도 하나에 대해서만 생긴다.
 
-테이블과 초기 상품은 [V1 마이그레이션](../src/main/resources/db/migration/V1__initial_schema.sql)이 만든다. [V2 마이그레이션](../src/main/resources/db/migration/V2__merge_payments_into_attempts.sql)은 V1의 `payments` 거래를 해당 시도로 옮기고, 주문 승인 슬롯과 DB 제약을 추가한 뒤 `payments`를 삭제한다. JPA는 테이블을 만들지 않고 엔티티와 테이블이 일치하는지만 검증한다.
+```text
+payment_attempts (주문 O-100)          payments
+a1  AUTH_CANCELED  결제창 닫기
+a2  FAILED         카드 거절
+a3  SUCCEEDED      승인 성공     →     p1  order=O-100  attempt=a3  19,000원
+```
+
+테이블과 초기 상품은 [V1 마이그레이션](../src/main/resources/db/migration/V1__initial_schema.sql)이 만든다. [V2 마이그레이션](../src/main/resources/db/migration/V2__merge_payments_into_attempts.sql)은 V1의 승인 거래 테이블(`payments`, 실패·미확정 포함)을 해당 시도로 옮기고, 주문 승인 슬롯과 DB 제약을 추가한 뒤 그 테이블을 삭제한다. [V3 마이그레이션](../src/main/resources/db/migration/V3__add_completed_payments.sql)은 성공한 결제만 담는 새 `payments` 테이블을 만들고 기존 성공 시도로 채운다. JPA는 테이블을 만들지 않고 엔티티와 테이블이 일치하는지만 검증한다.
 
 ## 결제 승인 흐름
 
@@ -71,7 +81,7 @@ sequenceDiagram
     S->>T: 승인 API 호출 (Idempotency-Key = 시도 ID)
     T-->>S: 승인 결과
     Note over S,D: 결과 기록 트랜잭션
-    S->>D: 주문 잠금 후 시도·주문 상태 저장
+    S->>D: 주문 잠금 후 시도·주문 상태 저장 (성공이면 결제 기록 생성)
     S-->>B: 주문 결과 (200 / 202 / 422)
 ```
 
@@ -79,7 +89,7 @@ sequenceDiagram
 
 1. **승인 관문** `PaymentPreparationService.prepare()`: 주문 행을 잠그고 요청 금액이 주문 금액과 같은지, 결제 키가 이미 쓰였는지, 주문이 새 승인을 받을 수 있는지, 시도가 이 주문의 `STARTED` 시도인지 검사한다. 통과하면 주문의 승인 슬롯을 잡고(`PAYMENT_IN_PROGRESS`) 시도를 `APPROVING`으로 바꿔 결제 키를 연결한 뒤 커밋한다.
 2. **승인 호출** `TossPaymentClient.confirm()`: 시도에 저장된 주문번호·결제 키·금액으로 승인을 호출하고 시도 ID를 `Idempotency-Key`로 보낸다. 응답을 기다리는 동안 DB 트랜잭션이나 주문 잠금은 없다.
-3. **결과 기록** `PaymentSettlementService.record()`: 새 트랜잭션에서 주문을 다시 잠그고 결과를 시도와 주문에 함께 기록한다. 검증된 성공이면 주문을 `PAID`로, 확인된 실패면 슬롯을 돌려주고 `PENDING_PAYMENT`로 바꾼다.
+3. **결과 기록** `PaymentSettlementService.record()`: 새 트랜잭션에서 주문을 다시 잠그고 결과를 시도와 주문에 함께 기록한다. 검증된 성공이면 주문을 `PAID`로 바꾸고 같은 트랜잭션에서 결제 기록(`payments`)을 만든다. 확인된 실패면 슬롯을 돌려주고 `PENDING_PAYMENT`로 바꾼다. 셋 중 하나라도 저장하지 못하면 모두 롤백되고 시도는 미확정으로 남는다.
 4. **즉시 조회**: 결과를 모르면(`UNKNOWN`) 같은 요청 안에서 `TossPaymentClient.lookup()`으로 한 번 조회해 다시 기록한다. 그래도 모르면 `UNKNOWN`으로 두고 복구 작업이 이어서 확인한다.
 
 **성공 판정:** 토스 응답의 주문번호·결제 키·금액·통화가 저장값과 같고, 상태가 `DONE`이며, 결제수단이 카드·간편결제이고, 승인 시각이 있어야 한다. 결과 기록 단계에서도 `PaymentAttempt.matchesApproval()`로 금액·통화를 한 번 더 대조하고, 다르면 성공 대신 `REVIEW_REQUIRED`(`PG_EVIDENCE_MISMATCH`)로 기록한다. DB에도 증거가 맞지 않는 `SUCCEEDED`를 거부하는 제약이 있다.
@@ -122,7 +132,7 @@ stateDiagram-v2
 | `APPROVING` | 예 | 승인 요청을 기록하고 토스 승인을 호출하는 중이다. |
 | `UNKNOWN` | 예 | 토스 승인 여부를 알 수 없다. 이미 결제됐을 수 있어 실패로 보지 않고 토스 조회로 확정한다. |
 | `REVIEW_REQUIRED` | 예 | 조회 결과가 저장값과 다르거나 기한 안에 확정하지 못했다. 토스 결제 내역과 DB를 사람이 대조해야 한다. |
-| `SUCCEEDED` | 예 | 토스의 승인 성공을 검증하고 저장했다. 주문도 `PAID`가 된다. |
+| `SUCCEEDED` | 예 | 토스의 승인 성공을 검증하고 저장했다. 주문이 `PAID`가 되고 결제 기록이 생긴다. |
 | `FAILED` | 아니요 | 명시적 거절이나 확인된 `ABORTED`·`EXPIRED`. 같은 주문에서 새 시도로 다시 결제할 수 있다. |
 
 `SUCCEEDED`, `FAILED`, `AUTH_*`는 종료 상태다. `REVIEW_REQUIRED`는 자동 조회 결과로 `UNKNOWN`에 되돌아가지 않는다.
@@ -142,7 +152,7 @@ stateDiagram-v2
 
 시도 생성, 인증 결과 기록, 승인 관문, 결과 기록은 모두 먼저 주문 행을 잠근다. 잠금 순서를 주문 → 시도로 통일해 교착을 막으며, 잠금은 각 트랜잭션이 끝날 때 풀린다.
 
-DB 제약은 도메인 검사와 별개인 두 번째 방어선이다. 한 주문에 `APPROVING`·`UNKNOWN`·`REVIEW_REQUIRED`·`SUCCEEDED` 시도가 둘 이상 생기는 일, 슬롯이 다른 주문의 시도를 가리키는 일, 주문 상태와 슬롯이 어긋나는 일, 결제 키 중복, 결제 키 없는 승인 상태, 증거가 맞지 않는 성공 기록을 막는다. `PurchaseOrder`와 `PaymentAttempt`의 `@Version`은 이미 있는 같은 행의 동시 수정을 감지할 뿐, 중복 승인을 막는 주된 장치는 아니다.
+DB 제약은 도메인 검사와 별개인 두 번째 방어선이다. 한 주문에 `APPROVING`·`UNKNOWN`·`REVIEW_REQUIRED`·`SUCCEEDED` 시도가 둘 이상 생기는 일, 한 주문에 결제 기록이 둘 이상 생기는 일, 결제 기록이나 슬롯이 다른 주문의 시도를 가리키는 일, 주문 상태와 슬롯이 어긋나는 일, 결제 키 중복, 결제 키 없는 승인 상태, 증거가 맞지 않는 성공 기록을 막는다. `PurchaseOrder`와 `PaymentAttempt`의 `@Version`은 이미 있는 같은 행의 동시 수정을 감지할 뿐, 중복 승인을 막는 주된 장치는 아니다.
 
 ## 실패와 복구
 
@@ -152,7 +162,7 @@ DB 저장과 토스 승인은 하나의 트랜잭션으로 묶을 수 없다. �
 
 | 토스 조회 결과 | 처리 |
 | --- | --- |
-| `DONE`이고 저장값과 일치 | `SUCCEEDED`, 주문 `PAID` |
+| `DONE`이고 저장값과 일치 | `SUCCEEDED`, 주문 `PAID`, 결제 기록 생성 |
 | `ABORTED`·`EXPIRED` | `FAILED`, 주문 슬롯 반환 |
 | 금액·주문 불일치, `CANCELED`, 지원하지 않는 결제수단 | `REVIEW_REQUIRED` |
 | 아직 승인 전, 조회 실패 | `UNKNOWN` 유지. 승인 요청 후 1시간이 지나도 확정하지 못하면 `REVIEW_REQUIRED` |
@@ -163,9 +173,9 @@ DB 저장과 토스 승인은 하나의 트랜잭션으로 묶을 수 없다. �
 
 ## 설계 결정
 
-1. **결제 거래를 결제 시도에 합쳤다.**
-   - 이유: 시도 하나는 승인을 최대 한 번 한다. 거래와 시도에 같은 상태를 따로 두면 서비스가 둘을 맞춰야 하고, 시도 쪽에서 "진행 중"과 "결과 불명"을 구분할 수 없었다.
-   - 대안: V1처럼 `payments`를 따로 둔다. 거래를 독립적으로 볼 수 있지만 상태 동기화 비용이 든다.
+1. **승인 상태는 시도에만 두고, 성공한 결제는 따로 기록한다.**
+   - 이유: 시도 하나는 승인을 최대 한 번 하므로 승인 진행 상태는 시도가 맡는다. V1은 승인마다 거래 행을 만들어 시도와 같은 상태를 두 곳에서 맞춰야 했고, 시도 쪽에서 "진행 중"과 "결과 불명"을 구분하지 못했다(V2에서 시도로 합침). 반면 실제로 돈이 나간 결제는 취소·환불·정산의 기준이 되는 도메인 개념이라, 성공으로 확정될 때만 상태 전이 없는 `payments` 행으로 남긴다(V3). 이렇게 하면 상태 중복 없이 "주문당 실제 결제 최대 1건"을 `payments.order_id` 유니크 제약으로 직접 보장할 수 있다.
+   - 대안: 시도 테이블 하나만 둔다(V2 상태). 단순하지만 실제 결제가 "시도"의 한 행으로만 존재한다. 또는 V1처럼 실패를 포함한 거래 테이블을 따로 둔다. 상태 동기화 비용이 든다.
 2. **주문이 승인 슬롯을 가진다.**
    - 이유: "진행 중이거나 성공한 승인은 하나" 규칙을 잠근 주문 행 하나로 판단할 수 있다. 시도 테이블의 부분 유니크 인덱스는 코드 버그에 대비한 두 번째 방어선이다.
    - 대안: 매번 시도 테이블을 조회해 판단한다. 규칙이 서비스의 쿼리에 흩어진다.
