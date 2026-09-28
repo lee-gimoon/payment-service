@@ -79,14 +79,18 @@ npm ci
 npm run dev
 ```
 
-| 서비스 | 기본 주소 |
-| --- | --- |
-| 스토어 | [http://127.0.0.1:5173](http://127.0.0.1:5173) |
-| Swagger UI | [http://127.0.0.1:8080/swagger-ui.html](http://127.0.0.1:8080/swagger-ui.html) |
-| OpenAPI | [http://127.0.0.1:8080/v3/api-docs](http://127.0.0.1:8080/v3/api-docs) |
-| pgAdmin | [http://127.0.0.1:5050](http://127.0.0.1:5050) |
-
 Vite 개발 서버가 API 요청을 백엔드 8080 포트로 전달합니다. 상품 상세에서 사이즈를 선택하고 장바구니로 이동한 뒤 결제를 시작할 수 있습니다. 테스트 키 결제는 실제 청구되지 않습니다. [토스 결제창형 연동 가이드](https://docs.tosspayments.com/guides/v2/payment-widget/integration-window)
+
+### 접속 주소
+
+| 서비스 | 기본 주소 | 제공 프로세스 |
+| --- | --- | --- |
+| 스토어 | [http://127.0.0.1:5173](http://127.0.0.1:5173) | 프런트엔드 개발 서버 (Vite) |
+| Swagger UI | [http://127.0.0.1:8080/swagger-ui.html](http://127.0.0.1:8080/swagger-ui.html) | 백엔드 (Spring Boot) |
+| OpenAPI JSON | [http://127.0.0.1:8080/v3/api-docs](http://127.0.0.1:8080/v3/api-docs) | 백엔드 (Spring Boot) |
+| pgAdmin | [http://127.0.0.1:5050](http://127.0.0.1:5050) | Docker Compose의 pgAdmin 컨테이너 |
+
+스토어 화면의 상품·주문·결제 기능을 사용하려면 백엔드와 PostgreSQL도 실행해야 합니다.
 
 ## 테스트와 빌드
 
