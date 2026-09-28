@@ -9,8 +9,8 @@
 | `src/main/java/com/example/payment/product/` | 상품 카탈로그 |
 | `src/main/java/com/example/payment/order/` | 주문 생성, 구매 항목, 조회 |
 | `src/main/java/com/example/payment/payment/api/` | 결제 요청·응답 HTTP 계약 |
-| `src/main/java/com/example/payment/payment/application/` | 승인 순서와 트랜잭션 경계 |
-| `src/main/java/com/example/payment/payment/domain/` | 결제 거래·시도 상태 |
+| `src/main/java/com/example/payment/payment/application/` | 승인 순서, 트랜잭션 경계, 미확정 승인 복구 |
+| `src/main/java/com/example/payment/payment/domain/` | 결제 시도와 승인 상태 |
 | `src/main/java/com/example/payment/payment/infrastructure/toss/` | 토스 설정과 HTTP 연동 |
 | `src/main/resources/db/migration/` | Flyway 스키마와 초기 상품 |
 | `frontend/src/pages/` | 스토어, 상품, 장바구니, 결제 결과, 주문 화면 |
@@ -34,9 +34,9 @@ macOS / Linux:
 ./gradlew test bootJar
 ```
 
-통합 테스트는 Testcontainers가 생성한 PostgreSQL 18 컨테이너에 V1 초기 스키마를 적용합니다. 애플리케이션의 개발 DB는 사용하지 않습니다. 토스 API는 테스트 대역을 사용하므로 이 명령으로 실제 결제 인증이나 승인을 수행하지 않습니다.
+통합 테스트는 Testcontainers가 생성한 PostgreSQL 18 컨테이너에 V1·V2 마이그레이션을 적용합니다. 애플리케이션의 개발 DB는 사용하지 않습니다. 토스 API는 테스트 대역을 사용하므로 이 명령으로 실제 결제 인증이나 승인을 수행하지 않습니다. 통합 테스트는 [복구 작업](configuration.md#결제-복구-작업)의 주기 실행을 끄고(`payment.recovery.enabled=false`) 복구 작업을 직접 호출합니다.
 
-테스트는 서버 금액 계산, 항목 스냅샷, 거래·시도·주문의 저장 원자성, 중복·동시 요청, 승인 응답 검증, 불확실한 결과 재조회, 실패 후 재시도를 검증합니다.
+테스트는 서버 금액 계산, 항목 스냅샷, 시도·주문의 저장 원자성, 주문 승인 슬롯과 DB 제약, 중복·동시 요청, 승인 응답 검증, 불확실한 결과 재조회와 복구 작업, 실패 후 재시도, V1 데이터의 V2 이전을 검증합니다.
 
 - 테스트 보고서: `build/reports/tests/test/index.html`
 - 백엔드 실행 파일: `build/libs/payment-service-0.0.1-SNAPSHOT.jar`
@@ -71,9 +71,9 @@ npm run build
 
 ## 데이터베이스와 마이그레이션
 
-현재 스키마는 [V1__initial_schema.sql](../src/main/resources/db/migration/V1__initial_schema.sql) 하나입니다. 처음 백엔드를 시작하면 Flyway가 V1을 적용하고 초기 상품을 등록합니다. 이후 서버를 다시 시작해도 적용된 마이그레이션은 반복 실행되지 않습니다. Hibernate는 스키마를 검증하며, 테이블 생성과 변경은 Flyway가 수행합니다.
+현재 스키마는 [V1__initial_schema.sql](../src/main/resources/db/migration/V1__initial_schema.sql)과 [V2__merge_payments_into_attempts.sql](../src/main/resources/db/migration/V2__merge_payments_into_attempts.sql)입니다. 처음 백엔드를 시작하면 Flyway가 V1·V2를 차례로 적용하고 초기 상품을 등록합니다. V1만 적용된 개발 DB는 다음 실행 때 V2가 기존 거래를 결제 시도로 옮깁니다. 이후 서버를 다시 시작해도 적용된 마이그레이션은 반복 실행되지 않습니다. Hibernate는 스키마를 검증하며, 테이블 생성과 변경은 Flyway가 수행합니다.
 
-스키마를 변경할 때는 이미 적용된 V1을 수정하지 않고 V2 등 다음 버전의 마이그레이션 파일을 추가합니다. SQL과 엔티티를 함께 변경하고 빈 DB와 V1이 적용된 DB에서 모두 검증합니다.
+스키마를 변경할 때는 이미 적용된 마이그레이션을 수정하지 않고 다음 버전의 파일을 추가합니다. SQL과 엔티티를 함께 변경하고 빈 DB와 이전 버전이 적용된 DB에서 모두 검증합니다.
 
 ## 변경과 기여
 

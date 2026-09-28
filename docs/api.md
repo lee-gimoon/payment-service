@@ -4,18 +4,20 @@
 
 ## 엔드포인트
 
-| Method | Path | 정상 응답 | 동작 |
-| --- | --- | --- | --- |
-| GET | `/products` | `200` 상품 배열 | 판매 중인 상품을 표시 순서대로 반환. |
-| GET | `/products/{id}` | `200` 상품 | 판매 중인 상품 상세. 없거나 판매 중지면 `404`. |
-| POST | `/orders` | `201` 주문 | 서버 가격으로 주문 생성. `Location: /orders/{orderId}` 포함. |
-| GET | `/orders/{orderId}` | `200` 주문 | 주문 항목, 최근 시도, 최근 거래의 저장된 결과. PG 호출 없음. |
-| POST | `/orders/{orderId}/payment-attempts` | `201` 시도 | 결제창을 열기 전 시도 생성. 요청 본문 없음. |
-| POST | `/payment-attempts/{attemptId}/authentication-result` | `200` 시도 | 인증 취소·실패 이벤트 기록. |
-| GET | `/payment-config` | `200` 공개 설정 | 결제 사용 가능 여부, 클라이언트 키, UI variant 키. 시크릿 키는 반환하지 않음. |
-| POST | `/payments/confirm` | `200` / `202` / `422` 주문 | 인증 후 최종 승인. 불확실한 결과는 같은 요청에서 한 번 재조회. |
+| Method | Path | 정상 응답 | 주요 오류 | 동작 |
+| --- | --- | --- | --- | --- |
+| GET | `/products` | `200` 상품 배열 | — | 판매 중인 상품을 표시 순서대로 반환. |
+| GET | `/products/{id}` | `200` 상품 | `404 PRODUCT_NOT_FOUND` | 판매 중인 상품 상세. 판매 중지 상품도 없는 것으로 본다. |
+| POST | `/orders` | `201` 주문 | `400 INVALID_CART`·`PRODUCT_NOT_FOUND` | 서버 가격으로 주문 생성. `Location: /orders/{orderId}` 포함. |
+| GET | `/orders/{orderId}` | `200` 주문 | `404 ORDER_NOT_FOUND` | 주문 항목, 최근 시도, 가장 최근에 승인을 요청한 시도의 저장된 결과. PG 호출 없음. |
+| POST | `/orders/{orderId}/payment-attempts` | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE` | 결제창을 열기 전 시도 생성. 요청 본문 없음. |
+| POST | `/payment-attempts/{attemptId}/authentication-result` | `200` 시도 | `400 INVALID_ATTEMPT_STATUS`, `404 ATTEMPT_NOT_FOUND` | 인증 취소·실패 이벤트 기록. |
+| GET | `/payment-config` | `200` 공개 설정 | — | 결제 사용 가능 여부, 클라이언트 키, UI variant 키. 시크릿 키는 반환하지 않음. |
+| POST | `/payments/confirm` | `200` / `202` / `422` 주문 | `400 AMOUNT_MISMATCH`, `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`, `409 PAYMENT_CONFLICT`·`ATTEMPT_CONFLICT`, `503 PAYMENT_NOT_CONFIGURED` | 인증 후 최종 승인. 불확실한 결과는 같은 요청에서 한 번 재조회. |
 
-호출 순서는 주문 생성 → 시도 생성 → 결제창 인증 → 서버 승인이다. 시도 생성은 `PENDING_PAYMENT` 주문에 `FAILED`가 아닌 거래가 없을 때 허용한다. 테스트 키가 없으면 공개 설정의 `enabled`는 `false`이며 신규 승인은 `503`으로 거부한다.
+요청 본문 형식이 잘못되면 `400 INVALID_REQUEST`, 같은 행을 동시에 수정하거나 DB 제약에 걸리면 `409 PAYMENT_CONFLICT`, DB에 접근하지 못하면 `503 STORAGE_UNAVAILABLE`을 반환할 수 있다.
+
+호출 순서는 주문 생성 → 시도 생성 → 결제창 인증 → 서버 승인이다. 시도 생성은 승인 슬롯이 비어 있는 `PENDING_PAYMENT` 주문에만 허용한다. 테스트 키가 없으면 공개 설정의 `enabled`는 `false`이며 신규 승인은 `503`으로 거부한다.
 
 ## 주문 생성
 
@@ -84,15 +86,15 @@
 | `amount` | 필수 정수. `1`~`999999999999`. DB 주문 금액과 정확히 같아야 한다. |
 | `attemptId` | 필수. 16진수 `8-4-4-4-12` UUID 형식. 서버가 생성한 해당 주문의 시도 ID이며, 신규 승인 시 `STARTED`여야 한다. |
 
-같은 주문·키·시도의 재요청에는 저장된 현재 주문 결과를 반환하고 토스 승인을 다시 호출하지 않는다. 결과가 불확실하더라도 다른 결제 키나 새 시도로 승인을 우회할 수 없다. 이후 시도가 있다면 응답의 최근 시도·거래는 그 현재 이력을 반영한다.
+같은 주문·키·시도의 재요청에는 저장된 현재 주문 결과를 반환하고 토스 승인을 다시 호출하지 않는다. 다만 시도가 1분 넘게 `APPROVING`·`UNKNOWN`이면 승인 대신 토스 조회를 한 번 실행하고 그 결과를 반영해 반환한다. 결과가 불확실하더라도 다른 결제 키나 새 시도로 승인을 우회할 수 없다. 이후 시도가 있다면 응답의 최근 시도·승인은 그 현재 이력을 반영한다.
 
 | HTTP | `payment.status` | 응답 본문 |
 | --- | --- | --- |
 | `200` | `SUCCEEDED` | 주문 |
-| `202` | `PROCESSING`, `UNKNOWN`, `REVIEW_REQUIRED` | 주문 |
+| `202` | `APPROVING`, `UNKNOWN`, `REVIEW_REQUIRED` | 주문 |
 | `422` | `FAILED` | 주문 |
 
-`202`는 결제 성공을 뜻하지 않는다. `GET /orders/{orderId}`로 저장된 결과를 확인할 수 있지만, 조회 자체가 PG 재조회를 수행하지는 않는다. 승인 거래가 생성된 뒤에는 명확한 `FAILED`일 때만 같은 주문의 새 결제를 허용한다. 거래 생성 전 인증 취소·실패는 새 시도로 다시 진행할 수 있다.
+`202`는 결제 성공을 뜻하지 않는다. 서버의 복구 작업이 `APPROVING`·`UNKNOWN`을 토스 조회로 확정하므로 `GET /orders/{orderId}`로 나중에 결과를 확인한다. 주문 조회 자체는 PG를 호출하지 않는다. 승인을 요청한 뒤에는 명확한 `FAILED`일 때만 같은 주문의 새 결제를 허용한다. 승인 요청 전 인증 취소·실패는 새 시도로 다시 진행할 수 있다.
 
 승인 성공 `200` 응답 예시:
 
@@ -113,7 +115,7 @@
     }
   ],
   "createdAt": "2026-09-28T01:00:00Z",
-  "status": "CONFIRMED",
+  "status": "PAID",
   "latestAttempt": {
     "id": "123e4567-e89b-12d3-a456-426614174000",
     "status": "SUCCEEDED",
@@ -136,6 +138,16 @@
 
 시도 생성 응답에는 `orderId`가 있지만 주문의 `latestAttempt`에는 포함되지 않는다. `paymentKey`는 주문 응답에 노출하지 않는다. `paidAmount`·`paidCurrency`·`pgStatus`는 PG에서 확인한 정보이며, 결과 판단은 서비스의 `payment.status`를 사용한다.
 
+## 상태 값
+
+| 필드 | 값 | 클라이언트 처리 |
+| --- | --- | --- |
+| 주문 `status` | `PENDING_PAYMENT`, `PAYMENT_IN_PROGRESS`, `PAID` | `PENDING_PAYMENT`일 때만 결제 버튼을 활성화한다. |
+| `payment.status` | `READY`, `APPROVING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`, `REVIEW_REQUIRED` | `SUCCEEDED`일 때만 결제 완료로 표시한다. `APPROVING`·`UNKNOWN`·`REVIEW_REQUIRED`에서는 다시 결제를 권하지 않고 주문 조회를 안내한다. |
+| `latestAttempt.status` | `STARTED`, `AUTH_CANCELED`, `AUTH_FAILED`, `APPROVING`, `UNKNOWN`, `REVIEW_REQUIRED`, `SUCCEEDED`, `FAILED` | 결제창 닫기·인증 실패 안내에 사용한다. |
+
+`payment.status`의 `READY`는 승인을 요청한 시도가 없다는 응답 값이다. 각 상태의 의미와 전이는 [아키텍처](architecture.md#상태)를 참고한다.
+
 ## 오류 응답
 
 입력·조회·충돌·저장 오류는 다음 형식이다. 승인 결과의 `422`는 이 오류 형식이 아니라 위 주문 본문을 반환한다.
@@ -154,4 +166,4 @@
 | `409` | `ORDER_NOT_PAYABLE`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT` | 중복·동시 처리 충돌 또는 진행할 수 없는 주문·시도. |
 | `503` | `PAYMENT_NOT_CONFIGURED`, `STORAGE_UNAVAILABLE` | 키 미설정 또는 DB 접근·트랜잭션 장애. |
 
-저장 장애와 응답 유실은 실제 승인 실패를 보장하지 않는다. 주문 결과와 PG 기록을 먼저 확인해야 하며, 미확정 거래의 자동 복구 기능은 없다. 자세한 처리 경계는 [아키텍처](architecture.md)를 참고한다.
+저장 장애와 응답 유실은 실제 승인 실패를 보장하지 않는다. 다시 결제하지 말고 주문 결과를 조회해야 한다. 미확정 승인은 서버의 복구 작업이 토스 조회로 확정하며, 자세한 처리 경계는 [아키텍처](architecture.md#실패와-복구)를 참고한다.

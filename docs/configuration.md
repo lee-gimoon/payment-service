@@ -17,6 +17,7 @@
 | `TOSS_SECRET_KEY` | 빈 문자열 | 서버 승인·조회 API의 시크릿 키 |
 | `TOSS_PAYMENT_METHOD_VARIANT_KEY` | 빈 문자열 | 결제수단 UI의 variantKey |
 | `TOSS_AGREEMENT_VARIANT_KEY` | 빈 문자열 | 약관 UI의 variantKey |
+| `PAYMENT_RECOVERY_ENABLED` | `true` | 미확정 승인 복구 작업 실행 여부 |
 
 프런트엔드는 `GET /payment-config`에서 공개 클라이언트 키와 UI 설정을 받습니다. 시크릿 키는 이 응답에 포함하지 않습니다. 프런트엔드용 토스 환경변수를 별도로 설정할 필요가 없습니다.
 
@@ -55,6 +56,12 @@ $env:TOSS_AGREEMENT_VARIANT_KEY = 'YOUR_AGREEMENT_VARIANT'
 ```
 
 두 설정은 `renderPaymentWindow()`의 `variantKey.paymentMethod`, `variantKey.agreement`로 전달합니다. 옵션 명세는 [토스 결제창형 SDK](https://docs.tosspayments.com/sdk/v2/js/payment-window)에 있습니다.
+
+## 결제 복구 작업
+
+백엔드는 결과를 모르는 승인(`APPROVING`·`UNKNOWN`)을 1분마다 토스에 조회해 확정합니다. `PAYMENT_RECOVERY_ENABLED=false`로 설정하면 이 주기 작업이 실행되지 않고, 같은 결제 키로 승인을 다시 요청할 때만 조회합니다. 이 경우 미확정 주문은 확정될 때까지 새 결제가 막히므로 로컬 실행에서는 기본값을 유지합니다.
+
+실행 주기와 수동 확인 기한은 코드 상수입니다. 조회 결과별 처리는 [아키텍처](architecture.md#실패와-복구)에 있습니다.
 
 ## 로컬 PostgreSQL과 pgAdmin
 
