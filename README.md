@@ -45,7 +45,7 @@ docker compose up -d
 
 PostgreSQL과 pgAdmin이 실행됩니다. 기본 연결 정보는 [설정 문서](docs/configuration.md)에 있습니다.
 
-Flyway는 서버 시작 시 [V1 초기 스키마](src/main/resources/db/migration/V1__initial_schema.sql)를 적용하고 상품 10종을 등록합니다. 현재 V1은 새 DB를 위한 정의입니다. 이전 마이그레이션 이력이 있는 DB는 그대로 업그레이드할 수 없으며, 기존 데이터를 유지하려면 [별도 개발 DB를 지정](docs/development.md)합니다.
+처음 백엔드를 시작하면 Flyway가 [V1 초기 스키마](src/main/resources/db/migration/V1__initial_schema.sql)를 적용하고 상품 10종을 등록합니다.
 
 ### 2. 토스 설정과 백엔드 실행
 

@@ -34,7 +34,7 @@ macOS / Linux:
 ./gradlew test bootJar
 ```
 
-통합 테스트는 Testcontainers가 생성한 PostgreSQL 18 컨테이너에 새 V1을 적용합니다. 애플리케이션의 개발 DB는 사용하지 않습니다. 토스 API는 테스트 대역을 사용하므로 이 명령으로 실제 결제 인증이나 승인을 수행하지 않습니다.
+통합 테스트는 Testcontainers가 생성한 PostgreSQL 18 컨테이너에 V1 초기 스키마를 적용합니다. 애플리케이션의 개발 DB는 사용하지 않습니다. 토스 API는 테스트 대역을 사용하므로 이 명령으로 실제 결제 인증이나 승인을 수행하지 않습니다.
 
 테스트는 서버 금액 계산, 항목 스냅샷, 거래·시도·주문의 저장 원자성, 중복·동시 요청, 승인 응답 검증, 불확실한 결과 재조회, 실패 후 재시도를 검증합니다.
 
@@ -71,19 +71,9 @@ npm run build
 
 ## 데이터베이스와 마이그레이션
 
-현재 스키마는 [V1__initial_schema.sql](../src/main/resources/db/migration/V1__initial_schema.sql) 하나입니다. Hibernate는 스키마를 검증하며, 테이블 생성과 변경은 Flyway가 수행합니다.
+현재 스키마는 [V1__initial_schema.sql](../src/main/resources/db/migration/V1__initial_schema.sql) 하나입니다. 처음 백엔드를 시작하면 Flyway가 V1을 적용하고 초기 상품을 등록합니다. 이후 서버를 다시 시작해도 적용된 마이그레이션은 반복 실행되지 않습니다. Hibernate는 스키마를 검증하며, 테이블 생성과 변경은 Flyway가 수행합니다.
 
-이전 V1~V10을 적용한 DB는 새 V1과 이력이 일치하지 않습니다. 기존 데이터를 보존하려면 별도 개발 DB를 만들고 백엔드 연결을 변경합니다. 기본 Compose 환경에서 새 이름의 DB를 생성하는 예시입니다.
-
-```powershell
-docker compose exec postgres createdb -U payment payment_service_v1
-$env:PAYMENT_DB_URL = 'jdbc:postgresql://localhost:5432/payment_service_v1'
-.\gradlew.bat bootRun
-```
-
-이 명령은 `payment_service_v1`이 아직 없을 때 한 번 실행합니다. 기존 `payment_service` DB와 Docker 볼륨은 유지됩니다. pgAdmin에서는 생성한 DB를 선택해 조회합니다.
-
-앞으로 공유·배포한 스키마를 변경할 때는 기존 마이그레이션을 수정하지 않고 다음 버전의 파일을 추가합니다. SQL과 엔티티를 함께 변경하고 새 DB 적용 및 이전 버전에서의 전환을 검증합니다.
+스키마를 변경할 때는 이미 적용된 V1을 수정하지 않고 V2 등 다음 버전의 마이그레이션 파일을 추가합니다. SQL과 엔티티를 함께 변경하고 빈 DB와 V1이 적용된 DB에서 모두 검증합니다.
 
 ## 변경과 기여
 

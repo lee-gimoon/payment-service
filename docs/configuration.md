@@ -72,7 +72,7 @@ pgAdmin의 기본 로그인 값은 Compose 환경변수 `PGADMIN_DEFAULT_EMAIL`,
 
 기본 서버 연결은 [servers.json](../docker/pgadmin/servers.json)과 [pgpass](../docker/pgadmin/pgpass)에 등록되어 있습니다. pgAdmin 컨테이너는 Compose 서비스명 `postgres`로 DB에 연결하고, 호스트에서 실행하는 백엔드는 `localhost`로 연결합니다.
 
-`PAYMENT_DB_*`를 변경해도 Compose의 DB 이름·계정이나 pgAdmin 연결 정보가 함께 변경되지는 않습니다. 별도 DB를 사용하는 방법은 [개발 가이드](development.md)를 참고하세요.
+기본 설정을 사용할 때는 `PAYMENT_DB_*`를 지정할 필요가 없습니다. 이 값을 변경해도 Compose의 DB 이름·계정이나 pgAdmin 연결 정보가 함께 변경되지는 않으므로, 각 설정의 접속 정보를 맞춰야 합니다.
 
 ## 개발 서버 주소
 
