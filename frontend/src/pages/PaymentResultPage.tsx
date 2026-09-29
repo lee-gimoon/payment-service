@@ -1,21 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  ApiRequestError,
   confirmPayment,
   getOrder,
   recordAuthenticationResult
 } from "../api/paymentApi";
+import { useAuth } from "../auth/auth";
 import { AppShell } from "../components/AppShell";
 import {
   formatAmount,
   formatDateTime,
   paymentStatusLabel
 } from "../lib/formatters";
-import { removeLocalValue, removeSessionValue, writeLocalValue } from "../lib/storage";
-import { readPaymentRedirect } from "../payments/paymentRedirect";
+import { clearPendingOrderId, saveLastOrderId } from "../lib/orderStorage";
+import { removeSessionValue } from "../lib/storage";
+import { readPaymentRedirect, recordPaymentFailure } from "../payments/paymentRedirect";
 import type { ConfirmPaymentCommand, Order } from "../types/payment";
-
-const LAST_ORDER_ID_KEY = "lastOrderId";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error
@@ -23,7 +24,22 @@ function errorMessage(error: unknown): string {
     : "결과를 확인하지 못했습니다. 다시 결제하지 말고 저장된 결과를 조회해주세요.";
 }
 
+// 로그인 확인이 끝난 뒤 복귀 주소를 읽는다. Keycloak이 로그인 복귀 정보를 먼저 읽어야 하고, 승인 요청에는 토큰이 필요하다.
 export function PaymentResultPage() {
+  const { status, customer } = useAuth();
+  if (status === "checking") {
+    return <AppShell footerText="테스트 결제 결과" mainClassName="result-page">
+      <p className="eyebrow">PAYMENT RESULT</p>
+      <h1>결제 결과를 확인하고 있습니다.</h1>
+      <p role="status">로그인 상태를 확인하고 있습니다.</p>
+    </AppShell>;
+  }
+  return <PaymentResult key={customer?.id ?? "signedOut"} customerId={customer?.id ?? null} />;
+}
+
+function PaymentResult({ customerId }: { customerId: string | null }) {
+  const { status: authStatus, login } = useAuth();
+  // 로그인 안내를 보여주기 전에도 복귀 정보부터 보관한다.
   const [redirect] = useState(readPaymentRedirect);
   const [order, setOrder] = useState<Order | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmPaymentCommand | null>(
@@ -35,6 +51,7 @@ export function PaymentResultPage() {
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const busyRef = useRef(true);
 
   function showOrder(nextOrder: Order) {
@@ -44,9 +61,9 @@ export function PaymentResultPage() {
       ? "결제가 정상적으로 승인되었습니다. 주문 내역에서 상품과 결제 정보를 확인하세요."
       : nextOrder.payment.message);
     setError("");
-    writeLocalValue(LAST_ORDER_ID_KEY, nextOrder.orderId);
+    saveLastOrderId(customerId, nextOrder.orderId);
     if (nextOrder.payment.status === "SUCCEEDED") {
-      removeLocalValue("pendingOrderId");
+      clearPendingOrderId(customerId, nextOrder.orderId);
     }
 
     // 서버에 기록된 결제는 재승인 대신 저장된 결과를 조회한다.
@@ -59,6 +76,9 @@ export function PaymentResultPage() {
   }
 
   function showRequestError(requestError: unknown) {
+    if (requestError instanceof ApiRequestError && requestError.status === 401) {
+      setNeedsSignIn(true);
+    }
     setTitle("결제 결과 확인이 필요합니다");
     setMessage(
       "요청 결과를 받지 못했습니다. 주문 내역을 조회하고, 확인되지 않으면 주문번호로 문의해주세요."
@@ -86,32 +106,19 @@ export function PaymentResultPage() {
   }
 
   useEffect(() => {
+    if (authStatus !== "signedIn" || !customerId) return;
     let active = true;
     document.title = "결제 결과 · MODO CLUB";
 
     async function initializeResult() {
       try {
         if (redirect.flow === "fail") {
-          if (redirect.attemptId) {
-            await recordAuthenticationResult(redirect.attemptId,
-              redirect.errorCode === "PAY_PROCESS_CANCELED" ? "AUTH_CANCELED" : "AUTH_FAILED",
-              redirect.errorCode);
-          }
-          const failedOrder = redirect.orderId ? await getOrder(redirect.orderId) : null;
+          const failedOrder = await loadFailedOrder();
           if (!active) {
             return;
           }
 
-          if (failedOrder) {
-            showOrder(failedOrder);
-          }
-          if (!failedOrder || failedOrder.payment.status === "READY") {
-            setTitle("결제수단 인증이 완료되지 않았습니다");
-            setMessage(
-              redirect.errorMessage || "결제창에서 인증이 취소되었거나 실패했습니다. 스토어로 돌아가 다시 진행할 수 있습니다."
-            );
-            setError(redirect.errorCode || "");
-          }
+          showFailedOrder(failedOrder);
           return;
         }
 
@@ -145,14 +152,33 @@ export function PaymentResultPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authStatus, customerId]);
+
+  async function loadFailedOrder() {
+    await recordPaymentFailure(redirect, recordAuthenticationResult);
+    return redirect.orderId ? getOrder(redirect.orderId) : null;
+  }
+
+  function showFailedOrder(failedOrder: Order | null) {
+    if (failedOrder) showOrder(failedOrder);
+    if (!failedOrder || failedOrder.payment.status === "READY") {
+      setTitle("결제수단 인증이 완료되지 않았습니다");
+      setMessage(redirect.errorMessage || "결제창에서 인증이 취소되었거나 실패했습니다. 스토어로 돌아가 다시 진행할 수 있습니다.");
+      setError(redirect.errorCode || "");
+    }
+  }
+
   function handleRefresh() {
     if (!redirect.orderId) {
       return;
     }
 
     void runAction(async () => {
-      showOrder(await getOrder(redirect.orderId as string));
+      if (redirect.flow === "fail") {
+        showFailedOrder(await loadFailedOrder());
+      } else {
+        showOrder(await getOrder(redirect.orderId as string));
+      }
     });
   }
   function handleRetryConfirmation() {
@@ -163,6 +189,21 @@ export function PaymentResultPage() {
     void runAction(async () => {
       showOrder(await confirmPayment(confirmation));
     });
+  }
+
+  if (authStatus !== "signedIn" || !customerId || needsSignIn) {
+    return <AppShell footerText="테스트 결제 결과" mainClassName="result-page">
+      <p className="eyebrow">PAYMENT RESULT</p>
+      <h1>로그인 후 결제 결과를 확인해주세요.</h1>
+      <section className="lookup-card" aria-labelledby="result-sign-in-title">
+        <div>
+          <h2 id="result-sign-in-title">주문한 계정으로 로그인해주세요</h2>
+          <p className="subtle">주문은 주문한 회원만 확인할 수 있습니다. 로그인하면 결제 결과 처리를 이어갑니다.</p>
+          {redirect.orderId && <p className="subtle">주문번호 {redirect.orderId}</p>}
+        </div>
+        <button className="primary-button" type="button" onClick={() => login()}>로그인하고 결과 확인하기</button>
+      </section>
+    </AppShell>;
   }
 
   return (

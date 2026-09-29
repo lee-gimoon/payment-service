@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
-import { readPaymentRedirect } from "../src/payments/paymentRedirect.ts";
+import { readPaymentRedirect, recordPaymentFailure } from "../src/payments/paymentRedirect.ts";
 
 const attemptId = "123e4567-e89b-12d3-a456-426614174000";
 
@@ -109,4 +109,97 @@ test("잘못된 인증 복귀는 이전 시도의 승인 정보를 복원하지 
   window.location.search = "?flow=success&orderId=order-123&paymentKey=key&amount=10000";
   assert.equal(readPaymentRedirect().confirmation, null);
   assert.equal(readPaymentRedirect().confirmation, null);
+});
+
+test("취소·실패 복귀 정보는 URL 정리 후 재로그인해도 같은 시도로 복원한다", () => {
+  for (const code of ["PAY_PROCESS_CANCELED", "REJECT_CARD_COMPANY"]) {
+    window.location.search = `?flow=fail&requestedOrderId=order-123&attemptId=${attemptId}&code=${code}&message=Declined`;
+    const original = readPaymentRedirect();
+    assert.equal(window.location.search, "?orderId=order-123");
+    assert.deepEqual(readPaymentRedirect(), original);
+  }
+});
+
+test("로그인 만료·다른 회원·통신 오류에는 실패 정보를 유지하고 재로그인 후 기록한다", async () => {
+  for (const error of [Object.assign(new Error("Sign in"), { status: 401 }),
+    Object.assign(new Error("Not found"), { status: 404 }), new TypeError("Failed to fetch")]) {
+    window.location.search = `?flow=fail&orderId=order-123&attemptId=${attemptId}&code=PAY_PROCESS_CANCELED&message=Cancelled`;
+    const redirect = readPaymentRedirect();
+    await assert.rejects(recordPaymentFailure(redirect, async () => { throw error; }), failure => failure === error);
+    const resumed = readPaymentRedirect();
+    assert.deepEqual(resumed, redirect);
+    const calls = [];
+    await recordPaymentFailure(resumed, async (...args) => { calls.push(args); });
+    assert.deepEqual(calls, [[attemptId, "AUTH_CANCELED", "PAY_PROCESS_CANCELED"]]);
+    assert.equal(window.sessionStorage.getItem("pendingAuthenticationResult:order-123"), null);
+    assert.equal(readPaymentRedirect().flow, null);
+  }
+});
+
+test("취소 외의 인증 실패는 AUTH_FAILED로 기록한다", async () => {
+  window.location.search = `?flow=fail&orderId=order-123&attemptId=${attemptId}&code=REJECT_CARD_COMPANY`;
+  const calls = [];
+  await recordPaymentFailure(readPaymentRedirect(), async (...args) => { calls.push(args); });
+  assert.deepEqual(calls, [[attemptId, "AUTH_FAILED", "REJECT_CARD_COMPANY"]]);
+});
+
+test("실패 기록 성공 후 주문 조회에 실패해도 다음 복귀에서 실패 기록을 다시 보내지 않는다", async () => {
+  window.location.search = `?flow=fail&orderId=order-123&attemptId=${attemptId}&code=PAY_PROCESS_CANCELED`;
+  let calls = 0;
+  const record = async () => { calls++; };
+  await assert.rejects(async () => {
+    await recordPaymentFailure(readPaymentRedirect(), record);
+    throw new Error("Order lookup failed");
+  }, /Order lookup failed/);
+  await recordPaymentFailure(readPaymentRedirect(), record);
+  assert.equal(calls, 1);
+});
+
+test("늦은 취소가 승인 상태로 응답해도 처리한 복귀 정보는 제거한다", async () => {
+  for (const status of ["APPROVING", "SUCCEEDED"]) {
+    window.location.search = `?flow=fail&orderId=order-123&attemptId=${attemptId}&code=PAY_PROCESS_CANCELED`;
+    await recordPaymentFailure(readPaymentRedirect(), async () => ({ id: attemptId, status }));
+    assert.equal(readPaymentRedirect().flow, null);
+  }
+});
+
+test("새 인증 성공은 이전 취소 복귀 정보를 제거하고 승인을 복원한다", () => {
+  window.location.search = `?flow=fail&orderId=order-123&attemptId=${attemptId}&code=PAY_PROCESS_CANCELED`;
+  readPaymentRedirect();
+  window.location.search = `?flow=success&orderId=order-123&attemptId=${attemptId}&paymentKey=new-key&amount=10000`;
+  const success = readPaymentRedirect();
+  assert.equal(success.flow, "success");
+  assert.equal(window.sessionStorage.getItem("pendingAuthenticationResult:order-123"), null);
+  assert.deepEqual(readPaymentRedirect().confirmation, success.confirmation);
+});
+
+test("이전 실패 기록의 늦은 응답이 새 시도의 복귀 정보를 지우지 않는다", async () => {
+  window.location.search = `?flow=fail&orderId=order-123&attemptId=${attemptId}&code=PAY_PROCESS_CANCELED`;
+  let complete;
+  const recording = recordPaymentFailure(readPaymentRedirect(), () => new Promise(resolve => { complete = resolve; }));
+  const newAttemptId = "123e4567-e89b-12d3-a456-426614174001";
+  window.location.search = `?flow=fail&orderId=order-123&attemptId=${newAttemptId}&code=REJECT_CARD_COMPANY`;
+  readPaymentRedirect();
+  complete();
+  await recording;
+  assert.equal(readPaymentRedirect().attemptId, newAttemptId);
+});
+
+test("다른 주문이나 잘못된 시도·오류 정보를 저장한 실패 기록은 복원하지 않는다", () => {
+  const valid = { orderId: "order-123", attemptId, errorCode: "PAY_PROCESS_CANCELED", errorMessage: "Cancelled" };
+  for (const data of [null, [], { ...valid, orderId: "order-456" }, { ...valid, attemptId: "invalid" },
+    { ...valid, errorCode: 123 }, { ...valid, errorCode: "x".repeat(81) },
+    { ...valid, errorMessage: {} }, { ...valid, errorMessage: "x".repeat(301) }]) {
+    window.sessionStorage.setItem("pendingAuthenticationResult:order-123", JSON.stringify(data));
+    window.location.search = "?orderId=order-123";
+    assert.equal(readPaymentRedirect().flow, null);
+  }
+});
+
+test("잘못된 새 인증 복귀에 이전 실패 정보를 재사용하지 않는다", () => {
+  window.location.search = `?flow=fail&orderId=order-123&attemptId=${attemptId}&code=PAY_PROCESS_CANCELED`;
+  readPaymentRedirect();
+  window.location.search = "?flow=success&orderId=order-123&paymentKey=key&amount=10000";
+  assert.equal(readPaymentRedirect().confirmation, null);
+  assert.equal(readPaymentRedirect().flow, null);
 });

@@ -5,6 +5,7 @@ import {
   Route,
   Routes
 } from "react-router-dom";
+import { AuthProvider } from "./auth/auth";
 import { PaymentResultPage } from "./pages/PaymentResultPage";
 import { CartPage } from "./pages/CartPage";
 import { OrderPage } from "./pages/OrderPage";
@@ -21,6 +22,7 @@ if (!root) {
 
 createRoot(root).render(
   <BrowserRouter>
+    <AuthProvider>
     <ShopProvider>
       <Routes>
         <Route path="/" element={<StorePage />} />
@@ -32,5 +34,6 @@ createRoot(root).render(
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ShopProvider>
+    </AuthProvider>
   </BrowserRouter>
 );

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tosspayments/tosspayments-sdk": "^2.8.1",
+    "keycloak-js": "^26.2.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.3"

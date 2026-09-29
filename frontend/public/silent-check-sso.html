@@ -1,0 +1,9 @@
+<!doctype html>
+<!-- 파일 역할: Keycloak 로그인 상태를 숨은 iframe에서 확인한 결과를 앱에 전달한다. -->
+<html lang="ko">
+  <body>
+    <script>
+      parent.postMessage(location.href, location.origin);
+    </script>
+  </body>
+</html>
