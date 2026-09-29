@@ -68,7 +68,9 @@ OAuth 2.0 규칙에는 네 등장인물이 나오고, 규칙은 각자 무엇을
 
 토큰을 받는 절차는 여러 가지이고, 이 프로젝트는 **Authorization Code + PKCE**를 씁니다.
 
-- Keycloak은 로그인 뒤 토큰 대신 **일회용 교환권**(Authorization Code)을 주소에 붙여 쇼핑몰로 돌려보냅니다. 앱이 이 교환권을 토큰으로 바꿉니다. 브라우저 주소창과 방문 기록에는 금방 쓸모없어지는 교환권만 남습니다.
+- Keycloak은 로그인 뒤 JWT 대신 **일회용 교환권**(Authorization Code)을 주소에 붙여 쇼핑몰로 돌려보냅니다. 교환권은 풀어 봐도 아무 정보가 없는 무작위 문자열입니다.
+- 쇼핑몰 페이지가 열리면 `keycloak-js`가 이 교환권을 **Keycloak에 다시 보내고**, Keycloak이 확인한 뒤 access token(JWT)을 돌려줍니다. 교환은 라이브러리가 자동으로 하므로 직접 작성한 코드는 없습니다.
+- 교환권은 한 번만, 1분 안에 쓸 수 있습니다. 브라우저 주소창과 방문 기록에 JWT 대신 금방 쓸모없어지는 교환권만 남으므로 더 안전합니다.
 - **PKCE**(Proof Key for Code Exchange)는 교환권을 가로채도 쓰지 못하게 하는 장치입니다. 로그인을 시작한 앱만 아는 비밀 문자열이 있어야 교환됩니다.
 
 ### OpenID Connect: OAuth에 "누구인지"를 더한 로그인 표준
@@ -129,7 +131,7 @@ OAuth 2.0            토큰을 발급받는 절차 (권한 빌려주기)
 | 1 | 헤더의 **로그인**을 누르면 Keycloak 로그인 화면으로 이동 | [keycloak.ts](../frontend/src/auth/keycloak.ts) `login()` |
 | 2 | 이메일·비밀번호 입력. 확인은 Keycloak이 하고 쇼핑몰은 비밀번호를 보지 못함 | Keycloak |
 | 3 | Keycloak이 교환권(code)을 붙여 쇼핑몰로 돌려보냄 | Keycloak |
-| 4 | `keycloak-js`가 교환권을 access token(JWT)으로 바꿔 메모리에 보관 | [keycloak.ts](../frontend/src/auth/keycloak.ts) `initAuth()` |
+| 4 | `keycloak-js`가 교환권을 Keycloak에 보내 access token(JWT)으로 바꿔 받고 메모리에 보관 | [keycloak.ts](../frontend/src/auth/keycloak.ts) `initAuth()` |
 | 5 | 주문·결제 API에 `Authorization: Bearer <token>` 헤더를 붙임 | [paymentApi.ts](../frontend/src/api/paymentApi.ts) |
 | 6 | Spring이 서명·발급처·대상·만료를 검사. 실패하면 `401` | [SecurityConfiguration](../src/main/java/com/example/payment/config/SecurityConfiguration.java) |
 | 7 | 토큰의 `sub`로 주문 주인을 기록·확인 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java) `isOwnedBy()` |
