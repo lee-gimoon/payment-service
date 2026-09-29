@@ -18,8 +18,9 @@
 | `TOSS_PAYMENT_METHOD_VARIANT_KEY` | 빈 문자열 | 결제수단 UI의 variantKey |
 | `TOSS_AGREEMENT_VARIANT_KEY` | 빈 문자열 | 약관 UI의 variantKey |
 | `PAYMENT_RECOVERY_ENABLED` | `true` | 미확정 승인 복구 작업 실행 여부 |
+| `KEYCLOAK_ISSUER_URI` | `http://127.0.0.1:8081/realms/modo-club` | access token 발급자. 공개키를 이 주소에서 찾는다 |
 
-프런트엔드는 `GET /payment-config`로 공개 키와 UI 설정을 받으므로 별도 환경변수가 필요 없습니다.
+프런트엔드는 `GET /payment-config`로 공개 키와 UI 설정을 받습니다. Keycloak 주소를 바꿀 때만 `frontend/.env.local`에 `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID`를 지정합니다.
 
 ## 토스 키
 
@@ -55,12 +56,39 @@ $env:TOSS_SECRET_KEY = 'test_gsk_REPLACE_WITH_YOUR_KEY'
 
 | 항목 | 기본값 |
 | --- | --- |
-| PostgreSQL | `127.0.0.1:5432`, DB `payment_service`, `payment` / `payment_local` |
+| PostgreSQL | `127.0.0.1:5432`, DB `payment_service`·`keycloak`, `payment` / `payment_local` |
 | pgAdmin | `http://127.0.0.1:5050`, `admin@payment-service.com` / `payment_admin_local` |
 
-- pgAdmin에는 DB 연결이 미리 등록되어 있습니다([servers.json](../docker/pgadmin/servers.json)).
+- 한 PostgreSQL 컨테이너 안에 결제 DB(`payment_service`)와 Keycloak DB(`keycloak`)를 따로 둡니다. Keycloak DB의 테이블은 Keycloak이 직접 만들고 관리합니다.
+- pgAdmin에는 DB 연결이 미리 등록되어 있어 두 DB 모두 `Payment Service` 아래에 보입니다([servers.json](../docker/pgadmin/servers.json)).
+- pgAdmin은 [pgpass](../docker/pgadmin/pgpass)를 처음 실행할 때만 복사합니다. Keycloak을 추가하기 전부터 쓰던 pgAdmin에서 `keycloak` DB를 열 때 비밀번호를 물으면 DB 암호를 입력하거나 `docker compose exec pgadmin sh -c "cp /pgadmin4/pgpass /var/lib/pgadmin/storage/admin_payment-service.com/.pgpass"`를 한 번 실행합니다.
 - `PAYMENT_DB_*`를 바꿔도 Compose 설정은 바뀌지 않으므로 양쪽을 함께 맞춥니다.
 - 데이터는 명명된 볼륨에 저장됩니다. `docker compose stop`과 `docker compose down` 모두 데이터를 유지합니다.
+
+## Keycloak
+
+`docker compose up -d`로 PostgreSQL과 함께 실행됩니다. 개념과 사용법은 [로그인과 회원](authentication.md)에 있습니다.
+
+| 항목 | 기본값 |
+| --- | --- |
+| 주소 | `http://127.0.0.1:8081`, 관리 콘솔 `/admin` |
+| 관리자 | `admin` / `keycloak_admin_local` (`KEYCLOAK_ADMIN_USERNAME`·`KEYCLOAK_ADMIN_PASSWORD`로 변경) |
+| realm·client | `modo-club` / `modo-club-web` ([realm 설정](../docker/keycloak/modo-club-realm.json)) |
+| 로그인 테마 | `modo-club` ([테마 폴더](../docker/keycloak-themes/modo-club/login/), [디자인 설명](authentication.md#로그인-화면-디자인)) |
+| 실행 모드 | `start-dev` (HTTP, 로컬 개발용) |
+| 메모리 한도 | 1.5GB. 힙은 한도의 70%까지, 힙 밖 메모리는 약 300MB |
+
+`keycloak` DB는 [01-keycloak.sql](../docker/postgres/init/01-keycloak.sql)이 만듭니다. 이 스크립트는 PostgreSQL 볼륨이 비어 있을 때만 자동 실행되므로, **Keycloak을 추가하기 전부터 쓰던 볼륨**에서는 한 번 직접 실행합니다.
+
+```powershell
+docker compose up -d postgres
+docker compose exec postgres psql -U payment -d postgres -f /docker-entrypoint-initdb.d/01-keycloak.sql
+docker compose up -d
+```
+
+- 스크립트는 DB가 이미 있으면 건너뛰므로 다시 실행해도 됩니다.
+- 첫 시작은 1분쯤 걸립니다. `docker compose logs keycloak`에 `Realm 'modo-club' imported`와 `started`가 보이면 준비된 것입니다.
+- 쓰지 않을 때는 `docker compose stop keycloak`으로 메모리를 돌려받을 수 있습니다. 이때 로그인과 주문·결제 API는 동작하지 않습니다.
 
 ## 시각 표시
 

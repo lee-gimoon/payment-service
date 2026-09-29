@@ -2,15 +2,16 @@
 
 Spring Boot와 React로 구성한 티셔츠 쇼핑몰의 주문·결제 서비스입니다. MODO CLUB 스토어에서 상품과 사이즈를 선택하고, 서버가 계산한 주문 금액으로 토스페이먼츠 결제를 진행합니다.
 
-현재 버전은 **토스 테스트 키를 사용하는 로컬 개발용 서비스**입니다. 로그인, 주문 접근 권한, 배송·재고 관리, 취소·환불은 구현되어 있지 않습니다.
+현재 버전은 **토스 테스트 키를 사용하는 로컬 개발용 서비스**입니다. 회원가입·로그인은 Keycloak이 맡으며, 배송·재고 관리, 취소·환불은 구현되어 있지 않습니다.
 
 ## 주요 기능
 
 - 상품 카탈로그, 아바타 착용 미리보기, 옵션별 장바구니
+- Keycloak 회원가입·로그인, 주문한 회원만 주문 조회·결제
 - 서버 가격으로 계산한 주문과 구매 당시 상품 정보 보존
 - 토스 결제창 인증과 서버 승인(카드·국내 간편결제)
 - 결제 시도 이력 보존, 인증 취소·실패 또는 승인 실패 확정 후 같은 주문에서 재시도
-- 주문번호를 이용한 주문·결제 상태 조회
+- 내 주문의 주문번호를 이용한 주문·결제 상태 조회
 
 ## 결제 설계
 
@@ -29,6 +30,7 @@ Spring Boot와 React로 구성한 티셔츠 쇼핑몰의 주문·결제 서비�
 | 데이터베이스 | PostgreSQL 18, Flyway |
 | 프런트엔드 | React 19, TypeScript, Vite |
 | 결제 | 토스페이먼츠 SDK v2 결제창형, 서버 승인·조회 API |
+| 인증 | Keycloak 26.7 (OIDC), Spring Security OAuth2 Resource Server, keycloak-js |
 | 테스트 | JUnit, Testcontainers, Node.js 내장 테스트 |
 
 정확한 의존성 버전은 [build.gradle](build.gradle)과 [package-lock.json](frontend/package-lock.json)에 있습니다.
@@ -43,13 +45,15 @@ Spring Boot와 React로 구성한 티셔츠 쇼핑몰의 주문·결제 서비�
 
 아래 명령은 저장소 루트에서 시작합니다. 백엔드와 프런트엔드는 각각 별도 터미널에서 실행합니다.
 
-### 1. 데이터베이스 실행
+### 1. 데이터베이스와 Keycloak 실행
 
 ```sh
 docker compose up -d
 ```
 
-PostgreSQL과 pgAdmin이 실행됩니다. 기본 연결 정보는 [설정 문서](docs/configuration.md)에 있습니다.
+PostgreSQL, pgAdmin, Keycloak이 실행됩니다. Keycloak은 첫 시작에 1분쯤 걸리고 메모리를 최대 1.5GB 씁니다. 기본 연결 정보는 [설정 문서](docs/configuration.md)에 있습니다.
+
+Keycloak을 추가하기 전부터 쓰던 DB 볼륨이라면 `keycloak` DB를 한 번 직접 만들어야 합니다. 방법은 [설정 문서의 Keycloak](docs/configuration.md#keycloak)에 있습니다.
 
 처음 백엔드를 시작하면 Flyway가 스키마를 생성하고 초기 상품 10종을 등록합니다. 기존 DB에는 아직 적용하지 않은 마이그레이션만 실행합니다.
 
@@ -85,7 +89,7 @@ npm ci
 npm run dev
 ```
 
-Vite 개발 서버가 API 요청을 백엔드 8080 포트로 전달합니다. 상품 상세에서 사이즈를 선택하고 장바구니로 이동한 뒤 결제를 시작할 수 있습니다. 테스트 키 결제는 실제 청구되지 않습니다.
+Vite 개발 서버가 API 요청을 백엔드 8080 포트로 전달합니다. 상품 상세에서 사이즈를 선택하고 장바구니로 이동한 뒤, 로그인하고 결제를 시작할 수 있습니다. 테스트 회원 계정은 [로그인과 회원](docs/authentication.md#로컬-계정)에 있습니다. 테스트 키 결제는 실제 청구되지 않습니다.
 
 ### 접속 주소
 
@@ -95,18 +99,19 @@ Vite 개발 서버가 API 요청을 백엔드 8080 포트로 전달합니다. �
 | Swagger UI | [http://127.0.0.1:8080/swagger-ui.html](http://127.0.0.1:8080/swagger-ui.html) | 백엔드 (Spring Boot) |
 | OpenAPI JSON | [http://127.0.0.1:8080/v3/api-docs](http://127.0.0.1:8080/v3/api-docs) | 백엔드 (Spring Boot) |
 | pgAdmin | [http://127.0.0.1:5050](http://127.0.0.1:5050) | Docker Compose의 pgAdmin 컨테이너 |
+| Keycloak 관리 콘솔 | [http://127.0.0.1:8081/admin](http://127.0.0.1:8081/admin) | Docker Compose의 Keycloak 컨테이너 |
 
-스토어 화면의 상품·주문·결제 기능을 사용하려면 백엔드와 PostgreSQL도 실행해야 합니다.
+스토어 화면의 상품 기능은 백엔드와 PostgreSQL, 로그인과 주문·결제 기능은 Keycloak까지 실행해야 합니다.
 
 ### 종료
 
-백엔드와 프런트엔드는 실행한 터미널에서 `Ctrl+C`로 종료합니다. IDE에서 실행한 백엔드는 해당 실행 구성을 중지합니다. PostgreSQL과 pgAdmin은 저장소 루트에서 중지합니다.
+백엔드와 프런트엔드는 실행한 터미널에서 `Ctrl+C`로 종료합니다. IDE에서 실행한 백엔드는 해당 실행 구성을 중지합니다. PostgreSQL, pgAdmin, Keycloak은 저장소 루트에서 중지합니다.
 
 ```sh
 docker compose stop
 ```
 
-DB 데이터는 유지되며, 다시 사용할 때는 `docker compose up -d`로 시작합니다.
+DB와 회원 데이터는 유지되며, 다시 사용할 때는 `docker compose up -d`로 시작합니다.
 
 ## 테스트와 빌드
 
@@ -132,7 +137,8 @@ npm run build
 | [아키텍처](docs/architecture.md) | 결제 도메인 그림, 핵심 규칙, 상태, 복구 정책, 설계 결정 |
 | [중복 결제 방지](docs/duplicate-payment-prevention.md) | 같은 주문의 중복 승인을 막는 5단계 |
 | [API](docs/api.md) | 엔드포인트, 요청 예시, 응답 상태와 오류 |
-| [설정](docs/configuration.md) | 환경변수, 토스 키, 로컬 DB·pgAdmin 연결 |
+| [로그인과 회원](docs/authentication.md) | Keycloak 개념, 로그인 흐름, 테스트 계정, realm 설정 |
+| [설정](docs/configuration.md) | 환경변수, 토스 키, 로컬 DB·pgAdmin·Keycloak 연결 |
 | [개발 가이드](docs/development.md) | 테스트, 빌드, 스키마 변경, 기여 시 확인 사항 |
 | [UI 디자인 기준](DESIGN.md) | 현재 화면의 스타일과 결제 문구 |
 

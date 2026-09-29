@@ -3,21 +3,24 @@
 기본 주소는 `http://127.0.0.1:8080`이다. 로컬 프런트엔드는 Vite 프록시로 같은 API를 호출한다.
 
 - 요청·응답은 JSON이며 금액은 원화(`KRW`) 정수다.
-- 사용자 인증과 주문 접근 권한 검사가 없다. 주문번호만 알면 주문을 조회할 수 있다.
+- 주문·결제 API는 Keycloak이 발급한 access token을 `Authorization: Bearer <token>` 헤더로 보내야 한다. 주문은 주문한 회원만 조회·결제할 수 있다. 로그인 흐름은 [로그인과 회원](authentication.md)을 참고한다.
 - 필드 스키마는 실행 중인 서버의 [Swagger UI](http://127.0.0.1:8080/swagger-ui.html)에서 확인한다.
 
 ## 엔드포인트
 
-| Method | Path | 정상 응답 | 주요 오류 | 동작 |
-| --- | --- | --- | --- | --- |
-| GET | `/products` | `200` 상품 배열 | — | 판매 중인 상품 목록 |
-| GET | `/products/{id}` | `200` 상품 | `404 PRODUCT_NOT_FOUND` | 판매 중인 상품 상세 |
-| POST | `/orders` | `201` 주문 | `400 INVALID_CART`·`PRODUCT_NOT_FOUND` | 서버 가격으로 주문 생성 |
-| GET | `/orders/{orderId}` | `200` 주문 | `404 ORDER_NOT_FOUND` | 저장된 주문·결제 결과 조회. PG 호출 없음 |
-| POST | `/orders/{orderId}/payment-attempts` | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE` | 결제창을 열기 전 시도 생성 |
-| POST | `/payment-attempts/{attemptId}/authentication-result` | `200` 시도 | `400 INVALID_ATTEMPT_STATUS`, `404 ATTEMPT_NOT_FOUND` | 인증 취소·실패 기록 |
-| GET | `/payment-config` | `200` 공개 설정 | — | 키 설정 여부, 클라이언트 키, UI variant 키 |
-| POST | `/payments/confirm` | `200` / `202` / `422` 주문 | `400 AMOUNT_MISMATCH`, `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`, `409 PAYMENT_CONFLICT`·`ATTEMPT_CONFLICT`, `503 PAYMENT_NOT_CONFIGURED` | 인증 후 최종 승인 |
+| Method | Path | 로그인 | 정상 응답 | 주요 오류 | 동작 |
+| --- | --- | --- | --- | --- | --- |
+| GET | `/products` | — | `200` 상품 배열 | — | 판매 중인 상품 목록 |
+| GET | `/products/{id}` | — | `200` 상품 | `404 PRODUCT_NOT_FOUND` | 판매 중인 상품 상세 |
+| POST | `/orders` | 필요 | `201` 주문 | `400 INVALID_CART`·`PRODUCT_NOT_FOUND` | 서버 가격으로 주문 생성 |
+| GET | `/orders/{orderId}` | 필요 | `200` 주문 | `404 ORDER_NOT_FOUND` | 저장된 주문·결제 결과 조회. PG 호출 없음 |
+| POST | `/orders/{orderId}/payment-attempts` | 필요 | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE` | 결제창을 열기 전 시도 생성 |
+| POST | `/payment-attempts/{attemptId}/authentication-result` | 필요 | `200` 시도 | `400 INVALID_ATTEMPT_STATUS`, `404 ATTEMPT_NOT_FOUND` | 인증 취소·실패 기록 |
+| GET | `/payment-config` | — | `200` 공개 설정 | — | 키 설정 여부, 클라이언트 키, UI variant 키 |
+| POST | `/payments/confirm` | 필요 | `200` / `202` / `422` 주문 | `400 AMOUNT_MISMATCH`, `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`, `409 PAYMENT_CONFLICT`·`ATTEMPT_CONFLICT`, `503 PAYMENT_NOT_CONFIGURED` | 인증 후 최종 승인 |
+
+- 로그인이 필요한 API에 토큰이 없거나, 서명·발급자·만료·대상(`aud`)이 맞지 않으면 `401 UNAUTHORIZED`다.
+- 다른 회원의 주문과 시도는 존재 여부를 알리지 않고 `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`로 응답한다.
 
 모든 요청에서 본문 형식 오류는 `400 INVALID_REQUEST`, 동시 수정·DB 제약 충돌은 `409 PAYMENT_CONFLICT`, DB 장애는 `503 STORAGE_UNAVAILABLE`이 될 수 있다.
 
@@ -42,6 +45,7 @@
 - 같은 상품·사이즈 조합은 중복할 수 없고, 판매 중인 상품만 주문할 수 있다.
 - 가격은 요청으로 받지 않는다. 서버가 계산한 `amount`를 결제창과 승인 요청에 쓴다.
 - 호출할 때마다 새 주문이 생긴다. 중복 결제 방지는 같은 주문번호 안에서만 적용된다.
+- 주문에는 토큰의 회원 ID(`sub`)가 저장된다. 이후 그 주문의 조회·시도·승인은 같은 회원만 할 수 있다.
 
 ## 시도 생성과 인증 결과
 
@@ -74,7 +78,7 @@
 
 | 필드 | 검증 |
 | --- | --- |
-| `orderId` | 영문·숫자·`_`·`-` 6~64자, 존재하는 주문 |
+| `orderId` | 영문·숫자·`_`·`-` 6~64자, 로그인한 회원의 주문 |
 | `paymentKey` | 공백 불가, 최대 200자 |
 | `amount` | 1 이상 12자리 이하 정수, DB 주문 금액과 같아야 함 |
 | `attemptId` | UUID 형식, 해당 주문의 시도이며 새 승인이면 `STARTED` |
@@ -155,6 +159,7 @@
 | HTTP | 코드 |
 | --- | --- |
 | `400` | `INVALID_REQUEST`, `INVALID_CART`, `PRODUCT_NOT_FOUND`, `AMOUNT_MISMATCH`, `INVALID_ATTEMPT_STATUS` |
+| `401` | `UNAUTHORIZED` |
 | `404` | `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `ATTEMPT_NOT_FOUND` |
 | `409` | `ORDER_NOT_PAYABLE`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT` |
 | `503` | `PAYMENT_NOT_CONFIGURED`, `STORAGE_UNAVAILABLE` |
