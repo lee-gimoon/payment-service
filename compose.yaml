@@ -15,6 +15,7 @@ services:
       retries: 10
     volumes:
       - payment-service-postgres-data:/var/lib/postgresql
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
 
   pgadmin:
     image: dpage/pgadmin4:9.17
@@ -34,6 +35,28 @@ services:
       - payment-service-pgadmin-data:/var/lib/pgadmin
       - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
       - ./docker/pgadmin/pgpass:/pgadmin4/pgpass:ro
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.4
+    container_name: payment-service-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-keycloak_admin_local}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: payment
+      KC_DB_PASSWORD: payment_local
+      KC_HOSTNAME: http://127.0.0.1:8081
+    ports:
+      - "127.0.0.1:8081:8080"
+    mem_limit: 1536m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./docker/keycloak:/opt/keycloak/data/import:ro
+      - ./docker/keycloak-themes/modo-club:/opt/keycloak/themes/modo-club:ro
 
 volumes:
   payment-service-postgres-data:

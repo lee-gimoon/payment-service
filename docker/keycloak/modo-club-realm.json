@@ -1,0 +1,76 @@
+{
+  "realm": "modo-club",
+  "displayName": "MODO CLUB",
+  "displayNameHtml": "<a href=\"http://127.0.0.1:5173/\">MODO <span>CLUB</span></a>",
+  "loginTheme": "modo-club",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "verifyEmail": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["ko", "en"],
+  "defaultLocale": "ko",
+  "clients": [
+    {
+      "clientId": "modo-club-web",
+      "name": "MODO CLUB",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "baseUrl": "http://127.0.0.1:5173/",
+      "redirectUris": ["http://127.0.0.1:5173/*"],
+      "webOrigins": ["http://127.0.0.1:5173"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://127.0.0.1:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "payment-service-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "payment-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "buyer@modo.test",
+      "email": "buyer@modo.test",
+      "emailVerified": true,
+      "firstName": "모도",
+      "lastName": "김",
+      "enabled": true,
+      "credentials": [
+        { "type": "password", "value": "modo_buyer_local", "temporary": false }
+      ]
+    },
+    {
+      "username": "other@modo.test",
+      "email": "other@modo.test",
+      "emailVerified": true,
+      "firstName": "다른",
+      "lastName": "이",
+      "enabled": true,
+      "credentials": [
+        { "type": "password", "value": "modo_other_local", "temporary": false }
+      ]
+    }
+  ]
+}
