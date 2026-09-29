@@ -30,13 +30,14 @@ public class PaymentService {
         this.toss = toss;
     }
 
-    public OrderResponse confirm(ConfirmPaymentRequest request) {
-        var prepared = preparation.prepare(request.orderId(), request.paymentKey(), request.attemptId(), request.amount());
+    public OrderResponse confirm(ConfirmPaymentRequest request, String customerId) {
+        var prepared = preparation.prepare(request.orderId(), customerId, request.paymentKey(),
+                request.attemptId(), request.amount());
         PaymentAttempt attempt = prepared.attempt();
         if (!prepared.newApproval()) {
             // 같은 결제 키의 재요청은 승인을 다시 호출하지 않는다. 오래 미확정인 시도만 PG 조회로 확인한다.
             recovery.recoverIfStale(attempt);
-            return orders.get(request.orderId());
+            return orders.get(request.orderId(), customerId);
         }
 
         // 관문 트랜잭션을 커밋한 뒤 호출하여 PG 응답을 기다리는 동안 주문 잠금을 유지하지 않는다.
@@ -53,6 +54,6 @@ public class PaymentService {
                         approval.orderId(), approval.attemptId(), result.errorCode());
             }
         }
-        return orders.get(request.orderId());
+        return orders.get(request.orderId(), customerId);
     }
 }

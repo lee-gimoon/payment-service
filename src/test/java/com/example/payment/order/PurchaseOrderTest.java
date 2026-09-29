@@ -7,6 +7,17 @@ import org.junit.jupiter.api.Test;
 
 class PurchaseOrderTest {
     @Test
+    void orderBelongsOnlyToTheCustomerWhoPlacedIt() {
+        PurchaseOrder order = TestOrders.order(19_000);
+
+        assertThat(order.isOwnedBy(TestOrders.CUSTOMER_ID)).isTrue();
+        assertThat(order.isOwnedBy("customer-2")).isFalse();
+        assertThat(order.isOwnedBy(null)).isFalse();
+        assertThatThrownBy(() -> new PurchaseOrder(" ", "선데이 크루 티", 1, 1, 19_000))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void onlyOneAttemptCanHoldTheApprovalSlot() {
         PurchaseOrder order = TestOrders.order(19_000);
         order.claimApproval("attempt-1");

@@ -2,14 +2,17 @@ package com.example.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -52,6 +55,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -63,6 +67,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @AutoConfigureMockMvc
 @Testcontainers
 class PaymentIntegrationTest {
+    private static final String CUSTOMER = "customer-1";
+    private static final String OTHER_CUSTOMER = "customer-2";
+
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine");
 
@@ -92,10 +99,10 @@ class PaymentIntegrationTest {
     @Test
     void freshDatabaseAppliesAllMigrations() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success AND version IS NOT NULL "
-                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4");
+                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5");
         assertThat(columns("payment_attempts")).contains("amount", "currency", "payment_key", "approval_requested_at",
                 "last_checked_at", "pg_status", "pg_approved_at", "pg_amount", "pg_currency");
-        assertThat(columns("purchase_orders")).contains("approval_attempt_id", "paid_at");
+        assertThat(columns("purchase_orders")).contains("approval_attempt_id", "paid_at", "customer_id");
         assertThat(columns("payments")).containsExactlyInAnyOrder("id", "order_id", "attempt_id", "payment_key",
                 "amount", "currency", "approved_at", "created_at");
     }
@@ -108,7 +115,7 @@ class PaymentIntegrationTest {
                 .andExpect(jsonPath("$[0].id").value("tee-01"))
                 .andExpect(jsonPath("$[0].price").value(19000));
 
-        mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+        mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
                 {"items":[
                   {"productId":"tee-01","size":"M","quantity":2},
                   {"productId":"tee-04","size":"L","quantity":1}
@@ -123,18 +130,74 @@ class PaymentIntegrationTest {
                 .andExpect(jsonPath("$.items[1].size").value("L"));
 
         assertThat(jdbc.queryForObject("SELECT amount FROM purchase_orders", Long.class)).isEqualTo(65000);
+        assertThat(jdbc.queryForObject("SELECT customer_id FROM purchase_orders", String.class)).isEqualTo(CUSTOMER);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order_items", Long.class)).isEqualTo(2);
+    }
+
+    @Test
+    void ordersAndPaymentsRequireSignInButCatalogIsPublic() throws Exception {
+        mvc.perform(get("/products")).andExpect(status().isOk());
+        mvc.perform(get("/payment-config")).andExpect(status().isOk());
+        mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+                {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
+                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", startsWith("Bearer")))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+
+        Checkout checkout = checkout(order());
+        mvc.perform(get("/orders/{id}", checkout.orderId())).andExpect(status().isUnauthorized());
+        mvc.perform(post("/orders/{id}/payment-attempts", checkout.orderId())).andExpect(status().isUnauthorized());
+        mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmJson(checkout, "payment-key", 19_000)))
+                .andExpect(status().isUnauthorized());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_orders", Long.class)).isEqualTo(1);
+        assertThat(attemptStatus(checkout.attemptId())).isEqualTo("STARTED");
+        verifyNoInteractions(toss);
+    }
+
+    @Test
+    void anotherCustomersOrderLooksMissing() throws Exception {
+        Checkout checkout = checkout(order());
+        mvc.perform(get("/orders/{id}", checkout.orderId()).with(signedIn(OTHER_CUSTOMER)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
+        mvc.perform(post("/orders/{id}/payment-attempts", checkout.orderId()).with(signedIn(OTHER_CUSTOMER)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
+        mvc.perform(post("/payment-attempts/{id}/authentication-result", checkout.attemptId())
+                        .with(signedIn(OTHER_CUSTOMER)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"AUTH_CANCELED\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ATTEMPT_NOT_FOUND"));
+        mvc.perform(post("/payments/confirm").with(signedIn(OTHER_CUSTOMER)).contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmJson(checkout, "payment-key", 19_000)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempts", Long.class)).isEqualTo(1);
+        assertThat(attemptStatus(checkout.attemptId())).isEqualTo("STARTED");
+        assertThat(orderStatus(checkout.orderId())).isEqualTo("PENDING_PAYMENT");
+        verifyNoInteractions(toss);
+    }
+
+    @Test
+    void ordersCreatedBeforeSignInBelongToNoCustomer() {
+        String orderId = order();
+        jdbc.update("UPDATE purchase_orders SET customer_id = NULL WHERE id = ?", orderId);
+        assertThatThrownBy(() -> orders.get(orderId, CUSTOMER)).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> attempts.start(orderId, CUSTOMER)).isInstanceOf(ApiException.class);
     }
 
     @Test
     void paidOrderReturnsPurchasedItems() throws Exception {
         String orderId = orders.create(new CreateOrderRequest(List.of(
                 new CreateOrderRequest.Item("tee-01", "M", 1),
-                new CreateOrderRequest.Item("tee-02", "L", 1)))).orderId();
+                new CreateOrderRequest.Item("tee-02", "L", 1))), CUSTOMER).orderId();
         Checkout checkout = checkout(orderId);
         when(toss.confirm(any())).thenReturn(succeeded(47_000));
 
-        mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/payments/confirm").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
                         .content(confirmJson(checkout, "catalog-key", 47_000)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.amount").value(47000))
@@ -148,12 +211,12 @@ class PaymentIntegrationTest {
     void orderItemsHaveIndependentIdsAndKeepTheirOrder() throws Exception {
         String orderId = orders.create(new CreateOrderRequest(List.of(
                 new CreateOrderRequest.Item("tee-02", "M", 1),
-                new CreateOrderRequest.Item("tee-01", "S", 1)))).orderId();
+                new CreateOrderRequest.Item("tee-01", "S", 1))), CUSTOMER).orderId();
 
         assertThat(jdbc.queryForList(
                 "SELECT id FROM purchase_order_items WHERE order_id = ? ORDER BY line_number", String.class, orderId))
                 .hasSize(2).allSatisfy(id -> assertThat(id).hasSize(36));
-        mvc.perform(get("/orders/{id}", orderId))
+        mvc.perform(get("/orders/{id}", orderId).with(signedIn()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].productId").value("tee-02"))
                 .andExpect(jsonPath("$.items[1].productId").value("tee-01"));
@@ -167,11 +230,11 @@ class PaymentIntegrationTest {
             mvc.perform(get("/products/tee-01"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.price").value(23000));
-            mvc.perform(get("/orders/{id}", oldOrderId))
+            mvc.perform(get("/orders/{id}", oldOrderId).with(signedIn()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.amount").value(19000))
                     .andExpect(jsonPath("$.items[0].unitPrice").value(19000));
-            mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+            mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
                     {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
                     """))
                     .andExpect(status().isCreated())
@@ -189,12 +252,12 @@ class PaymentIntegrationTest {
             mvc.perform(get("/products"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.length()").value(9));
-            mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+            mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
                     {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
                     """))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
-            mvc.perform(get("/orders/{id}", orderId))
+            mvc.perform(get("/orders/{id}", orderId).with(signedIn()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.items[0].productId").value("tee-01"))
                     .andExpect(jsonPath("$.items[0].unitPrice").value(19000));
@@ -211,11 +274,11 @@ class PaymentIntegrationTest {
                 "{\"productId\":\"tee-01\",\"size\":\"XXL\",\"quantity\":1}",
                 "{\"productId\":\"tee-01\",\"size\":\"M\",\"quantity\":11}",
                 "{\"productId\":\"missing\",\"size\":\"M\",\"quantity\":1}")) {
-            mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON)
+            mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"items\":[" + item + "]}"))
                     .andExpect(status().isBadRequest());
         }
-        mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
+        mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
                 {"items":[
                   {"productId":"tee-01","size":"M","quantity":1},
                   {"productId":"tee-01","size":"M","quantity":1}
@@ -257,7 +320,7 @@ class PaymentIntegrationTest {
                     "payment-key", 19_000, "KRW"));
             return succeeded(19_000);
         });
-        mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/payments/confirm").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
                         .content(confirmJson(checkout, "payment-key", 19_000)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PAID"))
@@ -283,7 +346,7 @@ class PaymentIntegrationTest {
         jdbc.execute("CREATE TRIGGER reject_payment_record BEFORE INSERT ON payments "
                 + "FOR EACH ROW EXECUTE FUNCTION reject_payment_record()");
         try {
-            assertThatThrownBy(() -> payments.confirm(request(checkout, "payment-key")))
+            assertThatThrownBy(() -> payments.confirm(request(checkout, "payment-key"), CUSTOMER))
                     .isInstanceOf(DataAccessException.class);
         } finally {
             jdbc.execute("DROP TRIGGER reject_payment_record ON payments");
@@ -297,7 +360,7 @@ class PaymentIntegrationTest {
     @Test
     void wrongRequestAmountIsRejectedBeforeCallingToss() throws Exception {
         Checkout checkout = checkout(order());
-        mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/payments/confirm").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
                         .content(confirmJson(checkout, "payment-key", 18_000)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("AMOUNT_MISMATCH"));
@@ -310,7 +373,7 @@ class PaymentIntegrationTest {
     @Test
     void confirmationRequiresAnAttempt() throws Exception {
         String orderId = order();
-        mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/payments/confirm").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"orderId\":\"" + orderId + "\",\"paymentKey\":\"payment-key\",\"amount\":19000}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
@@ -323,7 +386,7 @@ class PaymentIntegrationTest {
         String orderId = order();
         Checkout other = checkout(order());
         assertThatThrownBy(() -> payments.confirm(new ConfirmPaymentRequest(
-                orderId, "payment-key", BigDecimal.valueOf(19_000), other.attemptId())))
+                orderId, "payment-key", BigDecimal.valueOf(19_000), other.attemptId()), CUSTOMER))
                 .isInstanceOf(ApiException.class);
         assertThat(approvalCount()).isZero();
         assertThat(attemptStatus(other.attemptId())).isEqualTo("STARTED");
@@ -344,7 +407,7 @@ class PaymentIntegrationTest {
         jdbc.execute("CREATE TRIGGER reject_attempt_approving BEFORE UPDATE ON payment_attempts "
                 + "FOR EACH ROW EXECUTE FUNCTION reject_attempt_approving()");
         try {
-            assertThatThrownBy(() -> payments.confirm(request(checkout, "payment-key")))
+            assertThatThrownBy(() -> payments.confirm(request(checkout, "payment-key"), CUSTOMER))
                     .isInstanceOf(DataAccessException.class);
         } finally {
             jdbc.execute("DROP TRIGGER reject_attempt_approving ON payment_attempts");
@@ -371,7 +434,7 @@ class PaymentIntegrationTest {
         jdbc.execute("CREATE TRIGGER reject_order_paid BEFORE UPDATE ON purchase_orders "
                 + "FOR EACH ROW EXECUTE FUNCTION reject_order_paid()");
         try {
-            assertThatThrownBy(() -> payments.confirm(request(checkout, "payment-key")))
+            assertThatThrownBy(() -> payments.confirm(request(checkout, "payment-key"), CUSTOMER))
                     .isInstanceOf(DataAccessException.class);
         } finally {
             jdbc.execute("DROP TRIGGER reject_order_paid ON purchase_orders");
@@ -381,7 +444,7 @@ class PaymentIntegrationTest {
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("APPROVING");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
         assertThat(paymentCount()).isZero();
-        assertThatThrownBy(() -> attempts.start(checkout.orderId())).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
         verify(toss, never()).lookup(any());
 
         makeStale(checkout.attemptId());
@@ -397,7 +460,7 @@ class PaymentIntegrationTest {
     void explicitDeclineReleasesOrderWithoutLookup() {
         Checkout checkout = checkout(order());
         when(toss.confirm(any())).thenReturn(PaymentResult.failed("REJECT_CARD_COMPANY"));
-        assertThat(payments.confirm(request(checkout, "payment-key")).payment().status()).isEqualTo(PaymentState.FAILED);
+        assertThat(payments.confirm(request(checkout, "payment-key"), CUSTOMER).payment().status()).isEqualTo(PaymentState.FAILED);
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("FAILED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PENDING_PAYMENT");
         assertThat(slot(checkout.orderId())).isNull();
@@ -415,7 +478,7 @@ class PaymentIntegrationTest {
             assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
             return succeeded(19_000);
         });
-        assertThat(payments.confirm(request(checkout, "payment-key")).payment().status()).isEqualTo(PaymentState.SUCCEEDED);
+        assertThat(payments.confirm(request(checkout, "payment-key"), CUSTOMER).payment().status()).isEqualTo(PaymentState.SUCCEEDED);
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("SUCCEEDED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAID");
         assertThat(paymentCount()).isEqualTo(1);
@@ -428,7 +491,7 @@ class PaymentIntegrationTest {
         Checkout checkout = checkout(order());
         when(toss.confirm(any())).thenReturn(PaymentResult.unknown("PG_RESPONSE_MISMATCH"));
         when(toss.lookup(any())).thenReturn(lookupResult);
-        mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/payments/confirm").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
                         .content(confirmJson(checkout, "payment-key", 19_000)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("PAYMENT_IN_PROGRESS"))
@@ -439,7 +502,7 @@ class PaymentIntegrationTest {
         assertThat(saved.getPgCurrency()).isEqualTo(lookupResult.pgCurrency());
         assertThat(saved.getStatus()).isEqualTo(PaymentAttemptStatus.REVIEW_REQUIRED);
         assertThat(paymentCount()).isZero();
-        assertThatThrownBy(() -> attempts.start(checkout.orderId())).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
         verify(toss).confirm(any());
         verify(toss).lookup(any());
     }
@@ -460,7 +523,7 @@ class PaymentIntegrationTest {
     void successEvidenceThatDoesNotMatchStoredAmountRequiresReview() {
         Checkout checkout = checkout(order());
         when(toss.confirm(any())).thenReturn(succeeded(18_000));
-        assertThat(payments.confirm(request(checkout, "payment-key")).payment().status())
+        assertThat(payments.confirm(request(checkout, "payment-key"), CUSTOMER).payment().status())
                 .isEqualTo(PaymentState.REVIEW_REQUIRED);
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
         assertThat(jdbc.queryForObject("SELECT error_code FROM payment_attempts WHERE id = ?", String.class,
@@ -473,16 +536,16 @@ class PaymentIntegrationTest {
         Checkout checkout = checkout(order());
         when(toss.confirm(any())).thenReturn(PaymentResult.unknown("PG_COMMUNICATION_ERROR"));
         when(toss.lookup(any())).thenReturn(PaymentResult.unknown("PG_LOOKUP_ERROR"));
-        mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/payments/confirm").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
                         .content(confirmJson(checkout, "payment-key", 19_000)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("PAYMENT_IN_PROGRESS"))
                 .andExpect(jsonPath("$.payment.status").value("UNKNOWN"));
-        mvc.perform(get("/orders/{id}", checkout.orderId()))
+        mvc.perform(get("/orders/{id}", checkout.orderId()).with(signedIn()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.payment.status").value("UNKNOWN"));
-        payments.confirm(request(checkout, "payment-key"));
-        assertThatThrownBy(() -> attempts.start(checkout.orderId())).isInstanceOf(ApiException.class);
+        payments.confirm(request(checkout, "payment-key"), CUSTOMER);
+        assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
         assertThat(paymentCount()).isZero();
         verify(toss).confirm(any());
         verify(toss).lookup(any());
@@ -500,13 +563,13 @@ class PaymentIntegrationTest {
             return succeeded(19_000);
         });
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            var first = executor.submit(() -> payments.confirm(request(checkout, "payment-key")));
+            var first = executor.submit(() -> payments.confirm(request(checkout, "payment-key"), CUSTOMER));
             try {
                 assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
-                var duplicate = executor.submit(() -> payments.confirm(request(checkout, "payment-key")));
+                var duplicate = executor.submit(() -> payments.confirm(request(checkout, "payment-key"), CUSTOMER));
                 assertThat(duplicate.get(3, TimeUnit.SECONDS).payment().status()).isEqualTo(PaymentState.APPROVING);
                 var rejected = executor.submit(() -> assertThatThrownBy(
-                        () -> payments.confirm(request(competing, "competing-key"))).isInstanceOf(ApiException.class));
+                        () -> payments.confirm(request(competing, "competing-key"), CUSTOMER)).isInstanceOf(ApiException.class));
                 rejected.get(3, TimeUnit.SECONDS);
             } finally {
                 release.countDown();
@@ -521,30 +584,30 @@ class PaymentIntegrationTest {
     @Test
     void closingWindowIsStoredWithoutApprovalAndOrderCanBeRetried() {
         Checkout first = checkout(order());
-        attempts.authenticationResult(first.attemptId(),
+        attempts.authenticationResult(first.attemptId(), CUSTOMER,
                 new PaymentAttemptService.AuthenticationResult(PaymentAttemptStatus.AUTH_CANCELED, "WINDOW_CLOSED"));
-        assertThat(orders.get(first.orderId()).status().name()).isEqualTo("PENDING_PAYMENT");
-        assertThat(orders.get(first.orderId()).latestAttempt().status()).isEqualTo(PaymentAttemptStatus.AUTH_CANCELED);
-        assertThat(orders.get(first.orderId()).payment().status()).isEqualTo(PaymentState.READY);
+        assertThat(orders.get(first.orderId(), CUSTOMER).status().name()).isEqualTo("PENDING_PAYMENT");
+        assertThat(orders.get(first.orderId(), CUSTOMER).latestAttempt().status()).isEqualTo(PaymentAttemptStatus.AUTH_CANCELED);
+        assertThat(orders.get(first.orderId(), CUSTOMER).payment().status()).isEqualTo(PaymentState.READY);
         assertThat(approvalCount()).isZero();
 
         Checkout retry = checkout(first.orderId());
         when(toss.confirm(any())).thenReturn(succeeded(19_000));
-        assertThat(payments.confirm(request(retry, "retry-key")).status().name()).isEqualTo("PAID");
+        assertThat(payments.confirm(request(retry, "retry-key"), CUSTOMER).status().name()).isEqualTo("PAID");
         assertThat(jdbc.queryForList("SELECT status FROM payment_attempts WHERE order_id = ? ORDER BY started_at",
                 String.class, first.orderId())).containsExactly("AUTH_CANCELED", "SUCCEEDED");
-        assertThatThrownBy(() -> attempts.start(first.orderId())).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> attempts.start(first.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
     }
 
     @Test
     void failedApprovalPreservesHistoryAndAllowsNewAttemptForSameOrder() {
         Checkout first = checkout(order());
         when(toss.confirm(any())).thenReturn(PaymentResult.failed("REJECT_CARD_COMPANY"), succeeded(19_000));
-        assertThat(payments.confirm(request(first, "failed-key")).payment().status()).isEqualTo(PaymentState.FAILED);
+        assertThat(payments.confirm(request(first, "failed-key"), CUSTOMER).payment().status()).isEqualTo(PaymentState.FAILED);
         assertThat(orderStatus(first.orderId())).isEqualTo("PENDING_PAYMENT");
 
         Checkout retry = checkout(first.orderId());
-        assertThat(payments.confirm(request(retry, "success-key")).payment().status()).isEqualTo(PaymentState.SUCCEEDED);
+        assertThat(payments.confirm(request(retry, "success-key"), CUSTOMER).payment().status()).isEqualTo(PaymentState.SUCCEEDED);
         assertThat(jdbc.queryForList("SELECT status FROM payment_attempts WHERE order_id = ? AND payment_key IS NOT NULL "
                 + "ORDER BY approval_requested_at", String.class, first.orderId())).containsExactly("FAILED", "SUCCEEDED");
         assertThat(approvalCount()).isEqualTo(2);
@@ -553,16 +616,16 @@ class PaymentIntegrationTest {
         assertThat(paymentCount()).isEqualTo(1);
         assertThat(paymentRepository.findByOrderId(first.orderId()).orElseThrow().getAttemptId())
                 .isEqualTo(retry.attemptId());
-        assertThatThrownBy(() -> attempts.start(first.orderId())).isInstanceOf(ApiException.class);
-        assertThatThrownBy(() -> payments.confirm(request(first, "third-key"))).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> attempts.start(first.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> payments.confirm(request(first, "third-key"), CUSTOMER)).isInstanceOf(ApiException.class);
     }
 
     @Test
     void lateAuthenticationEventCannotCancelAnApproval() {
         Checkout checkout = checkout(order());
         when(toss.confirm(any())).thenReturn(succeeded(19_000));
-        payments.confirm(request(checkout, "payment-key"));
-        attempts.authenticationResult(checkout.attemptId(),
+        payments.confirm(request(checkout, "payment-key"), CUSTOMER);
+        attempts.authenticationResult(checkout.attemptId(), CUSTOMER,
                 new PaymentAttemptService.AuthenticationResult(PaymentAttemptStatus.AUTH_CANCELED, "WINDOW_CLOSED"));
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("SUCCEEDED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAID");
@@ -572,7 +635,7 @@ class PaymentIntegrationTest {
     void recoveryConfirmsApprovalLeftByServerStopWithoutApprovingAgain() {
         Checkout checkout = checkout(order());
         // 관문을 통과한 뒤 결과를 기록하기 전에 서버가 멈춘 상황이다.
-        preparation.prepare(checkout.orderId(), "payment-key", checkout.attemptId(), BigDecimal.valueOf(19_000));
+        preparation.prepare(checkout.orderId(), CUSTOMER, "payment-key", checkout.attemptId(), BigDecimal.valueOf(19_000));
         makeStale(checkout.attemptId());
         when(toss.lookup(any())).thenReturn(succeeded(19_000));
 
@@ -586,7 +649,7 @@ class PaymentIntegrationTest {
     @Test
     void recoveryWaitsForPgToConfirmExpiryBeforeReleasingOrder() {
         Checkout checkout = checkout(order());
-        preparation.prepare(checkout.orderId(), "payment-key", checkout.attemptId(), BigDecimal.valueOf(19_000));
+        preparation.prepare(checkout.orderId(), CUSTOMER, "payment-key", checkout.attemptId(), BigDecimal.valueOf(19_000));
         makeStale(checkout.attemptId());
         when(toss.lookup(any())).thenReturn(PaymentResult.unknown("PG_RESULT_UNCONFIRMED"),
                 new PaymentResult(Outcome.FAILED, "EXPIRED", "PG_EXPIRED", null, BigDecimal.valueOf(19_000), "KRW"));
@@ -594,7 +657,7 @@ class PaymentIntegrationTest {
         recovery.recoverUnresolved();
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("UNKNOWN");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
-        assertThatThrownBy(() -> attempts.start(checkout.orderId())).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
 
         makeStale(checkout.attemptId());
         recovery.recoverUnresolved();
@@ -608,7 +671,7 @@ class PaymentIntegrationTest {
     @Test
     void recoverySkipsApprovalsThatAreStillInProgress() {
         Checkout checkout = checkout(order());
-        preparation.prepare(checkout.orderId(), "payment-key", checkout.attemptId(), BigDecimal.valueOf(19_000));
+        preparation.prepare(checkout.orderId(), CUSTOMER, "payment-key", checkout.attemptId(), BigDecimal.valueOf(19_000));
         assertThat(recovery.recoverUnresolved()).isZero();
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("APPROVING");
         verifyNoInteractions(toss);
@@ -617,7 +680,7 @@ class PaymentIntegrationTest {
     @Test
     void approvalStillUnknownAfterDeadlineNeedsManualReview() {
         Checkout checkout = checkout(order());
-        preparation.prepare(checkout.orderId(), "payment-key", checkout.attemptId(), BigDecimal.valueOf(19_000));
+        preparation.prepare(checkout.orderId(), CUSTOMER, "payment-key", checkout.attemptId(), BigDecimal.valueOf(19_000));
         jdbc.update("UPDATE payment_attempts SET approval_requested_at = now() - interval '2 hours' WHERE id = ?",
                 checkout.attemptId());
         when(toss.lookup(any())).thenReturn(PaymentResult.unknown("PG_LOOKUP_ERROR"));
@@ -627,7 +690,7 @@ class PaymentIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT error_code FROM payment_attempts WHERE id = ?", String.class,
                 checkout.attemptId())).isEqualTo("PG_RESULT_TIMEOUT");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
-        assertThatThrownBy(() -> attempts.start(checkout.orderId())).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
 
         // 수동 확인 대상은 자동 복구가 다시 조회하지 않는다.
         makeStale(checkout.attemptId());
@@ -640,11 +703,11 @@ class PaymentIntegrationTest {
         Checkout checkout = checkout(order());
         when(toss.confirm(any())).thenReturn(PaymentResult.unknown("PG_COMMUNICATION_ERROR"));
         when(toss.lookup(any())).thenReturn(PaymentResult.unknown("PG_LOOKUP_ERROR"));
-        payments.confirm(request(checkout, "payment-key"));
+        payments.confirm(request(checkout, "payment-key"), CUSTOMER);
         makeStale(checkout.attemptId());
         when(toss.lookup(any())).thenReturn(succeeded(19_000));
 
-        mvc.perform(post("/payments/confirm").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/payments/confirm").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
                         .content(confirmJson(checkout, "payment-key", 19_000)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PAID"))
@@ -743,11 +806,19 @@ class PaymentIntegrationTest {
 
     private String order() {
         return orders.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-01", "M", 1)))).orderId();
+                new CreateOrderRequest.Item("tee-01", "M", 1))), CUSTOMER).orderId();
     }
 
     private Checkout checkout(String orderId) {
-        return new Checkout(orderId, attempts.start(orderId).id());
+        return new Checkout(orderId, attempts.start(orderId, CUSTOMER).id());
+    }
+
+    private static RequestPostProcessor signedIn() {
+        return signedIn(CUSTOMER);
+    }
+
+    private static RequestPostProcessor signedIn(String customerId) {
+        return jwt().jwt(token -> token.subject(customerId));
     }
 
     private List<String> columns(String table) {

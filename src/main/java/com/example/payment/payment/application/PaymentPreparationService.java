@@ -27,8 +27,10 @@ public class PaymentPreparationService {
     }
 
     @Transactional
-    public Prepared prepare(String orderId, String paymentKey, String attemptId, BigDecimal amount) {
+    public Prepared prepare(String orderId, String customerId, String paymentKey, String attemptId,
+                            BigDecimal amount) {
         PurchaseOrder order = orders.findByIdForUpdate(orderId)
+                .filter(found -> found.isOwnedBy(customerId))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
         if (amount.compareTo(BigDecimal.valueOf(order.getAmount())) != 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "AMOUNT_MISMATCH", "주문 금액과 결제 금액이 다릅니다.");

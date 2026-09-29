@@ -20,6 +20,14 @@ spring:
   flyway:
     enabled: true
 
+  # Keycloak이 이 서비스용으로 발급한 access token만 받는다. 공개키는 첫 요청 때 발급자에서 가져온다.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://127.0.0.1:8081/realms/modo-club}
+          audiences: payment-service
+
 payment:
   toss:
     client-key: ${TOSS_CLIENT_KEY:}

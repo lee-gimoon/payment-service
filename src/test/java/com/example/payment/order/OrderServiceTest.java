@@ -38,7 +38,7 @@ class OrderServiceTest {
     void cartTotalComesFromCatalogAndKeepsProductOptions() {
         OrderResponse order = service.create(new CreateOrderRequest(List.of(
                 new CreateOrderRequest.Item("tee-01", "M", 2),
-                new CreateOrderRequest.Item("tee-04", "L", 1))));
+                new CreateOrderRequest.Item("tee-04", "L", 1))), "customer-1");
 
         assertThat(order.amount()).isEqualTo(65_000);
         assertThat(order.quantity()).isEqualTo(3);
@@ -50,10 +50,10 @@ class OrderServiceTest {
     void duplicateOptionAndOutOfRangeQuantityAreRejected() {
         assertThatThrownBy(() -> service.create(new CreateOrderRequest(List.of(
                 new CreateOrderRequest.Item("tee-01", "M", 1),
-                new CreateOrderRequest.Item("tee-01", "M", 1)))))
+                new CreateOrderRequest.Item("tee-01", "M", 1))), "customer-1"))
                 .isInstanceOf(ApiException.class).extracting("code").isEqualTo("INVALID_CART");
         assertThatThrownBy(() -> service.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-01", "M", 11)))))
+                new CreateOrderRequest.Item("tee-01", "M", 11))), "customer-1"))
                 .isInstanceOf(ApiException.class).extracting("code").isEqualTo("INVALID_CART");
     }
 }

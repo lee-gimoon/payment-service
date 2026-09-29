@@ -29,7 +29,7 @@ public class OrderService {
     }
 
     @Transactional
-    public OrderResponse create(CreateOrderRequest request) {
+    public OrderResponse create(CreateOrderRequest request, String customerId) {
         if (request == null || request.items() == null || request.items().isEmpty() || request.items().size() > 20) {
             throw invalidCart();
         }
@@ -54,7 +54,7 @@ public class OrderService {
             products.add(product);
             productIds.add(product.getId());
         }
-        PurchaseOrder order = orderRepository.save(new PurchaseOrder(
+        PurchaseOrder order = orderRepository.save(new PurchaseOrder(customerId,
                 products.getFirst().getName(), productIds.size(), totalQuantity, totalAmount));
         List<OrderItem> lines = new ArrayList<>();
         for (int lineNumber = 0; lineNumber < request.items().size(); lineNumber++) {
@@ -69,9 +69,11 @@ public class OrderService {
         return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CART", "상품과 사이즈, 수량을 확인해주세요.");
     }
 
+    /** 다른 회원의 주문은 존재 여부를 알리지 않고 없는 주문처럼 응답한다. */
     @Transactional(readOnly = true)
-    public OrderResponse get(String orderId) {
+    public OrderResponse get(String orderId, String customerId) {
         PurchaseOrder order = orderRepository.findById(orderId)
+                .filter(found -> found.isOwnedBy(customerId))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
         return OrderResponse.of(order, orderItemRepository.findByOrderId(orderId),
                 paymentAttemptRepository.findFirstByOrderIdAndApprovalRequestedAtNotNullOrderByApprovalRequestedAtDesc(orderId)

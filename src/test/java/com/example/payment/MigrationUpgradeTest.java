@@ -72,6 +72,9 @@ class MigrationUpgradeTest {
         assertAttempt(jdbc, "a-review", "REVIEW_REQUIRED", "key-review");
         assertThat(jdbc.queryForList("SELECT id FROM payment_attempts WHERE finished_at IS NOT NULL ORDER BY id",
                 String.class)).containsExactly("a-closed", "a-declined", "a-paid");
+        // 로그인 도입 전 주문은 주인이 없다.
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_orders WHERE customer_id IS NOT NULL", Long.class))
+                .isZero();
         assertThat(jdbc.queryForMap("SELECT amount, currency, pg_status, pg_amount FROM payment_attempts WHERE id = 'a-paid'"))
                 .containsEntry("amount", 19000L).containsEntry("currency", "KRW").containsEntry("pg_status", "DONE")
                 .hasEntrySatisfying("pg_amount", amount -> assertThat(amount.toString()).startsWith("19000"));

@@ -7,6 +7,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -32,8 +34,9 @@ public class PaymentController {
 
     @PostMapping("/payments/confirm")
     @Operation(summary = "결제수단 인증 후 결제 승인")
-    public ResponseEntity<OrderResponse> confirm(@Valid @RequestBody ConfirmPaymentRequest request) {
-        OrderResponse order = paymentService.confirm(request);
+    public ResponseEntity<OrderResponse> confirm(@AuthenticationPrincipal Jwt customer,
+                                                 @Valid @RequestBody ConfirmPaymentRequest request) {
+        OrderResponse order = paymentService.confirm(request, customer.getSubject());
         return response(order);
     }
 
