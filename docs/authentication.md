@@ -2,6 +2,89 @@
 
 회원가입·로그인은 오픈소스 인증 서버 [Keycloak](https://www.keycloak.org/)이 맡습니다. 쇼핑몰은 비밀번호를 받지 않고, Keycloak이 발급한 access token으로 회원을 확인합니다. 실행 설정은 [설정 문서](configuration.md#keycloak), API 계약은 [API 문서](api.md)에 있습니다.
 
+한 문장으로 줄이면 **OpenID Connect(OAuth 2.0 기반)로 Keycloak에서 로그인하고, 받은 JWT를 들고 Spring API를 호출합니다. Spring은 세션 없이 JWT만 검사합니다.** 이 용어들이 처음이면 [로그인 기술 기초](#로그인-기술-기초)부터 읽습니다.
+
+## 로그인 기술 기초
+
+### 로그인이 하는 두 가지 일
+
+1. **처음 한 번 확인하기**: 이 사람이 정말 `buyer@modo.test`인지 비밀번호로 확인합니다.
+2. **요청마다 알아보기**: 주문 조회·결제 요청마다 비밀번호를 물을 수는 없으므로, "아까 확인한 그 사람"임을 알아볼 수단이 필요합니다.
+
+세션, JWT, OAuth 2.0, OpenID Connect는 이 두 가지를 어떻게 하느냐에 붙은 이름입니다.
+
+### 세션: 서버가 기억하는 방식
+
+옷 보관소 번호표와 같습니다. 로그인하면 서버가 "17번 = 김모도"를 장부에 적고, 브라우저는 번호표(쿠키)만 들고 다닙니다. 요청이 오면 서버가 장부에서 번호를 찾아 회원을 알아봅니다. 번호표에는 아무 정보가 없고 서버가 기억합니다.
+
+이 프로젝트의 Spring 서버는 세션을 쓰지 않습니다([SecurityConfiguration](../src/main/java/com/example/payment/config/SecurityConfiguration.java)의 `STATELESS`).
+
+### JWT: 도장 찍힌 출입증
+
+회사 출입증과 같습니다. 출입증에 이름과 유효기간이 적혀 있고 발급처 도장이 찍혀 있어서, 경비는 장부를 보지 않고 도장만 확인합니다.
+
+JWT(JSON Web Token)는 이런 출입증을 글자로 만든 것입니다. 머리말, 내용, 서명 세 부분이 점(`.`)으로 이어져 있습니다.
+
+```text
+eyJhbGciOi...  .  eyJzdWIiOi...  .  SflKxwRJSM...
+    머리말             내용               서명
+```
+
+이 프로젝트의 access token 내용에는 이런 값이 들어 있습니다.
+
+| 이름 | 뜻 | 이 프로젝트의 값 |
+| --- | --- | --- |
+| `iss` | 발급처 | `http://127.0.0.1:8081/realms/modo-club` |
+| `aud` | 토큰을 받을 서비스 | `payment-service` 포함. 다른 서비스용 토큰은 거부 |
+| `sub` | 회원 고유 ID | Keycloak이 만든 UUID. `purchase_orders.customer_id`에 저장 |
+| `exp` | 만료 시각 | 발급 후 5분 |
+| `email`, `given_name`, `family_name` | 회원 정보 | 헤더에 회원 이름 표시 |
+
+- **서버가 기억하지 않습니다.** 필요한 정보가 토큰에 있으므로 Spring은 서명이 Keycloak 것인지, 기간이 남았는지만 검사합니다.
+- **위조는 못 하지만 내용은 누구나 읽을 수 있습니다.** 서명은 고치지 못하게 막을 뿐 숨기지 않습니다. 비밀번호 같은 비밀은 넣지 않습니다.
+- **짧게 씁니다.** 도둑맞으면 만료 전까지 쓸 수 있으므로 5분만 유효하고, 만료가 가까우면 새로 받습니다.
+
+### OAuth 2.0: 로그인을 다른 곳에 맡기는 규칙
+
+호텔 프런트와 같습니다. 객실 문은 신분증을 보지 않습니다. 프런트가 신분을 확인하고 카드키를 주면, 객실 문은 카드키만 봅니다.
+
+OAuth 2.0은 비밀번호를 앱에 주지 않고 권한만 빌려주는 표준입니다. 어떤 앱이 구글 캘린더를 읽을 때 구글 비밀번호를 받는 대신 구글이 발급한 토큰을 받는 방식입니다. 비밀번호는 발급처만 보고, 앱은 토큰만 받습니다.
+
+| OAuth 역할 | 하는 일 | 이 프로젝트 |
+| --- | --- | --- |
+| 사용자 | 로그인하는 사람 | 쇼핑몰 회원 |
+| 클라이언트 | 로그인을 맡기는 앱 | React 쇼핑몰 `modo-club-web` |
+| 인가 서버 | 신분 확인, 토큰 발급 | Keycloak |
+| 리소스 서버 | 토큰을 보고 요청 처리 | Spring 결제 서버 |
+
+토큰을 받는 절차는 여러 가지이고, 이 프로젝트는 **Authorization Code + PKCE**를 씁니다.
+
+- Keycloak은 로그인 뒤 토큰 대신 **일회용 교환권**(code)을 주소에 붙여 쇼핑몰로 돌려보냅니다. 앱이 이 교환권을 토큰으로 바꿉니다. 브라우저 주소창과 방문 기록에는 금방 쓸모없어지는 교환권만 남습니다.
+- **PKCE**는 교환권을 가로채도 쓰지 못하게 하는 장치입니다. 로그인을 시작한 앱만 아는 비밀 문자열이 있어야 교환됩니다.
+
+### OpenID Connect: OAuth에 "누구인지"를 더한 로그인 표준
+
+OAuth 2.0은 토큰으로 **무엇을 할 수 있는지**(권한)만 정하고, 로그인한 사람이 **누구인지** 알리는 방법은 정하지 않았습니다. OpenID Connect(OIDC)는 OAuth 2.0 위에 로그인 규칙을 더한 표준입니다.
+
+- 회원 ID는 `sub`, 이메일은 `email`처럼 회원 정보의 이름을 통일합니다.
+- 발급처 주소 하나로 공개키 위치 등을 찾는 안내 문서(`/.well-known/openid-configuration`)를 둡니다.
+
+그래서 Spring에는 [application.yml](../src/main/resources/application.yml)의 발급자 주소만 있으면 되고, Keycloak 전용 라이브러리가 필요 없습니다. "구글로 로그인", "카카오로 로그인"도 대부분 OIDC입니다.
+
+### 세 용어의 관계
+
+```text
+OAuth 2.0            토큰을 발급받는 절차 (권한 빌려주기)
+  └ OpenID Connect   그 절차에 "누구인지"를 더한 로그인 표준    ← 로그인 방식
+      └ JWT          그렇게 받은 토큰의 형식 (도장 찍힌 출입증)  ← 토큰 모양
+```
+
+### 이 방식을 쓰는 이유
+
+- 비밀번호 저장·암호화, 회원가입 화면처럼 보안 실수가 잦은 부분을 직접 만들지 않습니다.
+- Spring이 로그인 상태를 기억하지 않으므로 서버를 여러 대로 늘려도 됩니다.
+- 대신 Keycloak 서버가 하나 더 필요하고, 도둑맞은 토큰은 만료 전까지 쓸 수 있어 유효시간을 5분으로 짧게 둡니다.
+
 ## 구성
 
 | 구성 요소 | 위치 | 역할 |
@@ -11,17 +94,15 @@
 | 프런트엔드 | [auth/keycloak.ts](../frontend/src/auth/keycloak.ts) | `keycloak-js`로 로그인 화면 이동, 토큰 보관·갱신 |
 | 백엔드 | [SecurityConfiguration](../src/main/java/com/example/payment/config/SecurityConfiguration.java) | Spring Security가 토큰의 서명·발급자·만료·대상을 검증 |
 
-백엔드에는 Keycloak 전용 라이브러리가 없습니다. 표준(OIDC·JWT) 방식으로 검증하므로 다른 로그인 서버로 바꿀 때도 발급자 주소만 바꾸면 됩니다.
+백엔드는 표준(OIDC·JWT) 방식으로만 검증하므로 다른 로그인 서버로 바꿀 때도 발급자 주소만 바꾸면 됩니다.
 
-## 핵심 개념
+## Keycloak 용어
 
-| 개념 | 뜻 | 이 프로젝트에서 |
+| 용어 | 뜻 | 이 프로젝트에서 |
 | --- | --- | --- |
 | Realm | 회원과 설정을 묶는 독립 공간 | `modo-club` (관리자용 `master`와 분리) |
-| Client | Keycloak에 로그인을 맡기는 앱 | `modo-club-web` (React, 비밀키 없는 public client + PKCE) |
-| Access token | 로그인 후 받는 서명된 JWT. 기본 5분 유효 | API 요청의 `Authorization: Bearer` 헤더 |
-| `sub` | 회원 고유 ID | `purchase_orders.customer_id`에 저장 |
-| `aud` | 토큰을 받을 서비스 | `payment-service`. 다른 서비스용 토큰은 거부 |
+| Client | Keycloak에 로그인을 맡기는 앱. OAuth의 클라이언트 | `modo-club-web`. 브라우저 앱은 비밀키를 숨길 수 없어 비밀키 없는 public client로 두고 PKCE로 보호 |
+| Access token | 로그인 후 받는 JWT | API 요청의 `Authorization: Bearer` 헤더 |
 
 ## 로그인 흐름
 
@@ -34,9 +115,20 @@
                                                     sub로 주문 주인 기록·확인
 ```
 
-- 로그인 화면은 Keycloak 사이트에 있습니다. 비밀번호는 Keycloak으로만 전송되고 쇼핑몰은 토큰만 받습니다.
+| 순서 | 일어나는 일 | 코드 |
+| --- | --- | --- |
+| 1 | 헤더의 **로그인**을 누르면 Keycloak 로그인 화면으로 이동 | [keycloak.ts](../frontend/src/auth/keycloak.ts) `login()` |
+| 2 | 이메일·비밀번호 입력. 확인은 Keycloak이 하고 쇼핑몰은 비밀번호를 보지 못함 | Keycloak |
+| 3 | Keycloak이 교환권(code)을 붙여 쇼핑몰로 돌려보냄 | Keycloak |
+| 4 | `keycloak-js`가 교환권을 access token(JWT)으로 바꿔 메모리에 보관 | [keycloak.ts](../frontend/src/auth/keycloak.ts) `initAuth()` |
+| 5 | 주문·결제 API에 `Authorization: Bearer <token>` 헤더를 붙임 | [paymentApi.ts](../frontend/src/api/paymentApi.ts) |
+| 6 | Spring이 서명·발급처·대상·만료를 검사. 실패하면 `401` | [SecurityConfiguration](../src/main/java/com/example/payment/config/SecurityConfiguration.java) |
+| 7 | 토큰의 `sub`로 주문 주인을 기록·확인 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java) `isOwnedBy()` |
+| 8 | API 호출 전에 만료가 30초 안으로 남았으면 토큰을 새로 받음 | [keycloak.ts](../frontend/src/auth/keycloak.ts) `getAccessToken()` |
+
 - 백엔드는 처음 토큰을 검증할 때 Keycloak에서 공개키를 받아 두고, 이후 요청마다 Keycloak을 호출하지 않습니다.
-- 새로고침이나 토스 결제창 복귀로 페이지를 다시 열면, 숨은 iframe([silent-check-sso.html](../frontend/public/silent-check-sso.html))이 Keycloak 세션으로 토큰을 다시 받습니다.
+- 토큰은 메모리에만 있어 새로고침하면 사라집니다. Keycloak은 자기 주소(8081)에 로그인 세션 쿠키를 두므로, 새로고침이나 토스 결제창 복귀로 페이지를 다시 열면 숨은 iframe([silent-check-sso.html](../frontend/public/silent-check-sso.html))이 이 세션으로 토큰을 다시 받습니다. 세션은 Keycloak에만 있고 Spring에는 없습니다.
+- 로그인한 상태에서 브라우저 개발자 도구(F12)의 **Network** 탭을 열고 주문 요청의 **Request Headers → Authorization**을 보면 실제 토큰(`Bearer eyJ...`)을 볼 수 있습니다.
 
 ## 로컬 계정
 

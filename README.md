@@ -137,7 +137,7 @@ npm run build
 | [아키텍처](docs/architecture.md) | 결제 도메인 그림, 핵심 규칙, 상태, 복구 정책, 설계 결정 |
 | [중복 결제 방지](docs/duplicate-payment-prevention.md) | 같은 주문의 중복 승인을 막는 5단계 |
 | [API](docs/api.md) | 엔드포인트, 요청 예시, 응답 상태와 오류 |
-| [로그인과 회원](docs/authentication.md) | Keycloak 개념, 로그인 흐름, 테스트 계정, realm 설정 |
+| [로그인과 회원](docs/authentication.md) | 로그인 기술 기초(OAuth 2.0·OIDC·JWT), 로그인 흐름, 테스트 계정, realm 설정 |
 | [설정](docs/configuration.md) | 환경변수, 토스 키, 로컬 DB·pgAdmin·Keycloak 연결 |
 | [개발 가이드](docs/development.md) | 테스트, 빌드, 스키마 변경, 기여 시 확인 사항 |
 | [UI 디자인 기준](DESIGN.md) | 현재 화면의 스타일과 결제 문구 |
