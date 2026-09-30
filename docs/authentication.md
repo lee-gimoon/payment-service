@@ -2,7 +2,7 @@
 
 회원가입·로그인은 오픈소스 인증 서버 [Keycloak](https://www.keycloak.org/)이 맡습니다. 쇼핑몰은 비밀번호를 받지 않고, Keycloak이 발급한 access token으로 회원을 확인합니다. 실행 설정은 [설정 문서](configuration.md#keycloak), API 계약은 [API 문서](api.md)에 있습니다.
 
-한 문장으로 줄이면 **OpenID Connect(OAuth 2.0 기반)로 Keycloak에서 로그인하고, 받은 JWT를 들고 Spring API를 호출합니다. Spring은 세션 없이 JWT만 검사합니다.** 이 용어들이 처음이면 [로그인 기술 기초](#로그인-기술-기초)부터 읽습니다.
+한 문장으로 줄이면 **OpenID Connect(OAuth 2.0 기반)로 Keycloak에서 로그인하고, 받은 JWT를 들고 Spring API를 호출합니다. Spring은 세션 없이 JWT로 요청한 회원을 확인하고, API 접근 규칙과 주문 소유권을 검사합니다.** 이 용어들이 처음이면 [로그인 기술 기초](#로그인-기술-기초)부터 읽습니다.
 
 ## 로그인 기술 기초
 
@@ -40,7 +40,7 @@ eyJhbGciOi...  .  eyJzdWIiOi...  .  SflKxwRJSM...
 | `exp` | 만료 시각 | 발급 후 5분 |
 | `email`, `given_name`, `family_name` | 회원 정보 | 헤더에 회원 이름 표시 |
 
-- **서버가 기억하지 않습니다.** 필요한 정보가 토큰에 있으므로 Spring은 서명이 Keycloak 것인지, 기간이 남았는지만 검사합니다.
+- **Spring이 로그인 세션을 저장하지 않습니다.** 필요한 정보가 토큰에 있으므로 요청마다 토큰의 서명·발급처·대상·유효기간을 검사해 회원을 확인합니다.
 - **위조는 못 하지만 내용은 누구나 읽을 수 있습니다.** 서명은 고치지 못하게 막을 뿐 숨기지 않습니다. 비밀번호 같은 비밀은 넣지 않습니다.
 - **짧게 씁니다.** 도둑맞으면 만료 전까지 쓸 수 있으므로 5분만 유효하고, 만료가 가까우면 새로 받습니다.
 
@@ -194,14 +194,51 @@ docker compose up -d keycloak
 - 개발 모드에서는 테마를 캐시하지 않으므로 CSS나 문구를 고친 뒤 로그인 화면을 새로고침하면 바로 반영됩니다. 테마 폴더를 처음 연결할 때만 `docker compose up -d keycloak`으로 컨테이너를 다시 만듭니다.
 - 테마 적용 전부터 있던 realm은 설정 파일이 다시 적용되지 않습니다. 관리 콘솔 **Realm settings → Themes → Login theme**에서 `modo-club`을, **Realm settings → General → HTML Display name**에 설정 파일의 `displayNameHtml` 값을 넣습니다.
 
-## 서버의 접근 규칙
+## Keycloak·React·Spring의 책임
+
+**인증**은 “요청한 사람이 누구인지” 확인하는 일이고, **인가**는 “그 사람이 이 요청을 해도 되는지” 판단하는 일입니다. Keycloak은 로그인할 때 회원을 확인하고 토큰을 발급합니다. Spring API 서버는 요청마다 그 토큰을 검증하고, API와 데이터에 접근해도 되는지 판단합니다.
+
+| 하는 일 | 담당 | 이 프로젝트에서 처리하는 내용 |
+| --- | --- | --- |
+| 회원가입·비밀번호 관리 | **Keycloak 인증 서버** | 회원 정보를 저장하고 비밀번호를 관리 |
+| 로그인 확인·토큰 발급 | **Keycloak 인증 서버** | 비밀번호를 확인하고 교환권·access token·ID token을 발급. 로그인 세션과 토큰 갱신도 처리 |
+| 로그인 절차 연결 | **React 쇼핑몰의 `keycloak-js`** | Keycloak 화면으로 이동, PKCE와 교환권 교환 처리, 받은 토큰을 메모리에 보관·갱신 |
+| API 요청에 토큰 전달 | **React 쇼핑몰** | 주문·결제 요청의 `Authorization: Bearer <access token>` 헤더에 토큰을 첨부 |
+| API 요청의 인증 | **Spring Security** | JWT를 검증하고, 검증된 토큰의 `sub`로 요청한 회원을 확인 |
+| API별 접근 허용 | **Spring Security** | 상품·결제 설정 조회는 공개하고, 주문·결제 API는 인증된 회원에게 허용 |
+| 주문·결제 시도의 소유권 확인 | **Spring 서비스 코드** | 요청한 회원의 `sub`와 주문에 저장된 `customer_id`를 비교해 본인 주문·시도에만 접근 허용 |
+
+예를 들어 A 회원의 JWT가 유효하면 Spring의 **인증**을 통과합니다. 이어서 B 회원의 주문을 조회하려 하면, 서비스 코드의 **인가** 검사에서 거부되어 `404 ORDER_NOT_FOUND`를 받습니다. 주문 주인이 누구인지는 Spring의 주문 DB에 저장되어 있고, 이 검사는 Spring에서 구현합니다.
+
+## Spring API 서버의 접근 규칙
+
+아래 규칙은 **상품·주문·결제를 제공하는 Spring API 서버**에 적용됩니다. API별 로그인 필요 여부는 Spring Security 설정에서, 주문·시도의 소유권은 Spring 서비스 코드에서 검사합니다.
 
 | 요청 | 규칙 |
 | --- | --- |
 | `GET /products`, `GET /products/{id}`, `GET /payment-config`, Swagger | 누구나 |
-| 주문·결제 시도·승인 API | 로그인 필요. 토큰이 없거나 잘못되면 `401 UNAUTHORIZED` |
+| 주문·결제 시도·승인 API | 로그인 필요. access token이 없거나 검증에 실패하면 `401 UNAUTHORIZED` |
 | 다른 회원의 주문·시도 | 존재 여부를 알리지 않고 `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND` |
 | 로그인 도입 전에 만든 주문 | `customer_id`가 비어 있어 누구도 조회·결제할 수 없음. 복구 작업은 계속 처리 |
+
+### Spring Security 설정이 하는 일
+
+[SecurityConfiguration](../src/main/java/com/example/payment/config/SecurityConfiguration.java)은 API 요청이 컨트롤러에 도착하기 전에 실행할 보안 필터와 접근 규칙을 설정합니다. JWT 검증은 Spring Security가 제공하는 기능을 사용합니다.
+
+- **JWT 검증** — `.oauth2ResourceServer(...jwt(...))`로 Bearer JWT 인증을 켭니다. [application.yml](../src/main/resources/application.yml)의 설정에 따라 Keycloak 공개키로 서명을 확인하고, 발급처(`iss`), 대상(`aud`에 `payment-service` 포함), 유효기간을 검사합니다.
+- **API 접근 허용** — `.authorizeHttpRequests(...)`로 공개 경로를 지정하고, 나머지는 `.authenticated()`로 인증을 요구합니다. 현재 설정은 로그인 여부로 구분하며, 관리자·회원 같은 역할별 접근 제한은 설정하지 않았습니다.
+- **요청마다 인증** — `STATELESS`로 Spring의 로그인 세션을 저장하지 않습니다. 보호된 API를 호출할 때마다 access token을 보내야 합니다.
+- **CSRF 검사 비활성화** — 이 API는 인증용 쿠키 대신 요청의 `Authorization` 헤더에 담긴 Bearer 토큰으로 인증하므로, `.csrf(...disable())`로 CSRF 토큰 검사를 끕니다.
+- **인증 실패 응답** — `.authenticationEntryPoint(unauthorized)`로 인증 실패 시 `401`, 표준 `WWW-Authenticate` 헤더, `{code, message}` JSON을 반환하도록 설정합니다.
+
+### Spring 서비스 코드가 추가로 검사하는 일
+
+보안 처리는 설정 클래스 외에도 주문·결제 서비스에 구현되어 있습니다.
+
+- **회원 ID와 소유권** — [OrderController](../src/main/java/com/example/payment/order/OrderController.java)는 검증된 JWT에서 `sub`를 꺼내 서비스에 전달합니다. [OrderService](../src/main/java/com/example/payment/order/OrderService.java)와 결제 서비스는 이 값으로 주문 주인을 확인합니다. 요청 본문에 회원 ID를 적어 다른 회원의 주문에 접근할 수는 없습니다.
+- **결제 금액** — 주문 금액은 서버의 상품 DB 가격으로 계산합니다. 결제 승인 요청의 금액이 저장된 주문 금액과 다르면 거부하고, 토스 승인에도 서버에 저장된 금액을 사용합니다.
+- **결제 상태와 중복 요청** — [PaymentPreparationService](../src/main/java/com/example/payment/payment/application/PaymentPreparationService.java)는 승인 전에 주문 상태, 결제 키 중복, 결제 시도가 해당 주문에 속하는지도 검사합니다. 자세한 처리는 [결제 승인 흐름](architecture.md#결제-승인-흐름)에 있습니다.
+- **토스 시크릿 키** — Spring 서버에서만 사용해 토스 승인·조회 API를 호출합니다. 브라우저에 제공하는 `/payment-config`에는 클라이언트 키와 UI 설정만 담습니다. 키의 용도는 [토스 키](configuration.md#토스-키)에 설명되어 있습니다.
 
 ## 로그인에서 자주 생기는 문제
 
