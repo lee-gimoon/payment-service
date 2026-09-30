@@ -61,10 +61,10 @@ OAuth 2.0 규칙에는 네 등장인물이 나오고, 규칙은 각자 무엇을
 
 | 등장인물 | OAuth 용어 | 하는 일 | 카카오 로그인에서 | 이 프로젝트에서 |
 | --- | --- | --- | --- | --- |
-| 회원 | Resource Owner | 로그인하고 앱에 허락해 주는 사람 | 나 | 쇼핑몰 회원 |
-| 앱 | Client | 회원을 로그인 화면으로 보내고 토큰을 받는 앱 | 배달 앱 | React 쇼핑몰 `modo-club-web` |
-| 로그인 서버 | Authorization Server | 비밀번호를 확인하고 토큰을 발급 | 카카오 로그인 | Keycloak |
-| API 서버 | Resource Server | 토큰을 확인하고 요청을 처리 | 카카오 프로필 API | Spring 결제 서버 |
+| 사용자 | Resource Owner | 사용자 | 나 | 쇼핑몰 회원 |
+| 앱 | Client | 사용자가 이용하는 애플리케이션 | 배달 앱 | React 쇼핑몰 `modo-club-web` |
+| 로그인 서버 | Authorization Server | 로그인하고 토큰을 발급하는 서버 | 카카오 로그인 | Keycloak |
+| API 서버 | Resource Server | 실제 데이터를 가지고 있는 API 서버 | 카카오 프로필 API | Spring 결제 서버 |
 
 토큰을 받는 절차는 여러 가지이고, 이 프로젝트는 **Authorization Code + PKCE**를 씁니다.
 
