@@ -78,6 +78,7 @@ OAuth 2.0 규칙에는 네 등장인물이 나오고, 규칙은 각자 무엇을
 OAuth 2.0은 토큰으로 **무엇을 할 수 있는지**(권한)만 정하고, 로그인한 사람이 **누구인지** 알리는 방법은 정하지 않았습니다. OpenID Connect(OIDC)는 OAuth 2.0 위에 로그인 규칙을 더한 표준입니다.
 
 - `keycloak-js`가 **처음 Keycloak으로 이동하는 로그인 요청 URL의 `scope`에 `openid`를 자동으로 넣습니다**(`scope=openid`). Keycloak은 이 값을 보고 **OIDC 로그인 요청임을 알아봅니다.** `openid`는 JWT나 교환권에 붙이는 값이 아니라 로그인 요청에 넣는 표시입니다.
+- 로그인 후 쇼핑몰로 돌아오는 URL에는 **교환권인 `code`가 전달되며, `scope=openid`가 다시 붙어 오지는 않습니다.** Keycloak은 교환권을 처음 로그인 요청과 연결해 두므로, 나중에 교환권을 받으면 **앞서 `openid`를 포함해 요청한 로그인임을 알아봅니다.** 따라서 쇼핑몰이 토큰을 요청할 때도 `scope=openid`를 다시 보내지 않습니다.
 - 교환권을 Keycloak에 보내 토큰으로 바꾸면, JSON 응답에 **`access_token`과 `id_token`이 함께 옵니다.** `id_token`은 로그인한 회원이 누구인지 알려주는 JWT이고, `access_token`은 API를 호출할 때 쓰는 토큰입니다. 이 프로젝트에서는 두 토큰 모두 JWT 형식이며, **Spring API에는 `access_token`을 보냅니다.**
 - 회원 ID는 `sub`, 이메일은 `email`처럼 회원 정보의 이름을 통일합니다.
 - 발급처 주소 하나로 공개키 위치 등을 찾는 안내 문서(`/.well-known/openid-configuration`)를 둡니다.
