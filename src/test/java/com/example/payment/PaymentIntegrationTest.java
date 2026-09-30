@@ -37,6 +37,7 @@ import com.example.payment.payment.persistence.PaymentRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -48,15 +49,20 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -66,6 +72,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
         "payment.recovery.enabled=false"})
 @AutoConfigureMockMvc
 @Testcontainers
+@Import(PaymentIntegrationTest.AdminProbe.class)
 class PaymentIntegrationTest {
     private static final String CUSTOMER = "customer-1";
     private static final String OTHER_CUSTOMER = "customer-2";
@@ -90,6 +97,7 @@ class PaymentIntegrationTest {
     @Autowired PaymentRepository paymentRepository;
     @Autowired JdbcTemplate jdbc;
     @MockitoBean TossPaymentClient toss;
+    @MockitoBean JwtDecoder jwtDecoder;
 
     @BeforeEach
     void cleanDatabase() {
@@ -179,6 +187,23 @@ class PaymentIntegrationTest {
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("STARTED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PENDING_PAYMENT");
         verifyNoInteractions(toss);
+    }
+
+    @Test
+    void adminApisRequireShopAdminRealmRole() throws Exception {
+        // Bearer 토큰으로 보내 Keycloak realm_access.roles를 Spring 권한으로 바꾸는 설정까지 거친다.
+        when(jwtDecoder.decode("customer-token")).thenReturn(keycloakToken("customer-token", "default-roles-modo-club"));
+        when(jwtDecoder.decode("admin-token")).thenReturn(keycloakToken("admin-token", "default-roles-modo-club", "shop-admin"));
+
+        mvc.perform(get("/admin/probe"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+        mvc.perform(get("/admin/probe").header("Authorization", "Bearer customer-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(header().string("WWW-Authenticate", startsWith("Bearer")))
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mvc.perform(get("/admin/probe").header("Authorization", "Bearer admin-token"))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -821,6 +846,11 @@ class PaymentIntegrationTest {
         return jwt().jwt(token -> token.subject(customerId));
     }
 
+    private static Jwt keycloakToken(String value, String... realmRoles) {
+        return Jwt.withTokenValue(value).header("alg", "RS256").subject(value)
+                .claim("realm_access", Map.of("roles", List.of(realmRoles))).build();
+    }
+
     private List<String> columns(String table) {
         return jdbc.queryForList("SELECT column_name FROM information_schema.columns "
                 + "WHERE table_schema = 'public' AND table_name = ?", String.class, table);
@@ -880,4 +910,13 @@ class PaymentIntegrationTest {
     }
 
     private record Checkout(String orderId, String attemptId) {}
+
+    // 관리자 API가 아직 없으므로 /admin/** 접근 규칙을 확인할 테스트 전용 엔드포인트를 둔다.
+    @RestController
+    static class AdminProbe {
+        @GetMapping("/admin/probe")
+        String probe() {
+            return "ok";
+        }
+    }
 }

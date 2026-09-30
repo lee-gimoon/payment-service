@@ -39,6 +39,7 @@ eyJhbGciOi...  .  eyJzdWIiOi...  .  SflKxwRJSM...
 | `sub` | 회원 고유 ID | Keycloak이 만든 UUID. `purchase_orders.customer_id`에 저장 |
 | `exp` | 만료 시각 | 발급 후 5분 |
 | `email`, `given_name`, `family_name` | 회원 정보 | 헤더에 회원 이름 표시 |
+| `realm_access.roles` | 회원이 가진 realm 역할 | 쇼핑몰 관리자는 `shop-admin` 포함. Spring이 관리자 API 접근을 판단 |
 
 - **Spring이 로그인 세션을 저장하지 않습니다.** 필요한 정보가 토큰에 있으므로 요청마다 토큰의 서명·발급처·대상·유효기간을 검사해 회원을 확인합니다.
 - **위조는 못 하지만 내용은 누구나 읽을 수 있습니다.** 서명은 고치지 못하게 막을 뿐 숨기지 않습니다. 비밀번호 같은 비밀은 넣지 않습니다.
@@ -118,6 +119,7 @@ JWT            = 토큰을 담는 형식 (별개 표준)   ← 토큰 모양
 | Realm | 회원과 설정을 묶는 독립 공간 | `modo-club` (관리자용 `master`와 분리) |
 | Client | Keycloak에 로그인을 맡기는 앱. OAuth 등장인물 중 앱 | `modo-club-web`. 브라우저 앱은 비밀키를 숨길 수 없어 비밀키 없는 public client로 두고 PKCE로 보호 |
 | Access token | 로그인 후 받는 JWT | API 요청의 `Authorization: Bearer` 헤더 |
+| Realm role | realm 안에서 회원에게 주는 역할. 토큰의 `realm_access.roles`에 담김 | `shop-admin` (쇼핑몰 관리자) |
 
 ## 로그인 흐름
 
@@ -149,28 +151,46 @@ JWT            = 토큰을 담는 형식 (별개 표준)   ← 토큰 모양
 
 | 용도 | 계정 | 비밀번호 |
 | --- | --- | --- |
-| 관리 콘솔 `http://127.0.0.1:8081/admin` | `admin` | `keycloak_admin_local` |
+| Keycloak 관리자(슈퍼 유저). 관리 콘솔 `http://127.0.0.1:8081/admin` 전용 | `admin` | `keycloak_admin_local` |
+| 쇼핑몰 관리자 (`shop-admin` 역할) | `shop-admin@modo.test` | `admin` |
 | 테스트 회원 | `buyer@modo.test` | `modo_buyer_local` |
 | 다른 회원 (주문 접근 차단 확인용) | `other@modo.test` | `modo_other_local` |
 
-테스트 회원은 [realm 설정 파일](../docker/keycloak/modo-club-realm.json)에 들어 있습니다. 로컬 전용 값이며 운영에서 쓰지 않습니다.
+쇼핑몰 관리자와 테스트 회원은 [realm 설정 파일](../docker/keycloak/modo-club-realm.json)에 들어 있습니다. 로컬 전용 값이며 운영에서 쓰지 않습니다.
+
+**관리자가 둘인 이유**: 이름이 비슷하지만 하는 일과 속한 곳이 다릅니다.
+
+| | Keycloak 관리자 `admin` | 쇼핑몰 관리자 `shop-admin@modo.test` |
+| --- | --- | --- |
+| 속한 realm | `master` | `modo-club` |
+| 할 수 있는 일 | 모든 realm의 설정·회원·역할 관리 | 쇼핑몰의 관리자 API(`/admin/**`) 호출 |
+| 쇼핑몰 로그인 | 불가. 다른 realm 계정이고, Spring은 `modo-club`이 발급한 토큰만 받음 | 가능. 일반 회원 기능도 그대로 씀 |
+| 만든 방법 | Compose의 `KC_BOOTSTRAP_ADMIN_*`가 첫 실행 때 생성 | realm 역할 `shop-admin`을 준 `modo-club` 회원 |
+
+`master` realm에도 슈퍼 유저 권한을 뜻하는 `admin` 역할이 있으므로, 쇼핑몰 역할은 헷갈리지 않게 `shop-admin`으로 이름 붙였습니다.
 
 ## 관리 콘솔에서 해볼 것
 
 1. 관리 콘솔에 로그인한 뒤 왼쪽 위 realm 선택에서 `modo-club`으로 바꿉니다.
 2. **Users**: 회원 목록, 회원 추가·비밀번호 재설정·비활성화
-3. **Clients → modo-club-web**: Valid redirect URIs, Web origins, PKCE 설정
-4. **Realm settings → Login**: 회원가입 허용, 이메일로 로그인 등
-5. `http://127.0.0.1:8081/realms/modo-club/account`: 회원 입장의 계정 화면
-6. `http://127.0.0.1:8081/realms/modo-club/.well-known/openid-configuration`: 백엔드가 공개키 주소를 찾는 문서
+3. **Realm roles**: realm 역할 목록. `shop-admin`을 가진 회원 확인
+4. **Clients → modo-club-web**: Valid redirect URIs, Web origins, PKCE 설정
+5. **Clients → modo-club-web → Client scopes → Evaluate**: 회원을 골라 그 회원이 받을 access token 내용 미리 보기
+6. **Realm settings → Login**: 회원가입 허용, 이메일로 로그인 등
+7. `http://127.0.0.1:8081/realms/modo-club/account`: 회원 입장의 계정 화면
+8. `http://127.0.0.1:8081/realms/modo-club/.well-known/openid-configuration`: 백엔드가 공개키 주소를 찾는 문서
 
 ## realm 설정 바꾸기
 
-- 기준 설정은 [modo-club-realm.json](../docker/keycloak/modo-club-realm.json)입니다. Keycloak은 시작할 때 이 파일을 가져오지만 **realm이 이미 있으면 건너뜁니다.**
-- 파일을 고쳤다면 관리 콘솔에서 `modo-club` realm을 삭제한 뒤 `docker compose restart keycloak`으로 다시 가져옵니다. 회원가입으로 만든 회원도 함께 지워집니다.
+- 기준 설정은 [modo-club-realm.json](../docker/keycloak/modo-club-realm.json)입니다. Keycloak은 시작할 때 `modo-club` realm이 **없을 때만** 이 파일로 realm을 만들고, **이미 있으면 파일을 읽지 않습니다.** 그래서 파일을 고치기만 해서는 쓰던 환경이 바뀌지도, 회원이 지워지지도 않습니다.
+- 파일은 Keycloak DB가 비어 있는 새 환경(다른 PC에서 처음 실행, 볼륨·`keycloak` DB 초기화)에서 쓰입니다.
+- 쓰던 환경에 같은 변경을 넣을 때는 realm을 지우지 말고 다음 중 하나로 추가합니다.
+  - 관리 콘솔에서 같은 내용을 직접 추가합니다.
+  - **Realm settings → 오른쪽 위 Action → Partial import**에 파일을 올립니다. realm은 그대로 두고 역할·회원 등만 추가하며, 이미 있는 항목은 건너뛰거나 덮어쓰도록 고릅니다.
+- `modo-club` realm을 삭제하고 `docker compose restart keycloak`으로 다시 가져오면 파일 내용이 그대로 적용되지만, **회원가입으로 만든 회원이 모두 지워집니다.** 파일의 테스트 회원도 새 회원 ID(`sub`)로 다시 만들어져, 이전 주문은 쇼핑몰 DB에 남아 있어도 조회할 수 없게 됩니다.
 - 관리 콘솔에서 바꾼 설정은 파일에 반영되지 않습니다. 계속 쓸 설정이면 파일도 함께 고칩니다.
 
-Keycloak 데이터를 모두 지우려면 결제 DB는 두고 `keycloak` DB만 다시 만듭니다.
+Keycloak 데이터를 모두 지우려면 결제 DB는 두고 `keycloak` DB만 다시 만듭니다. 위와 같이 회원이 모두 지워지고 파일 내용으로 새로 만들어집니다.
 
 ```powershell
 docker compose stop keycloak
@@ -178,6 +198,19 @@ docker compose exec postgres psql -U payment -d postgres -c "DROP DATABASE keycl
 docker compose exec postgres psql -U payment -d postgres -f /docker-entrypoint-initdb.d/01-keycloak.sql
 docker compose up -d keycloak
 ```
+
+### 쓰던 환경에 쇼핑몰 관리자 추가하기
+
+realm 설정 파일에 쇼핑몰 관리자를 넣기 전부터 쓰던 환경이라면 관리 콘솔에서 한 번 추가합니다.
+
+1. 관리 콘솔에 Keycloak 관리자로 로그인하고, 왼쪽 위 realm 선택을 `modo-club`으로 바꿉니다. `master`에 만들면 쇼핑몰과 무관한 곳에 생깁니다.
+2. **Realm roles → Create role**에서 `shop-admin`을 만듭니다.
+3. **Users → Add user**에서 `shop-admin@modo.test`를 만들고 **Email verified**를 켭니다. 이름을 비우면 첫 로그인 때 입력 화면이 나옵니다.
+4. 만든 회원의 **Credentials → Set password**에서 [로컬 계정](#로컬-계정)의 비밀번호를 넣고 **Temporary**를 끕니다.
+5. **Role mapping → Assign role**에서 필터를 **Filter by realm roles**로 바꾸고 `shop-admin`을 줍니다.
+6. **Clients → modo-club-web → Client scopes → Evaluate**에서 이 회원을 고르고, access token에 `"realm_access": {"roles": [..., "shop-admin"]}`가 있는지 확인합니다.
+
+역할은 로그인할 때 토큰에 담기므로, 이미 로그인한 상태였다면 로그아웃한 뒤 다시 로그인해야 반영됩니다.
 
 ## 로그인 화면 디자인
 
@@ -201,11 +234,12 @@ docker compose up -d keycloak
 | 하는 일 | 담당 | 이 프로젝트에서 처리하는 내용 |
 | --- | --- | --- |
 | 회원가입·비밀번호 관리 | **Keycloak 인증 서버** | 회원 정보를 저장하고 비밀번호를 관리 |
+| 역할 부여 | **Keycloak 인증 서버** | 쇼핑몰 관리자에게 realm 역할 `shop-admin`을 주고, 로그인할 때 access token의 `realm_access.roles`에 담음 |
 | 로그인 확인·토큰 발급 | **Keycloak 인증 서버** | 비밀번호를 확인하고 교환권·access token·ID token을 발급. 로그인 세션과 토큰 갱신도 처리 |
 | 로그인 절차 연결 | **React 쇼핑몰의 `keycloak-js`** | Keycloak 화면으로 이동, PKCE와 교환권 교환 처리, 받은 토큰을 메모리에 보관·갱신 |
 | API 요청에 토큰 전달 | **React 쇼핑몰** | 주문·결제 요청의 `Authorization: Bearer <access token>` 헤더에 토큰을 첨부 |
 | API 요청의 인증 | **Spring Security** | JWT를 검증하고, 검증된 토큰의 `sub`로 요청한 회원을 확인 |
-| API별 접근 허용 | **Spring Security** | 상품·결제 설정 조회는 공개하고, 주문·결제 API는 인증된 회원에게 허용 |
+| API별 접근 허용 | **Spring Security** | 상품·결제 설정 조회는 공개하고, 주문·결제 API는 인증된 회원에게, 관리자 API(`/admin/**`)는 `shop-admin` 역할이 있는 회원에게만 허용 |
 | 주문·결제 시도의 소유권 확인 | **Spring 서비스 코드** | 요청한 회원의 `sub`와 주문에 저장된 `customer_id`를 비교해 본인 주문·시도에만 접근 허용 |
 
 예를 들어 A 회원의 JWT가 유효하면 Spring의 **인증**을 통과합니다. 이어서 B 회원의 주문을 조회하려 하면, 서비스 코드의 **인가** 검사에서 거부되어 `404 ORDER_NOT_FOUND`를 받습니다. 주문 주인이 누구인지는 Spring의 주문 DB에 저장되어 있고, 이 검사는 Spring에서 구현합니다.
@@ -218,6 +252,7 @@ docker compose up -d keycloak
 | --- | --- |
 | `GET /products`, `GET /products/{id}`, `GET /payment-config`, Swagger | 누구나 |
 | 주문·결제 시도·승인 API | 로그인 필요. access token이 없거나 검증에 실패하면 `401 UNAUTHORIZED` |
+| 관리자 API `/admin/**` | 쇼핑몰 관리자(`shop-admin` 역할)만. 로그인했지만 역할이 없으면 `403 FORBIDDEN` |
 | 다른 회원의 주문·시도 | 존재 여부를 알리지 않고 `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND` |
 | 로그인 도입 전에 만든 주문 | `customer_id`가 비어 있어 누구도 조회·결제할 수 없음. 복구 작업은 계속 처리 |
 
@@ -226,10 +261,12 @@ docker compose up -d keycloak
 [SecurityConfiguration](../src/main/java/com/example/payment/config/SecurityConfiguration.java)은 API 요청이 컨트롤러에 도착하기 전에 실행할 보안 필터와 접근 규칙을 설정합니다. JWT 검증은 Spring Security가 제공하는 기능을 사용합니다.
 
 - **JWT 검증** — `.oauth2ResourceServer(...jwt(...))`로 Bearer JWT 인증을 켭니다. [application.yml](../src/main/resources/application.yml)의 설정에 따라 Keycloak 공개키로 서명을 확인하고, 발급처(`iss`), 대상(`aud`에 `payment-service` 포함), 유효기간을 검사합니다.
-- **API 접근 허용** — `.authorizeHttpRequests(...)`로 공개 경로를 지정하고, 나머지는 `.authenticated()`로 인증을 요구합니다. 현재 설정은 로그인 여부로 구분하며, 관리자·회원 같은 역할별 접근 제한은 설정하지 않았습니다.
+- **API 접근 허용** — `.authorizeHttpRequests(...)`로 공개 경로를 지정하고, `/admin/**`는 `.hasRole("shop-admin")`으로 쇼핑몰 관리자만 허용하며, 나머지는 `.authenticated()`로 인증을 요구합니다.
+- **역할 읽기** — Spring의 기본 변환기는 토큰의 `scope`만 권한으로 읽고 Keycloak의 `realm_access.roles`는 읽지 않습니다. 그래서 `.jwt(...jwtAuthenticationConverter(...))`로 realm 역할을 `ROLE_shop-admin` 같은 Spring 권한으로 바꿉니다. `hasRole("shop-admin")`은 이 `ROLE_shop-admin` 권한을 확인합니다.
 - **요청마다 인증** — `STATELESS`로 Spring의 로그인 세션을 저장하지 않습니다. 보호된 API를 호출할 때마다 access token을 보내야 합니다.
 - **CSRF 검사 비활성화** — 이 API는 인증용 쿠키 대신 요청의 `Authorization` 헤더에 담긴 Bearer 토큰으로 인증하므로, `.csrf(...disable())`로 CSRF 토큰 검사를 끕니다.
 - **인증 실패 응답** — `.authenticationEntryPoint(unauthorized)`로 인증 실패 시 `401`, 표준 `WWW-Authenticate` 헤더, `{code, message}` JSON을 반환하도록 설정합니다.
+- **권한 부족 응답** — `.accessDeniedHandler(forbidden)`로 로그인은 했지만 필요한 역할이 없으면 `403`, `WWW-Authenticate` 헤더, `{"code": "FORBIDDEN", ...}` JSON을 반환합니다.
 
 ### Spring 서비스 코드가 추가로 검사하는 일
 
@@ -249,6 +286,7 @@ docker compose up -d keycloak
 | Keycloak 화면에 `Invalid parameter: redirect_uri` | client의 Redirect URI에 쇼핑몰 주소가 없음 |
 | 토큰 교환에서 CORS 오류 | client의 Web origins에 쇼핑몰 주소가 없음 |
 | 로그인은 되는데 API가 401 | 토큰의 `iss`나 `aud`가 서버 설정과 다름 |
+| 쇼핑몰 관리자인데 관리자 API가 403 | 토큰에 `shop-admin`이 없음. 역할을 `master`가 아닌 `modo-club` realm에 만들었는지 확인하고, 역할을 준 뒤 로그아웃·재로그인 |
 | 새로고침하면 로그인이 풀림 | `localhost`와 `127.0.0.1`을 섞어 씀. 항상 `127.0.0.1`을 씀 |
 | 헤더에 로그인 버튼이 늦게 뜨거나 주문 조회가 401 | Keycloak이 꺼져 있거나 아직 시작 중. 첫 시작은 1분쯤 걸림 |
 

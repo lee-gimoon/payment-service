@@ -21,6 +21,7 @@
 
 - 로그인이 필요한 API에 토큰이 없거나, 서명·발급자·만료·대상(`aud`)이 맞지 않으면 `401 UNAUTHORIZED`다.
 - 다른 회원의 주문과 시도는 존재 여부를 알리지 않고 `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`로 응답한다.
+- `/admin/**` 경로는 쇼핑몰 관리자 전용이다. 토큰의 `realm_access.roles`에 `shop-admin`이 없으면 `403 FORBIDDEN`이다. 현재 공개된 관리자 API는 없다.
 
 모든 요청에서 본문 형식 오류는 `400 INVALID_REQUEST`, 동시 수정·DB 제약 충돌은 `409 PAYMENT_CONFLICT`, DB 장애는 `503 STORAGE_UNAVAILABLE`이 될 수 있다.
 

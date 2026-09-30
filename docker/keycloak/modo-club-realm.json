@@ -15,6 +15,11 @@
   "internationalizationEnabled": true,
   "supportedLocales": ["ko", "en"],
   "defaultLocale": "ko",
+  "roles": {
+    "realm": [
+      { "name": "shop-admin", "description": "MODO CLUB 쇼핑몰 관리자" }
+    ]
+  },
   "clients": [
     {
       "clientId": "modo-club-web",
@@ -70,6 +75,18 @@
       "enabled": true,
       "credentials": [
         { "type": "password", "value": "modo_other_local", "temporary": false }
+      ]
+    },
+    {
+      "username": "shop-admin@modo.test",
+      "email": "shop-admin@modo.test",
+      "emailVerified": true,
+      "firstName": "admin",
+      "lastName": "modo",
+      "enabled": true,
+      "realmRoles": ["shop-admin"],
+      "credentials": [
+        { "type": "password", "value": "admin", "temporary": false }
       ]
     }
   ]
