@@ -73,22 +73,27 @@ FROM chat_messages m
 JOIN chat_rooms r ON r.id = m.room_id
 WHERE m.sender_type = 'CUSTOMER'           -- 고객이 보낸 것만
   AND m.id > r.admin_read_message_id       -- 관리자가 읽은 번호보다 뒤
-GROUP BY m.room_id
+GROUP BY m.room_id;
 ```
 
 ```sql
 -- 고객이 아직 읽지 않은 관리자 답변 수를 세는 쿼리 (내 상담방 하나)
+-- 1. 로그인한 고객의 상담방과 읽은 번호를 찾는다
+SELECT id, customer_read_message_id
+FROM chat_rooms
+WHERE customer_id = '<토큰의 sub>';
+
+-- 2. 그 방에서 읽은 번호 뒤의 관리자 답변을 센다
 SELECT COUNT(*)
-FROM chat_messages m
-JOIN chat_rooms r ON r.id = m.room_id
-WHERE r.customer_id = '<토큰의 sub>'        -- 로그인한 고객의 방만
-  AND m.sender_type = 'ADMIN'               -- 관리자가 보낸 것만
-  AND m.id > r.customer_read_message_id     -- 고객이 읽은 번호보다 뒤
+FROM chat_messages
+WHERE room_id = '<1에서 찾은 방 id>'
+  AND sender_type = 'ADMIN'                        -- 관리자가 보낸 것만
+  AND id > <1에서 찾은 customer_read_message_id>;  -- 고객이 읽은 번호보다 뒤
 ```
 
-- 첫 쿼리는 관리자 상담 목록의 **안 읽음 N**이다. 실제 쿼리([countUnreadByAdmin](../src/main/java/com/example/payment/chat/persistence/ChatMessageRepository.java))는 목록에 보일 방(최대 100개)으로 범위를 좁혀 한 번에 센다. 안 읽은 메시지가 없는 방은 결과에 없으므로 0으로 본다.
-- 두 번째 쿼리는 고객 문의 창의 **새 답변 N**이다. 실제 코드는 방을 먼저 조회한 뒤 그 방의 메시지 수만 센다. 관리자가 대화 하나를 열 때도 조건만 바꿔 같은 방식으로 센다.
-- 위 예시에 대입하면 첫 쿼리는 3번 하나라서 1, 두 번째 쿼리는 3번 뒤 관리자 메시지가 없어서 0이다.
+- 첫 블록은 관리자 상담 목록의 **안 읽음 N**이다. 실제 쿼리([countUnreadByAdmin](../src/main/java/com/example/payment/chat/persistence/ChatMessageRepository.java))는 목록에 보일 방(최대 100개)으로 범위를 좁혀 한 번에 센다. 안 읽은 메시지가 없는 방은 결과에 없으므로 0으로 본다.
+- 두 번째 블록은 고객 문의 창의 **새 답변 N**이다. 대화 조회(`GET /chat/messages`)에서 방을 먼저 찾고, 방이 없으면 0으로 끝낸다. 관리자가 대화 하나를 열 때도 조건만 바꿔(`CUSTOMER`, `admin_read_message_id`) 같은 방식으로 센다.
+- 위 예시에 대입하면 첫 블록은 3번 하나라서 1, 두 번째 블록은 3번 뒤 관리자 메시지가 없어서 0이다.
 
 ## 메시지 저장 순서
 
