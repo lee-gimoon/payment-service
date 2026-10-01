@@ -118,7 +118,7 @@ WHERE room_id = '<1에서 찾은 방 id>'
 
 ## 실시간 전달
 
-메시지 보내기는 HTTP API가 맡고, WebSocket은 **저장된 메시지를 알리는 데만** 쓴다. 보내기를 HTTP로 두면 요청 검증, 재전송 중복 방지, 오류 응답(`400`·`409` 등)을 기존 API 그대로 쓸 수 있다.
+메시지 보내기는 HTTP API가 맡고, WebSocket은 **저장된 메시지를 알리는 데만** 쓴다([보내기를 HTTP로 하는 이유](#보내기를-http로-하는-이유)).
 
 | 항목 | 값 |
 | --- | --- |
@@ -128,6 +128,19 @@ WHERE room_id = '<1에서 찾은 방 id>'
 | 관리자 구독 주소 | `/topic/admin/chat`. 모든 상담방의 새 메시지가 `{ roomId, message }`로 온다 |
 | 서버 구현 | [ChatWebSocketConfiguration](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatWebSocketConfiguration.java), [ChatSocketAuthorization](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatSocketAuthorization.java), [ChatNotifier](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatNotifier.java) |
 | 화면 구현 | [chatSocket.ts](../frontend/src/chat/chatSocket.ts) (`@stomp/stompjs`) |
+
+### 보내기를 HTTP로 하는 이유
+
+WebSocket 하나로 보내기와 받기를 모두 하는 채팅도 많지만, 이 서비스는 보내기를 HTTP API로 하고 WebSocket은 전달에만 쓴다. 디스코드도 메시지 보내기는 HTTP API로, 받기는 WebSocket(Gateway)으로 나눈다.
+
+| 이유 | 설명 |
+| --- | --- |
+| 보낸 결과를 안다 | 응답 상태로 저장(`201`), 재전송(`200`), 내용 오류(`400`), 충돌(`409`), 로그인 만료(`401`)를 구분한다. 응답이 없으면 같은 `clientMessageId`로 다시 보낸다. WebSocket으로 보내면 확인 응답, 오류 형식, 재전송 규칙을 따로 설계해야 한다 |
+| 기존 장치를 그대로 쓴다 | Spring Security의 토큰·권한 검사, `@Valid` 입력 검증, `{ code, message }` 오류 응답, 요청당 트랜잭션, Swagger 문서와 MockMvc 테스트를 주문·결제 API와 똑같이 쓴다 |
+| 보안이 단순하다 | 브라우저의 `SEND`를 모두 거부하므로, WebSocket으로 오가는 메시지는 서버가 DB에 저장한 뒤 보낸 것뿐이다. 브라우저가 가짜 메시지를 뿌릴 길이 없다 |
+| 상담은 메시지가 적다 | HTTP는 요청마다 헤더와 토큰을 다시 보내 메시지당 비용이 조금 크지만, 1:1 상담의 전송 빈도에서는 문제가 되지 않는다 |
+
+반대로 게임이나 실시간 공동 편집처럼 초당 여러 번 보내는 경우, 메시지가 아주 많은 단체 채팅, 타이핑 중 표시처럼 저장하지 않고 흘려보내는 신호는 WebSocket으로 보내는 편이 낫다.
 
 ### STOMP
 
