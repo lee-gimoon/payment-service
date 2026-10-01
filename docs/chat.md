@@ -106,7 +106,15 @@ WHERE room_id = '<1에서 찾은 방 id>'
 5. 방의 마지막 메시지 요약과 보낸 사람의 읽음 위치를 갱신한다.
 
 - **방 만들기에 `ON CONFLICT`를 쓰는 이유**: 첫 메시지를 동시에 두 번 보내면 두 요청이 모두 방을 만들려 한다. 일반 `INSERT`는 한쪽이 유니크 제약 위반으로 실패하고, PostgreSQL에서는 실패한 트랜잭션을 더 쓸 수 없다. `ON CONFLICT DO NOTHING`은 이미 있으면 조용히 넘어가므로 두 요청 모두 같은 방에 메시지를 저장한다.
-- **방을 잠그는 이유**: 번호는 저장할 때 매겨지지만 커밋 순서는 다를 수 있다. 잠그지 않으면 5번이 먼저 커밋되고 4번이 나중에 커밋될 수 있고, "5번 이후 메시지"를 조회하면 4번을 놓친다. 방을 잠그면 같은 방의 메시지는 한 줄로 저장되어 이런 일이 없다. 마지막 메시지 요약도 늦게 끝난 요청이 덮어쓰지 않는다.
+- **방을 잠그는 이유**: 번호는 INSERT할 때 매겨지지만 다른 요청에 보이는 건 커밋한 뒤라서, 번호 순서와 커밋 순서가 다를 수 있다. 잠그지 않으면 다음처럼 4번을 놓친다.
+
+  | 순서 | 요청 A | 요청 B | 그때 다른 화면이 조회하면 |
+  | --- | --- | --- | --- |
+  | 1 | INSERT → 4번 | | 1~3 |
+  | 2 | (지연) | INSERT → 5번, 커밋 | 1~3, 5. 화면은 "5번까지 받음"으로 기록 |
+  | 3 | 커밋 | | 다음 조회가 `after=5`라서 4번을 놓침 |
+
+  방을 잠그면 B는 A가 커밋할 때까지 기다리므로, 같은 방의 메시지는 번호 순서대로 커밋된다. 5번이 보이면 4번도 이미 보인다. 마지막 메시지 요약도 늦게 끝난 요청이 덮어쓰지 않는다.
 - **읽음 위치**: 앞으로만 움직이고, 아직 없는 번호로는 앞서가지 않는다. 메시지를 보낸 사람은 자기 메시지까지 읽은 것으로 본다. 읽음 표시도 방을 잠근 뒤 바꾼다.
 
 ## 목록과 대화 조회
@@ -144,61 +152,53 @@ WebSocket 하나로 보내기와 받기를 모두 하는 채팅도 많지만, �
 
 ### STOMP
 
-STOMP(Simple Text Oriented Messaging Protocol)는 클라이언트와 메시지 브로커가 메시지를 주고받는 형식을 정한 텍스트 기반 프로토콜이다. TCP나 WebSocket 같은 양방향 연결 위에서 동작하며, 현재 버전은 1.2다([STOMP 1.2 명세](https://stomp.github.io/stomp-specification-1.2.html)). WebSocket은 연결을 열어 두고 데이터를 주고받는 통로만 제공하고 내용의 형식은 정하지 않는다. 이 서비스는 그 위에 STOMP를 얹어 "주소를 구독하고, 그 주소로 온 메시지를 받는다"는 규칙을 쓴다.
+STOMP(Simple Text Oriented Messaging Protocol)는 WebSocket 같은 양방향 연결 위에서 메시지를 주고받는 형식을 정한 텍스트 프로토콜이다([STOMP 1.2 명세](https://stomp.github.io/stomp-specification-1.2.html)). WebSocket은 데이터를 주고받는 통로만 제공하고, STOMP는 그 위에서 "어느 주소를 구독하고, 그 주소로 온 메시지를 받는다"는 규칙을 정한다.
+
+주고받는 한 단위를 **프레임**이라 한다. 첫 줄은 명령, 그다음은 `이름:값` 헤더, 빈 줄 뒤는 본문이다. 고객 화면이 관리자 답변을 받기까지 오가는 프레임은 다음과 같다.
+
+**① 연결**: 브라우저가 로그인 토큰을 헤더에 담아 연결한다. 서버는 토큰을 확인하고 `CONNECTED`로 답한다. 토큰이 없거나 틀리면 `ERROR`를 보내고 연결을 닫는다.
 
 ```text
-STOMP       프레임 형식, 구독 주소(destination), 연결 헤더
-WebSocket   연결을 유지하고 양방향으로 데이터를 주고받음
-TCP         데이터를 순서대로 빠짐없이 전달
+CONNECT
+accept-version:1.2
+heart-beat:10000,10000
+Authorization:Bearer eyJhbGciOi...
 ```
 
-#### 프레임
+**② 구독**: 내 상담 알림을 받을 주소를 구독한다. `id`는 브라우저가 정한 구독 번호다.
 
-STOMP로 주고받는 한 단위를 프레임이라 한다. 명령, 헤더, 빈 줄, 본문 순서로 쓰고 NULL 문자(`^@`)로 끝낸다. 아래는 고객이 관리자 답변을 받는 프레임이다.
+```text
+SUBSCRIBE
+id:sub-0
+destination:/user/queue/chat
+```
+
+**③ 받기**: 관리자가 HTTP로 답장해 DB에 커밋되면, 서버가 구독한 주소로 메시지를 보낸다. `subscription`은 ②의 구독 번호다.
 
 ```text
 MESSAGE
 destination:/user/queue/chat
+subscription:sub-0
 content-type:application/json
 
-{"id":6,"sender":"ADMIN","content":"L이 가슴단면 3cm 더 커요.", ...}^@
+{"id":6,"sender":"ADMIN","content":"L이 가슴단면 3cm 더 커요.", ...}
 ```
 
-| 프레임 | 방향 | 뜻 | 이 서비스 |
-| --- | --- | --- | --- |
-| `CONNECT` | 클라이언트 → 서버 | 연결 시작. 버전, heartbeat, 인증 정보를 헤더로 보냄 | access token을 `Authorization` 헤더로 보냄 |
-| `CONNECTED` | 서버 → 클라이언트 | 연결 수락 | |
-| `SUBSCRIBE` | 클라이언트 → 서버 | 주소 구독 | 고객 `/user/queue/chat`, 관리자 `/topic/admin/chat` |
-| `SEND` | 클라이언트 → 서버 | 주소로 메시지 보내기 | 거부. 보내기는 HTTP API로 함 |
-| `MESSAGE` | 서버 → 클라이언트 | 구독한 주소의 메시지 전달 | 새 상담 메시지 알림 |
-| `ERROR` | 서버 → 클라이언트 | 오류를 알리고 연결을 닫음 | 인증·구독 거부 |
-| `DISCONNECT` | 클라이언트 → 서버 | 연결 종료 | 로그아웃하거나 화면이 연결을 닫을 때 |
+브라우저가 메시지를 보내는 `SEND` 프레임은 받지 않는다([연결 인증과 구독 권한](#연결-인증과-구독-권한)).
 
-이 밖에 구독 해제(`UNSUBSCRIBE`), 수신 확인(`ACK`·`NACK`), 트랜잭션(`BEGIN`·`COMMIT`·`ABORT`) 프레임이 있지만 이 서비스 코드에서는 직접 쓰지 않는다.
+#### 주소
 
-#### 주소 (destination)
+- `/user/queue/chat`: 고객이 구독한다. 모든 고객이 같은 주소를 구독하지만, Spring이 연결에 붙은 회원(`sub`)별로 따로 전달하므로 자기 메시지만 받는다. 같은 회원이 탭을 여러 개 열면 모든 탭이 받는다.
+- `/topic/admin/chat`: 관리자가 구독한다. 구독한 모든 관리자 연결이 같은 메시지를 받는다.
 
-STOMP는 주소의 의미를 정하지 않고 브로커에 맡긴다. Spring은 다음 관례를 쓴다.
+서버는 주소만 정해 보내고, 어느 연결로 보낼지는 Spring이 찾는다([ChatNotifier](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatNotifier.java)).
 
-| 접두사 | 관례 | 이 서비스 |
-| --- | --- | --- |
-| `/topic` | 여러 구독자에게 알리는 주소 | `/topic/admin/chat`: 모든 관리자 |
-| `/queue` | 한 수신자 몫의 주소 | 고객 주소의 실제 전달 대상 |
-| `/user` | 로그인한 회원 한 명의 주소. Spring이 그 회원의 연결마다 따로 만든 `/queue` 주소로 바꿔 전달 | `/user/queue/chat`: 고객 본인 |
+```java
+messaging.convertAndSendToUser(customerId, "/queue/chat", message);      // 그 고객이 구독한 /user/queue/chat으로
+messaging.convertAndSend("/topic/admin/chat", new ChatAdminEvent(...));  // 관리자 주소를 구독한 모든 연결로
+```
 
-Spring 내장 브로커는 `/topic`과 `/queue`를 똑같이 다룬다. 한 회원에게만 보내는 일은 `/user` 주소가 맡는다.
-
-#### 이 서비스에서 얻는 것
-
-- 회원별 연결 목록을 직접 관리하지 않는다. 서버는 주소만 정해 보내고([ChatNotifier](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatNotifier.java)), Spring이 그 주소를 구독한 연결을 찾는다. 같은 회원이 탭을 여러 개 열어도 모든 탭에 전달된다.
-  ```java
-  messaging.convertAndSendToUser(customerId, "/queue/chat", message);      // 그 고객의 모든 연결
-  messaging.convertAndSend("/topic/admin/chat", new ChatAdminEvent(...));  // 관리자 주소를 구독한 모든 연결
-  ```
-- 브라우저 WebSocket은 연결 요청에 헤더를 붙일 수 없지만, `CONNECT` 프레임에는 헤더를 붙일 수 있어 access token을 보낼 수 있다.
-- 프레임 종류가 정해져 있어 종류별로 검사한다([연결 인증과 구독 권한](#연결-인증과-구독-권한)).
-- heartbeat(10초)로 끊긴 연결을 알아챈다. 브라우저에서는 `@stomp/stompjs`가 연결, 구독, 다시 연결을 맡는다.
-- 서버를 여러 대로 늘릴 때 STOMP를 지원하는 외부 브로커(RabbitMQ 등)로 바꿀 수 있다([아직 없는 것](#아직-없는-것)).
+STOMP 없이 WebSocket만 쓰면 메시지 형식, 회원별 연결 관리, 연결 인증, 끊김 감지(heartbeat)를 직접 만들어야 한다. 서버를 여러 대로 늘릴 때는 STOMP를 지원하는 외부 브로커(RabbitMQ 등)로 바꿀 수 있다([아직 없는 것](#아직-없는-것)).
 
 ### 연결 인증과 구독 권한
 
@@ -210,7 +210,7 @@ Spring 내장 브로커는 `/topic`과 `/queue`를 똑같이 다룬다. 한 회�
 | `SUBSCRIBE` | 고객은 `/user/queue/chat`만, `shop-admin` 역할이 있으면 `/topic/admin/chat`만 구독할 수 있다. 다른 회원의 개인 주소를 직접 구독하는 것도 거부 |
 | `SEND` | 모두 거부. 브로커 주소로 바로 보내면 다른 구독자에게 가짜 메시지를 뿌릴 수 있기 때문이다 |
 
-거부하면 서버가 STOMP `ERROR` 프레임을 보내고 연결을 닫는다. `/user/queue/chat`은 Spring이 연결에 붙은 회원(토큰의 `sub`)별로 따로 전달하므로, 같은 주소를 구독해도 자기 메시지만 받는다.
+거부하면 서버가 STOMP `ERROR` 프레임을 보내고 연결을 닫는다.
 
 ### 끊김과 다시 연결
 
@@ -218,8 +218,6 @@ Spring 내장 브로커는 `/topic`과 `/queue`를 똑같이 다룬다. 한 회�
 - 끊긴 동안 저장된 메시지는 알림으로 다시 오지 않는다. 다시 연결되면 화면이 `after={대화 조회로 확인한 마지막 번호}`로 조회해 채운다. 전송 응답이나 실시간 알림으로 더 큰 번호를 받아도 이 복구 위치는 옮기지 않는다. 예를 들어 1번까지 조회한 뒤 2번 답변을 놓치고 내 3번 전송 응답을 받아도, 복구 조회는 `after=1`부터 시작한다.
 - 겹친 복구 조회는 순서대로 실행하고 성공한 페이지까지만 위치를 갱신한다. 빈 대화를 조회한 경우에는 0부터 시작한다. 중간 페이지 조회에 실패해도 다음 요청은 마지막으로 채운 위치부터 다시 이어 간다.
 - 같은 메시지가 HTTP 응답, 알림, 다시 연결한 뒤 조회로 여러 번 와도 화면은 번호로 합쳐 한 번만 보여준다.
-- 읽음 요청이 완료되면 확인된 번호 이하만 읽은 것으로 반영한다. 요청을 기다리다가 창을 닫고 새 답변을 받았더라도, 그 답변의 배지는 남는다. 읽음 응답 순서가 뒤바뀌어도 확인된 읽음 위치는 뒤로 가지 않는다.
-- 대화를 조회하는 동안 새 답변이나 읽음 완료가 오면, 늦게 도착한 조회 결과로 배지를 덮어쓰지 않는다. 복구 조회를 이어서 실행해 서버의 최신 안 읽은 수로 맞춘다.
 - 연결 중에 access token이 만료돼도 이미 맺은 연결은 유지된다. 로그아웃하면 화면이 연결을 닫는다.
 
 ## 화면
@@ -232,6 +230,8 @@ Spring 내장 브로커는 `/topic`과 `/queue`를 똑같이 다룬다. 한 회�
 
 - 보내는 중인 메시지는 흐리게 보이고, 실패하면 **다시 보내기**가 나온다. 다시 보내기는 같은 `clientMessageId`를 쓰므로 실제로는 저장됐던 메시지라도 한 번만 남는다.
 - 고객 화면은 관리자 메시지를 **MODO CLUB**으로 표시한다.
+- **배지와 읽음 요청**: 읽음 요청이 완료되면 확인된 번호 이하만 읽은 것으로 반영한다. 요청을 기다리다가 창을 닫고 새 답변을 받았더라도, 그 답변의 배지는 남는다. 읽음 응답 순서가 뒤바뀌어도 확인된 읽음 위치는 뒤로 가지 않는다.
+- **배지와 대화 조회**: 대화를 조회하는 동안 새 답변이나 읽음 완료가 오면, 늦게 도착한 조회 결과로 배지를 덮어쓰지 않는다. 이어서 다시 조회해 서버의 최신 안 읽은 수로 맞춘다.
 - 메뉴 표시는 편의 기능일 뿐이다. 권한은 서버가 `/admin/**`와 WebSocket 구독에서 검사한다.
 - 대화 상태 관리는 [useChatThread](../frontend/src/chat/useChatThread.ts), 목록 합치기·중복 제거는 [chatMessages.ts](../frontend/src/lib/chatMessages.ts)에 있다.
 
