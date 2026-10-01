@@ -129,6 +129,64 @@ WHERE room_id = '<1에서 찾은 방 id>'
 | 서버 구현 | [ChatWebSocketConfiguration](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatWebSocketConfiguration.java), [ChatSocketAuthorization](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatSocketAuthorization.java), [ChatNotifier](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatNotifier.java) |
 | 화면 구현 | [chatSocket.ts](../frontend/src/chat/chatSocket.ts) (`@stomp/stompjs`) |
 
+### STOMP
+
+STOMP(Simple Text Oriented Messaging Protocol)는 클라이언트와 메시지 브로커가 메시지를 주고받는 형식을 정한 텍스트 기반 프로토콜이다. TCP나 WebSocket 같은 양방향 연결 위에서 동작하며, 현재 버전은 1.2다([STOMP 1.2 명세](https://stomp.github.io/stomp-specification-1.2.html)). WebSocket은 연결을 열어 두고 데이터를 주고받는 통로만 제공하고 내용의 형식은 정하지 않는다. 이 서비스는 그 위에 STOMP를 얹어 "주소를 구독하고, 그 주소로 온 메시지를 받는다"는 규칙을 쓴다.
+
+```text
+STOMP       프레임 형식, 구독 주소(destination), 연결 헤더
+WebSocket   연결을 유지하고 양방향으로 데이터를 주고받음
+TCP         데이터를 순서대로 빠짐없이 전달
+```
+
+#### 프레임
+
+STOMP로 주고받는 한 단위를 프레임이라 한다. 명령, 헤더, 빈 줄, 본문 순서로 쓰고 NULL 문자(`^@`)로 끝낸다. 아래는 고객이 관리자 답변을 받는 프레임이다.
+
+```text
+MESSAGE
+destination:/user/queue/chat
+content-type:application/json
+
+{"id":6,"sender":"ADMIN","content":"L이 가슴단면 3cm 더 커요.", ...}^@
+```
+
+| 프레임 | 방향 | 뜻 | 이 서비스 |
+| --- | --- | --- | --- |
+| `CONNECT` | 클라이언트 → 서버 | 연결 시작. 버전, heartbeat, 인증 정보를 헤더로 보냄 | access token을 `Authorization` 헤더로 보냄 |
+| `CONNECTED` | 서버 → 클라이언트 | 연결 수락 | |
+| `SUBSCRIBE` | 클라이언트 → 서버 | 주소 구독 | 고객 `/user/queue/chat`, 관리자 `/topic/admin/chat` |
+| `SEND` | 클라이언트 → 서버 | 주소로 메시지 보내기 | 거부. 보내기는 HTTP API로 함 |
+| `MESSAGE` | 서버 → 클라이언트 | 구독한 주소의 메시지 전달 | 새 상담 메시지 알림 |
+| `ERROR` | 서버 → 클라이언트 | 오류를 알리고 연결을 닫음 | 인증·구독 거부 |
+| `DISCONNECT` | 클라이언트 → 서버 | 연결 종료 | 로그아웃하거나 화면이 연결을 닫을 때 |
+
+이 밖에 구독 해제(`UNSUBSCRIBE`), 수신 확인(`ACK`·`NACK`), 트랜잭션(`BEGIN`·`COMMIT`·`ABORT`) 프레임이 있지만 이 서비스 코드에서는 직접 쓰지 않는다.
+
+#### 주소 (destination)
+
+STOMP는 주소의 의미를 정하지 않고 브로커에 맡긴다. Spring은 다음 관례를 쓴다.
+
+| 접두사 | 관례 | 이 서비스 |
+| --- | --- | --- |
+| `/topic` | 여러 구독자에게 알리는 주소 | `/topic/admin/chat`: 모든 관리자 |
+| `/queue` | 한 수신자 몫의 주소 | 고객 주소의 실제 전달 대상 |
+| `/user` | 로그인한 회원 한 명의 주소. Spring이 그 회원의 연결마다 따로 만든 `/queue` 주소로 바꿔 전달 | `/user/queue/chat`: 고객 본인 |
+
+Spring 내장 브로커는 `/topic`과 `/queue`를 똑같이 다룬다. 한 회원에게만 보내는 일은 `/user` 주소가 맡는다.
+
+#### 이 서비스에서 얻는 것
+
+- 회원별 연결 목록을 직접 관리하지 않는다. 서버는 주소만 정해 보내고([ChatNotifier](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatNotifier.java)), Spring이 그 주소를 구독한 연결을 찾는다. 같은 회원이 탭을 여러 개 열어도 모든 탭에 전달된다.
+  ```java
+  messaging.convertAndSendToUser(customerId, "/queue/chat", message);      // 그 고객의 모든 연결
+  messaging.convertAndSend("/topic/admin/chat", new ChatAdminEvent(...));  // 관리자 주소를 구독한 모든 연결
+  ```
+- 브라우저 WebSocket은 연결 요청에 헤더를 붙일 수 없지만, `CONNECT` 프레임에는 헤더를 붙일 수 있어 access token을 보낼 수 있다.
+- 프레임 종류가 정해져 있어 종류별로 검사한다([연결 인증과 구독 권한](#연결-인증과-구독-권한)).
+- heartbeat(10초)로 끊긴 연결을 알아챈다. 브라우저에서는 `@stomp/stompjs`가 연결, 구독, 다시 연결을 맡는다.
+- 서버를 여러 대로 늘릴 때 STOMP를 지원하는 외부 브로커(RabbitMQ 등)로 바꿀 수 있다([아직 없는 것](#아직-없는-것)).
+
 ### 연결 인증과 구독 권한
 
 브라우저 WebSocket은 연결 요청에 `Authorization` 헤더를 붙일 수 없다. 그래서 `/ws` 연결 요청 자체는 Spring Security가 통과시키고, 연결 직후 보내는 STOMP `CONNECT` 프레임의 `Authorization: Bearer <access token>` 헤더를 [ChatSocketAuthorization](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatSocketAuthorization.java)이 검사한다.
