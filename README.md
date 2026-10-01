@@ -140,6 +140,7 @@ npm run build
 | [중복 결제 방지](docs/duplicate-payment-prevention.md) | 같은 주문의 중복 승인을 막는 5단계 |
 | [API](docs/api.md) | 엔드포인트, 요청 예시, 응답 상태와 오류 |
 | [1:1 상담](docs/chat.md) | 고객·관리자 상담의 규칙, 테이블, 메시지 저장 순서, WebSocket 실시간 전달과 재연결 |
+| [Spring이 WebSocket 설정을 읽는 방식](docs/websocket-configuration.md) | `@EnableWebSocketMessageBroker`부터 채팅 알림까지, Spring이 설정 클래스를 찾아 STOMP 브로커를 만드는 순서 |
 | [로그인과 회원](docs/authentication.md) | 로그인 기술 기초(OAuth 2.0·OIDC·JWT), 로그인 흐름, 테스트 계정, realm 설정 |
 | [설정](docs/configuration.md) | 환경변수, 토스 키, 로컬 DB·pgAdmin·Keycloak 연결 |
 | [개발 가이드](docs/development.md) | 테스트, 빌드, 스키마 변경, 기여 시 확인 사항 |

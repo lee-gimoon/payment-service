@@ -14,6 +14,7 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 /**
  * 상담 메시지를 실시간으로 전달하는 STOMP over WebSocket 설정.
  * 메시지 보내기는 HTTP API가 맡고, WebSocket은 저장된 메시지를 상대에게 알리는 데만 쓴다.
+ * Spring이 이 클래스를 찾아 브로커를 만드는 순서는 docs/websocket-configuration.md에 있다.
  */
 @Configuration
 @EnableWebSocketMessageBroker

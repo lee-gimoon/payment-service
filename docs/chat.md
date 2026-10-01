@@ -135,6 +135,7 @@ WHERE room_id = '<1에서 찾은 방 id>'
 | 고객 구독 주소 | `/user/queue/chat`. 자기 상담방의 새 메시지(`ChatMessageResponse`)만 온다 |
 | 관리자 구독 주소 | `/topic/admin/chat`. 모든 상담방의 새 메시지가 `{ roomId, message }`로 온다 |
 | 서버 구현 | [ChatWebSocketConfiguration](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatWebSocketConfiguration.java), [ChatSocketAuthorization](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatSocketAuthorization.java), [ChatNotifier](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatNotifier.java) |
+| 설정이 적용되는 순서 | [Spring이 WebSocket 설정을 읽는 방식](websocket-configuration.md) |
 | 화면 구현 | [chatSocket.ts](../frontend/src/chat/chatSocket.ts) (`@stomp/stompjs`) |
 
 ### 보내기를 HTTP로 하는 이유
