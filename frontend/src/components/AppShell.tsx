@@ -20,6 +20,7 @@ export function AppShell({ children, footerText, mainClassName }: AppShellProps)
         <nav aria-label="주요 메뉴">
           <Link to="/#products">전체 상품</Link><Link to="/orders">주문 확인</Link><Link to="/cart">장바구니 <span>{cartCount}</span></Link>
           {status === "signedIn" && <>
+            {customer?.isShopAdmin && <Link to="/admin/chat">상담 관리</Link>}
             <strong className="nav-customer">{customer?.name}님</strong>
             <button className="nav-button" type="button" onClick={logout}>로그아웃</button>
           </>}

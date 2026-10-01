@@ -1,4 +1,3 @@
-import { getAccessToken } from "../auth/keycloak";
 import type {
   CartItem,
   ConfirmPaymentCommand,
@@ -8,49 +7,10 @@ import type {
   PaymentConfig,
   Product
 } from "../types/payment";
+import { signedIn } from "../auth/keycloak";
+import { request } from "./http";
 
-interface ApiErrorResponse {
-  code?: string;
-  message?: string;
-}
-
-export class ApiRequestError extends Error {
-  readonly status: number;
-  readonly code?: string;
-
-  constructor(status: number, error: ApiErrorResponse) {
-    super(error.message || "요청을 처리하지 못했습니다. 저장된 결과를 조회해주세요.");
-    this.name = "ApiRequestError";
-    this.status = status;
-    this.code = error.code;
-  }
-}
-
-async function request<T>(
-  path: string,
-  options?: RequestInit,
-  acceptedErrorStatuses: readonly number[] = []
-): Promise<T> {
-  const response = await fetch(path, options);
-  const data = (await response.json().catch(() => ({
-    message: "서버 응답을 읽지 못했습니다. 잠시 후 다시 시도해주세요."
-  }))) as T | ApiErrorResponse;
-
-  if (!response.ok && !acceptedErrorStatuses.includes(response.status)) {
-    throw new ApiRequestError(response.status, data as ApiErrorResponse);
-  }
-
-  return data as T;
-}
-
-// 주문·결제 API는 로그인한 회원의 access token을 붙인다. 로그인하지 않았으면 서버가 401로 거부한다.
-async function signedIn(options: RequestInit = {}): Promise<RequestInit> {
-  const token = await getAccessToken();
-  if (!token) return options;
-  const headers = new Headers(options.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  return { ...options, headers };
-}
+export { ApiRequestError } from "./http";
 
 export function getPaymentConfig(): Promise<PaymentConfig> {
   return request<PaymentConfig>("/payment-config");

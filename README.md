@@ -12,6 +12,7 @@ Spring Boot와 React로 구성한 티셔츠 쇼핑몰의 주문·결제 서비�
 - 토스 결제창 인증과 서버 승인(카드·국내 간편결제)
 - 결제 시도 이력 보존, 인증 취소·실패 또는 승인 실패 확정 후 같은 주문에서 재시도
 - 내 주문의 주문번호를 이용한 주문·결제 상태 조회
+- 고객 문의 창과 관리자 상담 관리 화면의 1:1 실시간 상담(WebSocket), 재전송 중복 방지와 읽음 표시([상담 문서](docs/chat.md))
 
 ## 결제 설계
 
@@ -31,6 +32,7 @@ Spring Boot와 React로 구성한 티셔츠 쇼핑몰의 주문·결제 서비�
 | 프런트엔드 | React 19, TypeScript, Vite |
 | 결제 | 토스페이먼츠 SDK v2 결제창형, 서버 승인·조회 API |
 | 인증 | Keycloak 26.7 (OIDC), Spring Security OAuth2 Resource Server, keycloak-js |
+| 실시간 상담 | Spring WebSocket(STOMP, 내장 메시지 브로커), @stomp/stompjs |
 | 테스트 | JUnit, Testcontainers, Node.js 내장 테스트 |
 
 정확한 의존성 버전은 [build.gradle](build.gradle)과 [package-lock.json](frontend/package-lock.json)에 있습니다.
@@ -137,6 +139,7 @@ npm run build
 | [아키텍처](docs/architecture.md) | 결제 도메인 그림, 핵심 규칙, 상태, 복구 정책, 설계 결정 |
 | [중복 결제 방지](docs/duplicate-payment-prevention.md) | 같은 주문의 중복 승인을 막는 5단계 |
 | [API](docs/api.md) | 엔드포인트, 요청 예시, 응답 상태와 오류 |
+| [1:1 상담](docs/chat.md) | 고객·관리자 상담의 규칙, 테이블, 메시지 저장 순서, WebSocket 실시간 전달과 재연결 |
 | [로그인과 회원](docs/authentication.md) | 로그인 기술 기초(OAuth 2.0·OIDC·JWT), 로그인 흐름, 테스트 계정, realm 설정 |
 | [설정](docs/configuration.md) | 환경변수, 토스 키, 로컬 DB·pgAdmin·Keycloak 연결 |
 | [개발 가이드](docs/development.md) | 테스트, 빌드, 스키마 변경, 기여 시 확인 사항 |

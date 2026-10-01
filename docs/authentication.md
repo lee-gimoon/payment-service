@@ -163,8 +163,8 @@ JWT            = 토큰을 담는 형식 (별개 표준)   ← 토큰 모양
 | | Keycloak 관리자 `admin` | 쇼핑몰 관리자 `shop-admin@modo.test` |
 | --- | --- | --- |
 | 속한 realm | `master` | `modo-club` |
-| 할 수 있는 일 | 모든 realm의 설정·회원·역할 관리 | 쇼핑몰의 관리자 API(`/admin/**`) 호출 |
-| 쇼핑몰 로그인 | 불가. 다른 realm 계정이고, Spring은 `modo-club`이 발급한 토큰만 받음 | 가능. 일반 회원 기능도 그대로 씀 |
+| 할 수 있는 일 | 모든 realm의 설정·회원·역할 관리 | 쇼핑몰의 관리자 API(`/admin/**`) 호출, 상담 관리 화면에서 고객 문의에 답변 |
+| 쇼핑몰 로그인 | 불가. 다른 realm 계정이고, Spring은 `modo-club`이 발급한 토큰만 받음 | 가능. 주문·결제 같은 일반 회원 기능도 쓰지만, 고객 상담 창구(`/chat/**`, 문의하기)는 쓰지 않음([1:1 상담](chat.md#상담-방식)) |
 | 만든 방법 | Compose의 `KC_BOOTSTRAP_ADMIN_*`가 첫 실행 때 생성 | realm 역할 `shop-admin`을 준 `modo-club` 회원 |
 
 `master` realm에도 슈퍼 유저 권한을 뜻하는 `admin` 역할이 있으므로, 쇼핑몰 역할은 헷갈리지 않게 `shop-admin`으로 이름 붙였습니다.
@@ -237,9 +237,9 @@ realm 설정 파일에 쇼핑몰 관리자를 넣기 전부터 쓰던 환경이�
 | 역할 부여 | **Keycloak 인증 서버** | 쇼핑몰 관리자에게 realm 역할 `shop-admin`을 주고, 로그인할 때 access token의 `realm_access.roles`에 담음 |
 | 로그인 확인·토큰 발급 | **Keycloak 인증 서버** | 비밀번호를 확인하고 교환권·access token·ID token을 발급. 로그인 세션과 토큰 갱신도 처리 |
 | 로그인 절차 연결 | **React 쇼핑몰의 `keycloak-js`** | Keycloak 화면으로 이동, PKCE와 교환권 교환 처리, 받은 토큰을 메모리에 보관·갱신 |
-| API 요청에 토큰 전달 | **React 쇼핑몰** | 주문·결제 요청의 `Authorization: Bearer <access token>` 헤더에 토큰을 첨부 |
+| API 요청에 토큰 전달 | **React 쇼핑몰** | 주문·결제·상담 요청의 `Authorization: Bearer <access token>` 헤더에 토큰을 첨부. 상담 WebSocket은 STOMP `CONNECT` 프레임에 첨부 |
 | API 요청의 인증 | **Spring Security** | JWT를 검증하고, 검증된 토큰의 `sub`로 요청한 회원을 확인 |
-| API별 접근 허용 | **Spring Security** | 상품·결제 설정 조회는 공개하고, 주문·결제 API는 인증된 회원에게, 관리자 API(`/admin/**`)는 `shop-admin` 역할이 있는 회원에게만 허용 |
+| API별 접근 허용 | **Spring Security** | 상품·결제 설정 조회는 공개하고, 주문·결제 API는 인증된 회원에게, 관리자 API(`/admin/**`)는 `shop-admin` 역할이 있는 회원에게만, 고객 상담 API(`/chat/**`)는 `shop-admin`이 아닌 회원에게만 허용. 상담 WebSocket(`/ws`)은 연결 요청을 통과시키고 STOMP 프레임에서 토큰과 구독 주소를 검사 |
 | 주문·결제 시도의 소유권 확인 | **Spring 서비스 코드** | 요청한 회원의 `sub`와 주문에 저장된 `customer_id`를 비교해 본인 주문·시도에만 접근 허용 |
 
 예를 들어 A 회원의 JWT가 유효하면 Spring의 **인증**을 통과합니다. 이어서 B 회원의 주문을 조회하려 하면, 서비스 코드의 **인가** 검사에서 거부되어 `404 ORDER_NOT_FOUND`를 받습니다. 주문 주인이 누구인지는 Spring의 주문 DB에 저장되어 있고, 이 검사는 Spring에서 구현합니다.
@@ -253,6 +253,8 @@ realm 설정 파일에 쇼핑몰 관리자를 넣기 전부터 쓰던 환경이�
 | `GET /products`, `GET /products/{id}`, `GET /payment-config`, Swagger | 누구나 |
 | 주문·결제 시도·승인 API | 로그인 필요. access token이 없거나 검증에 실패하면 `401 UNAUTHORIZED` |
 | 관리자 API `/admin/**` | 쇼핑몰 관리자(`shop-admin` 역할)만. 로그인했지만 역할이 없으면 `403 FORBIDDEN` |
+| 고객 상담 API `/chat/**` | 로그인 필요. 상담방 ID를 받지 않고 토큰의 `sub`로 자기 상담방만 사용. 쇼핑몰 관리자는 `403 FORBIDDEN` |
+| 상담 실시간 알림 `/ws` | 연결 요청은 통과시키고, STOMP `CONNECT` 프레임의 access token을 검증. 관리자 알림 구독은 `shop-admin`만([상담 문서](chat.md#연결-인증과-구독-권한)) |
 | 다른 회원의 주문·시도 | 존재 여부를 알리지 않고 `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND` |
 | 로그인 도입 전에 만든 주문 | `customer_id`가 비어 있어 누구도 조회·결제할 수 없음. 복구 작업은 계속 처리 |
 
@@ -262,7 +264,8 @@ realm 설정 파일에 쇼핑몰 관리자를 넣기 전부터 쓰던 환경이�
 
 - **JWT 검증** — `.oauth2ResourceServer(...jwt(...))`로 Bearer JWT 인증을 켭니다. [application.yml](../src/main/resources/application.yml)의 설정에 따라 Keycloak 공개키로 서명을 확인하고, 발급처(`iss`), 대상(`aud`에 `payment-service` 포함), 유효기간을 검사합니다.
 - **API 접근 허용** — `.authorizeHttpRequests(...)`로 공개 경로를 지정하고, `/admin/**`는 `.hasRole("shop-admin")`으로 쇼핑몰 관리자만 허용하며, 나머지는 `.authenticated()`로 인증을 요구합니다.
-- **역할 읽기** — Spring의 기본 변환기는 토큰의 `scope`만 권한으로 읽고 Keycloak의 `realm_access.roles`는 읽지 않습니다. 그래서 `.jwt(...jwtAuthenticationConverter(...))`로 realm 역할을 `ROLE_shop-admin` 같은 Spring 권한으로 바꿉니다. `hasRole("shop-admin")`은 이 `ROLE_shop-admin` 권한을 확인합니다.
+- **역할 읽기** — Spring의 기본 변환기는 토큰의 `scope`만 권한으로 읽고 Keycloak의 `realm_access.roles`는 읽지 않습니다. 그래서 `.jwt(...jwtAuthenticationConverter(...))`로 realm 역할을 `ROLE_shop-admin` 같은 Spring 권한으로 바꿉니다. `hasRole("shop-admin")`은 이 `ROLE_shop-admin` 권한을 확인합니다. 상담 WebSocket 연결도 같은 변환기를 씁니다.
+- **WebSocket 연결** — 브라우저 WebSocket은 연결 요청에 `Authorization` 헤더를 붙일 수 없으므로 `/ws`는 `.permitAll()`로 통과시킵니다. 토큰은 연결 직후 STOMP `CONNECT` 프레임에서 [ChatSocketAuthorization](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatSocketAuthorization.java)이 HTTP API와 같은 방식으로 검증합니다.
 - **요청마다 인증** — `STATELESS`로 Spring의 로그인 세션을 저장하지 않습니다. 보호된 API를 호출할 때마다 access token을 보내야 합니다.
 - **CSRF 검사 비활성화** — 이 API는 인증용 쿠키 대신 요청의 `Authorization` 헤더에 담긴 Bearer 토큰으로 인증하므로, `.csrf(...disable())`로 CSRF 토큰 검사를 끕니다.
 - **인증 실패 응답** — `.authenticationEntryPoint(unauthorized)`로 인증 실패 시 `401`, 표준 `WWW-Authenticate` 헤더, `{code, message}` JSON을 반환하도록 설정합니다.

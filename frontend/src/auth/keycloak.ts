@@ -13,6 +13,8 @@ export interface Customer {
   id: string;
   name: string;
   email: string;
+  /** Keycloak realm 역할 shop-admin이 있는 쇼핑몰 관리자인지. 메뉴 표시에만 쓰고, 권한은 서버가 검사한다. */
+  isShopAdmin: boolean;
 }
 
 // 새로고침이나 결제창 복귀로 페이지를 다시 열어도 Keycloak 세션이 있으면 화면 이동 없이 토큰을 다시 받는다.
@@ -39,6 +41,15 @@ export async function getAccessToken(): Promise<string | null> {
   }
 }
 
+// 주문·결제·상담 API는 로그인한 회원의 access token을 붙인다. 로그인하지 않았으면 서버가 401로 거부한다.
+export async function signedIn(options: RequestInit = {}): Promise<RequestInit> {
+  const token = await getAccessToken();
+  if (!token) return options;
+  const headers = new Headers(options.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  return { ...options, headers };
+}
+
 export function currentCustomer(): Customer | null {
   const token = keycloak.tokenParsed;
   if (!keycloak.authenticated || typeof token?.sub !== "string" || !token.sub.trim()) return null;
@@ -47,7 +58,7 @@ export function currentCustomer(): Customer | null {
   const family = typeof token.family_name === "string" ? token.family_name : "";
   // 한글 이름은 성과 이름을 붙여 쓴다.
   const name = /[가-힣]/.test(family + given) ? `${family}${given}` : `${given} ${family}`.trim();
-  return { id: token.sub, name: name || email, email };
+  return { id: token.sub, name: name || email, email, isShopAdmin: keycloak.hasRealmRole("shop-admin") };
 }
 
 export function onSignedOut(listener: () => void): void {

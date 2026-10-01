@@ -102,5 +102,6 @@ SET TIME ZONE 'Asia/Seoul';
 
 ## 개발 서버 주소
 
-- 프런트엔드는 `127.0.0.1:5173`에서 실행되고, [vite.config.ts](../frontend/vite.config.ts)의 프록시가 API 요청을 `127.0.0.1:8080`으로 전달합니다. 포트가 사용 중이면 Vite가 다른 포트를 쓰므로 터미널에 표시된 주소를 확인합니다.
+- 프런트엔드는 `127.0.0.1:5173`에서 실행되고, [vite.config.ts](../frontend/vite.config.ts)의 프록시가 API 요청과 상담 WebSocket(`/ws`)을 `127.0.0.1:8080`으로 전달합니다. 포트가 사용 중이면 Vite가 다른 포트를 쓰므로 터미널에 표시된 주소를 확인합니다.
+- 상담 WebSocket은 같은 출처 연결만 받습니다. 프록시가 브라우저의 `Host`를 그대로 넘기므로 개발 서버에서는 따로 설정할 것이 없습니다. 화면을 다른 주소에서 띄우면 [ChatWebSocketConfiguration](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatWebSocketConfiguration.java)에 허용할 출처를 추가합니다.
 - 백엔드 포트를 바꾸면 Vite 프록시도 함께 바꿉니다.

@@ -20,7 +20,11 @@ export default defineConfig({
       "/payment-attempts": api("http://127.0.0.1:8080"),
       "/products": api("http://127.0.0.1:8080"),
       "/payments": api("http://127.0.0.1:8080"),
-      "/payment-config": api("http://127.0.0.1:8080")
+      "/payment-config": api("http://127.0.0.1:8080"),
+      "/chat": api("http://127.0.0.1:8080"),
+      "/admin": api("http://127.0.0.1:8080"),
+      // 상담 실시간 알림(STOMP over WebSocket)
+      "/ws": { target: "ws://127.0.0.1:8080", ws: true }
     }
   },
   preview: {
