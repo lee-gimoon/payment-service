@@ -134,8 +134,11 @@ public class ChatService {
                 request.clientMessageId(), content));
         room.recordMessage(message);
         ChatMessageResponse response = ChatMessageResponse.of(message);
-        // 커밋된 뒤에 실시간 알림이 보낸다. 재전송은 이미 알렸으므로 다시 알리지 않는다.
-        events.publishEvent(new ChatMessageSaved(room.getId(), room.getCustomerId(), response));
+        // ① 이벤트 객체 만들기: "어느 방에서, 어느 고객 앞으로, 이런 메시지가 저장됐다"는 내용을 담은 객체를 만든다.
+        // ② 발행하기: 그 객체를 Spring에 건넨다. Spring은 이 타입(ChatMessageSaved)을 받겠다고 한 메서드를 찾아 전달한다.
+        //    여기서는 ChatNotifier.onSaved()이고, 커밋된 뒤에 받는다. 재전송은 위에서 먼저 return하므로 여기까지 오지 않는다.
+        ChatMessageSaved event = new ChatMessageSaved(room.getId(), room.getCustomerId(), response);  // ① 이벤트 객체 만들기
+        events.publishEvent(event);                                                                   // ② 발행하기
         return new Sent(response, true);
     }
 

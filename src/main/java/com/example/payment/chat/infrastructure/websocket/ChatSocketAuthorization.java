@@ -17,13 +17,17 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Component;
 
 /**
- * 브라우저가 보낸 STOMP 프레임을 검사한다.
+ * 브라우저가 보낸 STOMP 프레임을 브로커에 닿기 전에 검사한다.
+ * HTTP 요청을 컨트롤러에 닿기 전에 검사하는 Spring Security 필터와 같은 자리다.
+ * 우리 코드가 부르지 않는다. ChatWebSocketConfiguration에 등록해 두면 Spring이 프레임이 들어올 때마다 preSend를 부른다.
  * <ul>
- *   <li>CONNECT: Authorization 헤더의 access token을 HTTP API와 같은 방식으로 검증하고 연결에 회원을 붙인다.</li>
- *   <li>SUBSCRIBE: 고객은 자기 대화 주소만, 쇼핑몰 관리자는 관리자 주소만 구독할 수 있다.</li>
- *   <li>SEND: 받지 않는다. 브로커로 바로 보내면 다른 구독자에게 가짜 메시지를 뿌릴 수 있기 때문이다.</li>
+ *   <li>CONNECT: Authorization 헤더의 access token을 HTTP API와 같은 방식으로 검증하고, 이 연결이 어느 회원 것인지 기억시킨다.
+ *       /user 채널을 회원별 전용 채널로 바꿀 때 이 정보를 쓴다.</li>
+ *   <li>SUBSCRIBE: 고객은 고객 채널(/user/queue/chat)만, 쇼핑몰 관리자는 관리자 채널(/topic/admin/chat)만 구독할 수 있다.</li>
+ *   <li>SEND: 거부한다. 브라우저가 채널로 바로 보내면 저장도 검사도 거치지 않은 가짜 메시지가 구독자에게 그대로 간다.
+ *       메시지는 HTTP API로만 보낸다.</li>
  * </ul>
- * 거부하면 Spring이 ERROR 프레임을 보내고 연결을 닫는다.
+ * 그 밖의 프레임은 그대로 통과시킨다. 거부하면 Spring이 ERROR 프레임을 보내고 연결을 닫는다.
  */
 @Component
 public class ChatSocketAuthorization implements ChannelInterceptor {
