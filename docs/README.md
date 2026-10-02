@@ -8,6 +8,7 @@
 | [중복 결제 방지](duplicate-payment-prevention.md) | 같은 주문의 중복 승인을 막는 단계와 각 단계의 역할을 볼 때 |
 | [API](api.md) | 클라이언트를 연동하거나 요청·응답 계약을 바꿀 때 |
 | [1:1 상담](chat.md) | 고객·관리자 상담의 테이블, 메시지 저장 순서, 중복·읽음 규칙을 볼 때 |
+| [WebSocket 주소와 STOMP 프레임](websocket-basics.md) | `/ws` 연결, 구독 채널, 프레임이 무엇이고 어떤 순서로 오가는지 그림으로 볼 때 |
 | [Spring이 WebSocket 설정을 읽는 방식](websocket-configuration.md) | `@EnableWebSocketMessageBroker`와 `WebSocketMessageBrokerConfigurer`로 상담 알림 브로커가 만들어지는 순서를 Spring 빈(Bean) 개념과 함께 익힐 때 |
 | [로그인과 회원](authentication.md) | 로그인 기술(OAuth 2.0·OIDC·JWT)을 처음 익히거나, 로그인 흐름, 테스트 계정, realm 설정을 볼 때 |
 | [설정](configuration.md) | 토스 키, DB 연결, Keycloak, 복구 작업, 개발 서버 주소를 설정할 때 |
