@@ -11,7 +11,7 @@
 - 서버는 `localhost:8080` 하나입니다. HTTP API와 WebSocket이 같은 서버, 같은 포트를 씁니다.
 - `/chat/messages` 같은 HTTP 경로는 요청 한 번에 응답 한 번으로 끝납니다.
 - `/ws`는 WebSocket 연결을 여는 입구입니다. 연결 주소는 이것 하나뿐입니다.
-- `/user/queue/chat`, `/topic/admin/chat`은 `/ws` 연결 안에서만 쓰는 채널 이름입니다. 주소가 아니므로 앞에 `localhost:8080`이 붙지 않습니다.
+- `/user/queue/chat`, `/topic/admin/chat`은 `/ws` 연결 안에서만 쓰는 채널 이름입니다. 주소가 아니므로 앞에 `localhost:8080`이 붙지 않습니다([채널은 요청도 연결도 아니다](#채널은-요청도-연결도-아니다)).
 
 전체 주소를 나누면 다음과 같습니다.
 
@@ -96,9 +96,9 @@ Content-Type: application/json         destination:/user/queue/chat
 | `SEND` | 브라우저 → 서버 | 메시지 보내기. 이 프로젝트는 HTTP로 보내므로 거부한다 |
 | `ERROR` | 서버 → 브라우저 | 거부한 이유를 알리고 연결을 닫는다 |
 
-## `/user/queue/chat`은 HTTP 요청이 아니다
+## 채널은 요청도 연결도 아니다
 
-`/user/queue/chat`은 요청을 보내는 주소가 아니라, 프레임의 `destination` 헤더에 적는 채널 이름입니다.
+`/user/queue/chat` 같은 채널은 HTTP 요청을 보내는 주소가 아니고, 따로 열리는 연결(소켓)도 아닙니다. STOMP 프레임의 `destination` 헤더에 적는 문자열일 뿐입니다. 소켓은 `/ws` 연결 하나뿐이고, 채널을 구독해도 새 연결은 생기지 않습니다.
 
 | | HTTP 요청 (`POST /chat/messages`) | `SUBSCRIBE` 프레임 |
 | --- | --- | --- |
@@ -111,13 +111,14 @@ Content-Type: application/json         destination:/user/queue/chat
 ```text
 브라우저 → 서버                      서버 → 브라우저
 SUBSCRIBE                            MESSAGE
-destination:/user/queue/chat         destination:/user/queue/chat
+id:sub-0                             destination:/user/queue/chat
+destination:/user/queue/chat         subscription:sub-0
 
                                      {"content":"L이 3cm 더 커요", ...}
 ```
 
-- `SUBSCRIBE`에서는 "이 채널을 받겠다"는 뜻입니다.
-- `MESSAGE`에서는 "이 메시지는 그 채널 것이다"라는 꼬리표입니다.
+- `SUBSCRIBE`에서는 "이 채널을 받겠다"는 뜻입니다. `id`는 브라우저가 이 구독에 붙인 번호입니다.
+- `MESSAGE`에서는 "이 메시지는 그 채널 것이다"라는 꼬리표입니다. `subscription`에 구독 번호가 돌아오므로 어느 구독으로 온 메시지인지 알 수 있습니다.
 
 모든 고객이 같은 `/user/queue/chat`을 구독하지만, `/user`로 시작하는 주소는 Spring이 연결에 붙은 회원별로 나눠 전달합니다. 그래서 각 고객은 자기 메시지만 받습니다.
 
