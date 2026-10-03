@@ -1,4 +1,4 @@
-package com.example.payment.order;
+package com.example.payment.order.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -12,6 +12,13 @@ import static org.mockito.Mockito.when;
 import com.example.payment.api.error.ApiException;
 import com.example.payment.customer.AddressResponse;
 import com.example.payment.customer.CustomerAddressService;
+import com.example.payment.order.api.CreateOrderRequest;
+import com.example.payment.order.api.OrderResponse;
+import com.example.payment.order.domain.PurchaseOrder;
+import com.example.payment.order.domain.ShippingAddress;
+import com.example.payment.order.persistence.OrderItemRepository;
+import com.example.payment.order.persistence.OrderRepository;
+import com.example.payment.order.persistence.ShipmentRepository;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductCatalog;

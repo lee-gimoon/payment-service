@@ -14,7 +14,7 @@
 | GET | `/products/{id}` | — | `200` 상품 | `404 PRODUCT_NOT_FOUND` | 판매 중인 상품 상세와 사이즈별 품절 여부·남은 수량 |
 | POST | `/orders` | 필요 | `201` 주문 | `400 INVALID_CART`·`PRODUCT_NOT_FOUND`·`ADDRESS_REQUIRED`·`ADDRESS_NOT_FOUND`, `409 OUT_OF_STOCK` | 서버 가격으로 주문 생성, 고른 배송지를 주문에 복사. 재고는 확인만 함 |
 | GET | `/orders/{orderId}` | 필요 | `200` 주문 | `404 ORDER_NOT_FOUND` | 저장된 주문·결제 결과 조회. PG 호출 없음 |
-| POST | `/orders/{orderId}/payment-attempts` | 필요 | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE`·`SHIPPING_ADDRESS_REQUIRED`·`OUT_OF_STOCK` | 결제창을 열기 전 시도 생성. 재고는 확인만 함 |
+| POST | `/orders/{orderId}/payment-attempts` | 필요 | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_CANCELED`·`ORDER_NOT_PAYABLE`·`SHIPPING_ADDRESS_REQUIRED`·`OUT_OF_STOCK` | 결제창을 열기 전 시도 생성. 재고는 확인만 함 |
 | POST | `/payment-attempts/{attemptId}/authentication-result` | 필요 | `200` 시도 | `400 INVALID_ATTEMPT_STATUS`, `404 ATTEMPT_NOT_FOUND` | 인증 취소·실패 기록 |
 | GET | `/payment-config` | — | `200` 공개 설정 | — | 키 설정 여부, 클라이언트 키, UI variant 키 |
 | GET | `/me/orders` | 필요 | `200` 주문 요약 배열 | — | 내 주문 목록. 최근 50건 |
@@ -23,7 +23,7 @@
 | PUT | `/me/addresses/{addressId}` | 필요 | `200` 배송지 | `404 ADDRESS_NOT_FOUND` | 배송지 수정 |
 | PUT | `/me/addresses/{addressId}/default` | 필요 | `200` 배송지 | `404 ADDRESS_NOT_FOUND` | 기본 배송지 지정 |
 | DELETE | `/me/addresses/{addressId}` | 필요 | `204` | `404 ADDRESS_NOT_FOUND` | 배송지 삭제 |
-| POST | `/payments/confirm` | 필요 | `200` / `202` / `422` 주문 | `400 AMOUNT_MISMATCH`, `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`, `409 PAYMENT_CONFLICT`·`ATTEMPT_CONFLICT`·`OUT_OF_STOCK`, `503 PAYMENT_NOT_CONFIGURED` | 인증 후 재고 차감과 최종 승인 |
+| POST | `/payments/confirm` | 필요 | `200` / `202` / `422` 주문 | `400 AMOUNT_MISMATCH`, `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`, `409 ORDER_CANCELED`·`PAYMENT_CONFLICT`·`ATTEMPT_CONFLICT`·`OUT_OF_STOCK`, `503 PAYMENT_NOT_CONFIGURED` | 인증 후 재고 차감과 최종 승인 |
 | GET | `/chat/messages` | 필요 | `200` 대화 | `403 FORBIDDEN` | 내 상담 대화. 보낸 적 없으면 빈 목록 |
 | POST | `/chat/messages` | 필요 | `201` 메시지, 재전송 `200` | `403 FORBIDDEN`, `409 CHAT_MESSAGE_CONFLICT` | 상담 메시지 보내기. 첫 메시지면 상담방 생성 |
 | POST | `/chat/read` | 필요 | `204` | `403 FORBIDDEN` | 관리자 답변 읽음 표시 |
@@ -110,6 +110,7 @@
 `POST /orders/{orderId}/payment-attempts` → `{ "id": "...", "orderId": "...", "status": "STARTED" }`
 
 - `PENDING_PAYMENT` 주문에만 만들 수 있고, 호출할 때마다 새 시도가 생긴다.
+- 결제 기한이 지나 [자동 취소](architecture.md#미결제-주문-자동-취소)된 주문은 `409 ORDER_CANCELED`로 거부한다. 상품을 다시 담아 새로 주문해야 한다.
 - 배송지를 받기 전에 만든 주문은 보낼 곳이 없으므로 `409 SHIPPING_ADDRESS_REQUIRED`로 거부한다.
 - 응답의 `id`를 결제창 복귀 URL과 승인 요청의 `attemptId`로 쓴다.
 - 주문 항목 중 남은 수량이 부족한 사이즈가 있으면 결제창을 열기 전에 `409 OUT_OF_STOCK`으로 거부한다.
@@ -149,6 +150,7 @@
 | `202` | `APPROVING`, `UNKNOWN`, `REVIEW_REQUIRED` | 아직 확정되지 않음. 결제 성공이 아니다. |
 | `422` | `FAILED` | 승인 실패. 새 시도로 다시 결제할 수 있다. |
 
+- 결제창을 연 뒤 주문이 자동 취소됐으면 `409 ORDER_CANCELED`로 거부하고 토스를 호출하지 않는다. 인증만 된 거래는 토스에서 만료되어 청구되지 않는다.
 - 새 승인이면 승인 슬롯을 잡기 전에 주문 항목의 재고를 가져간다. 한 항목이라도 부족하면 `409 OUT_OF_STOCK`으로 거부하고 토스를 호출하지 않는다. 시도는 `STARTED`로 남고, 재고가 채워지면 같은 주문으로 다시 결제할 수 있다.
 - 같은 주문·결제 키·시도·금액으로 다시 보내면 토스를 다시 호출하지 않고 **현재** 주문 결과를 반환한다. 시도가 1분 넘게 `APPROVING`·`UNKNOWN`이면 그때만 토스 조회를 한 번 한다.
 - `APPROVING`·`UNKNOWN`은 서버의 복구 작업이 확정한다. 클라이언트는 새 결제를 시작하지 말고 `GET /orders/{orderId}`로 다시 조회한다.
@@ -234,7 +236,8 @@
   "delivery": {
     "status": "SHIPPED", "carrier": "CJ", "trackingNumber": "123456789012",
     "shippedAt": "2026-09-29T02:00:00Z", "deliveredAt": null
-  }
+  },
+  "canceledAt": null
 }
 ```
 
@@ -246,6 +249,7 @@
 | `shipping` | 주문할 때 복사한 배송지. `phone`은 숫자만 담는다. 배송지를 받기 전에 만든 주문은 `null` |
 | `delivery` | 배송 단계. 결제 완료 전 주문은 `null`, 결제 완료 뒤 송장 전이면 `PREPARING`(송장 필드는 `null`), 송장을 등록하면 `SHIPPED`, 관리자가 완료 처리하면 `DELIVERED` |
 | `payment.checkedAt` | 서버가 PG 결과를 마지막으로 기록한 시각 |
+| `canceledAt` | 결제 기한이 지나 주문이 취소된 시각. 취소되지 않은 주문은 `null` |
 
 - 두 필드는 서로 다른 시도를 가리킬 수 있다. 예를 들어 승인 실패 뒤 결제창을 닫으면 `latestAttempt`는 `AUTH_CANCELED`, `payment`는 `FAILED`다.
 - 시각은 ISO 8601 UTC 문자열이다. `finishedAt`은 종료 상태에서만 값이 있다.
@@ -255,11 +259,11 @@
 
 | 필드 | 값 | 클라이언트 처리 |
 | --- | --- | --- |
-| 주문 `status` | `PENDING_PAYMENT`, `PAYMENT_IN_PROGRESS`, `PAID` | `PENDING_PAYMENT`일 때만 결제 버튼을 활성화한다. |
-| `payment.status` | `READY`, `APPROVING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`, `REVIEW_REQUIRED` | `SUCCEEDED`일 때만 결제 완료로 표시한다. 미확정이면 새 결제 대신 조회를 안내한다. |
+| 주문 `status` | `PENDING_PAYMENT`, `PAYMENT_IN_PROGRESS`, `PAID`, `CANCELED` | `PENDING_PAYMENT`일 때만 결제 버튼을 활성화한다. `CANCELED`면 새로 주문하라고 안내한다. |
+| `payment.status` | `READY`, `APPROVING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`, `REVIEW_REQUIRED`, `CANCELED` | `SUCCEEDED`일 때만 결제 완료로 표시한다. 미확정이면 새 결제 대신 조회를 안내한다. |
 | `latestAttempt.status` | `STARTED`, `AUTH_CANCELED`, `AUTH_FAILED`, `APPROVING`, `UNKNOWN`, `REVIEW_REQUIRED`, `SUCCEEDED`, `FAILED` | 결제창 닫기·인증 실패 안내에 쓴다. |
 
-`READY`는 승인을 요청한 시도가 없다는 응답 값이다. 상태별 의미는 [아키텍처](architecture.md#상태)를 참고한다.
+`READY`는 승인을 요청한 시도가 없다는 응답 값이고, `payment.status`의 `CANCELED`는 결제 기한이 지나 취소된 주문이라는 응답 값이다(청구된 금액은 없다). 상태별 의미는 [아키텍처](architecture.md#상태)를 참고한다.
 
 ## 상담
 
@@ -402,7 +406,7 @@ PREPARING               SHIPPED                    DELIVERED
 | `401` | `UNAUTHORIZED` |
 | `403` | `FORBIDDEN` |
 | `404` | `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `ATTEMPT_NOT_FOUND`, `ADDRESS_NOT_FOUND`, `CHAT_ROOM_NOT_FOUND` |
-| `409` | `ORDER_NOT_PAYABLE`, `SHIPPING_ADDRESS_REQUIRED`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `OUT_OF_STOCK`, `ADDRESS_LIMIT_EXCEEDED`, `ORDER_NOT_PAID`, `DELIVERY_COMPLETED`, `SHIPMENT_NOT_REGISTERED`, `CHAT_MESSAGE_CONFLICT` |
+| `409` | `ORDER_CANCELED`, `ORDER_NOT_PAYABLE`, `SHIPPING_ADDRESS_REQUIRED`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `OUT_OF_STOCK`, `ADDRESS_LIMIT_EXCEEDED`, `ORDER_NOT_PAID`, `DELIVERY_COMPLETED`, `SHIPMENT_NOT_REGISTERED`, `CHAT_MESSAGE_CONFLICT` |
 | `503` | `PAYMENT_NOT_CONFIGURED`, `STORAGE_UNAVAILABLE` |
 
 - 승인 결과의 `422`는 이 형식이 아니라 주문 본문을 반환한다.

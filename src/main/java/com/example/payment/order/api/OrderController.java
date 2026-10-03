@@ -1,5 +1,6 @@
-package com.example.payment.order;
+package com.example.payment.order.api;
 
+import com.example.payment.order.application.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.net.URI;

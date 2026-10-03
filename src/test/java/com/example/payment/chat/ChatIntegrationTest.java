@@ -36,7 +36,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest(properties = "payment.recovery.enabled=false")
+@SpringBootTest(properties = {"payment.recovery.enabled=false", "order.unpaid-expiry.enabled=false"})
 @AutoConfigureMockMvc
 @Testcontainers
 class ChatIntegrationTest {

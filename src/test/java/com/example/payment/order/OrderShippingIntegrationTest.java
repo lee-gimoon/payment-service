@@ -12,6 +12,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.payment.config.SecurityConfiguration;
+import com.example.payment.order.api.CreateOrderRequest;
+import com.example.payment.order.application.OrderService;
 import com.example.payment.payment.api.ConfirmPaymentRequest;
 import com.example.payment.payment.application.PaymentAttemptService;
 import com.example.payment.payment.application.PaymentService;
@@ -42,7 +44,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 /** 관리자 주문 관리: 결제 완료 주문의 송장 등록, 배송 완료, 고객 화면의 배송 단계. */
 @SpringBootTest(properties = {"payment.toss.client-key=test_gck_integration", "payment.toss.secret-key=test_gsk_integration",
         "payment.toss.payment-method-variant-key=CARD_ONLY", "payment.toss.agreement-variant-key=TERMS",
-        "payment.recovery.enabled=false"})
+        "payment.recovery.enabled=false", "order.unpaid-expiry.enabled=false"})
 @AutoConfigureMockMvc
 @Testcontainers
 class OrderShippingIntegrationTest {

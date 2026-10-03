@@ -18,9 +18,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.example.payment.api.error.ApiException;
 import com.example.payment.config.SecurityConfiguration;
-import com.example.payment.order.CreateOrderRequest;
-import com.example.payment.order.OrderResponse.PaymentState;
-import com.example.payment.order.OrderService;
+import com.example.payment.order.api.CreateOrderRequest;
+import com.example.payment.order.api.OrderResponse.PaymentState;
+import com.example.payment.order.application.OrderService;
 import com.example.payment.payment.api.ConfirmPaymentRequest;
 import com.example.payment.payment.application.PaymentAttemptService;
 import com.example.payment.payment.application.PaymentPreparationService;
@@ -72,7 +72,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(properties = {"payment.toss.client-key=test_gck_integration", "payment.toss.secret-key=test_gsk_integration",
         "payment.toss.payment-method-variant-key=CARD_ONLY", "payment.toss.agreement-variant-key=TERMS",
-        "payment.recovery.enabled=false"})
+        "payment.recovery.enabled=false", "order.unpaid-expiry.enabled=false"})
 @AutoConfigureMockMvc
 @Testcontainers
 @Import(PaymentIntegrationTest.AdminProbe.class)
@@ -117,12 +117,12 @@ class PaymentIntegrationTest {
     @Test
     void freshDatabaseAppliesAllMigrations() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success AND version IS NOT NULL "
-                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
+                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
         assertThat(columns("payment_attempts")).contains("amount", "currency", "payment_key", "approval_requested_at",
                 "last_checked_at", "pg_status", "pg_approved_at", "pg_amount", "pg_currency");
         assertThat(columns("purchase_orders")).contains("approval_attempt_id", "paid_at", "customer_id",
                 "shipping_recipient_name", "shipping_phone", "shipping_postal_code", "shipping_address",
-                "shipping_address_detail", "shipping_memo");
+                "shipping_address_detail", "shipping_memo", "canceled_at");
         assertThat(columns("payments")).containsExactlyInAnyOrder("id", "order_id", "attempt_id", "payment_key",
                 "amount", "currency", "approved_at", "created_at");
         assertThat(columns("product_stocks")).containsExactlyInAnyOrder("product_id", "size", "quantity");

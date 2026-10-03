@@ -6,7 +6,8 @@ const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   SUCCEEDED: "결제 완료",
   FAILED: "결제 실패",
   UNKNOWN: "결제 결과 확인 중",
-  REVIEW_REQUIRED: "결제 확인 지연"
+  REVIEW_REQUIRED: "결제 확인 지연",
+  CANCELED: "주문 취소"
 };
 export function paymentStatusLabel(status: PaymentStatus): string {
   return PAYMENT_STATUS_LABELS[status];
@@ -15,7 +16,8 @@ export function paymentStatusLabel(status: PaymentStatus): string {
 const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   PENDING_PAYMENT: "결제 대기",
   PAYMENT_IN_PROGRESS: "결제 진행 중",
-  PAID: "결제 완료"
+  PAID: "결제 완료",
+  CANCELED: "주문 취소"
 };
 
 export function orderStatusLabel(status: OrderStatus): string {

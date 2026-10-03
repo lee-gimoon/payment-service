@@ -1,6 +1,6 @@
 package com.example.payment.payment.domain;
 
-import com.example.payment.order.PurchaseOrder;
+import com.example.payment.order.domain.PurchaseOrder;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

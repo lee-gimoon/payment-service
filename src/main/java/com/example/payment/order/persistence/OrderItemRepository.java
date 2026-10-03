@@ -1,5 +1,6 @@
-package com.example.payment.order;
+package com.example.payment.order.persistence;
 
+import com.example.payment.order.domain.OrderItem;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;

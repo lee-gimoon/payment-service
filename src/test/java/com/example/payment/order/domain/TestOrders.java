@@ -1,4 +1,4 @@
-package com.example.payment.order;
+package com.example.payment.order.domain;
 
 /** 다른 패키지의 도메인 테스트가 저장 없이 주문을 만들 때 쓴다. */
 public final class TestOrders {

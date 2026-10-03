@@ -1,5 +1,10 @@
-package com.example.payment.order;
+package com.example.payment.order.api;
 
+import com.example.payment.order.domain.OrderItem;
+import com.example.payment.order.domain.OrderStatus;
+import com.example.payment.order.domain.PurchaseOrder;
+import com.example.payment.order.domain.Shipment;
+import com.example.payment.order.domain.ShippingAddress;
 import java.time.Instant;
 import java.util.List;
 
@@ -7,7 +12,7 @@ import java.util.List;
 public record AdminOrderResponse(String orderId, String productName, int quantity, long amount, String currency,
                                  List<OrderResponse.ItemResponse> items, ShippingAddress shipping,
                                  Instant createdAt, Instant paidAt, OrderStatus status, DeliveryResponse delivery) {
-    static AdminOrderResponse of(PurchaseOrder order, List<OrderItem> items, Shipment shipment) {
+    public static AdminOrderResponse of(PurchaseOrder order, List<OrderItem> items, Shipment shipment) {
         return new AdminOrderResponse(order.getId(), order.getProductName(), order.getQuantity(), order.getAmount(),
                 order.getCurrency(), items.stream().map(OrderResponse.ItemResponse::of).toList(), order.getShipping(),
                 order.getCreatedAt(), order.getPaidAt(), order.getStatus(), DeliveryResponse.of(order, shipment));

@@ -57,7 +57,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /** 실제 포트로 STOMP 연결을 열어 인증, 구독 권한, 커밋 후 알림을 확인한다. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "payment.recovery.enabled=false")
+        properties = {"payment.recovery.enabled=false", "order.unpaid-expiry.enabled=false"})
 @Testcontainers
 class ChatWebSocketTest {
     private static final String BUYER = "buyer-1";

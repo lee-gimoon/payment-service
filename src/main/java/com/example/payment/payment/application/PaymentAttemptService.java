@@ -1,10 +1,10 @@
 package com.example.payment.payment.application;
 
 import com.example.payment.api.error.ApiException;
-import com.example.payment.order.OrderItem;
-import com.example.payment.order.OrderItemRepository;
-import com.example.payment.order.OrderRepository;
-import com.example.payment.order.PurchaseOrder;
+import com.example.payment.order.domain.OrderItem;
+import com.example.payment.order.domain.PurchaseOrder;
+import com.example.payment.order.persistence.OrderItemRepository;
+import com.example.payment.order.persistence.OrderRepository;
 import com.example.payment.payment.domain.PaymentAttempt;
 import com.example.payment.payment.domain.PaymentAttemptStatus;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
@@ -35,6 +35,7 @@ public class PaymentAttemptService {
         PurchaseOrder order = orders.findByIdForUpdate(orderId)
                 .filter(found -> found.isOwnedBy(customerId))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
+        if (order.isCanceled()) throw orderCanceled();
         if (!order.acceptsNewPayment()) {
             throw new ApiException(HttpStatus.CONFLICT, "ORDER_NOT_PAYABLE", "이 주문은 새 결제를 시작할 수 없습니다.");
         }
@@ -65,6 +66,11 @@ public class PaymentAttemptService {
             attempt.authenticationFailed(request.errorCode());
         }
         return AttemptResponse.of(attempt);
+    }
+
+    static ApiException orderCanceled() {
+        return new ApiException(HttpStatus.CONFLICT, "ORDER_CANCELED",
+                "결제 기한이 지나 취소된 주문입니다. 상품을 다시 담아 새로 주문해주세요.");
     }
 
     private static ApiException attemptNotFound() {

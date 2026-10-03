@@ -1,4 +1,4 @@
-package com.example.payment.order;
+package com.example.payment.order.domain;
 
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductInventory;

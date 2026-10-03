@@ -94,7 +94,7 @@ function MyOrders() {
           <span className="order-history-side">
             <strong>{formatAmount(order.amount)}</strong>
             {/* 결제 완료 뒤에는 배송 단계를 보여준다. */}
-            <span className="status-badge">{order.delivery ? deliveryStatusLabel(order.delivery) : orderStatusLabel(order.status)}</span>
+            <span className={order.status === "CANCELED" ? "status-badge canceled" : "status-badge"}>{order.delivery ? deliveryStatusLabel(order.delivery) : orderStatusLabel(order.status)}</span>
           </span>
         </Link>
       </li>)}</ul>}

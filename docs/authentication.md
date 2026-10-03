@@ -140,7 +140,7 @@ JWT            = 토큰을 담는 형식 (별개 표준)   ← 토큰 모양
 | 4 | `keycloak-js`가 교환권을 Keycloak에 보내 access token(JWT)으로 바꿔 받고 메모리에 보관 | [keycloak.ts](../frontend/src/auth/keycloak.ts) `initAuth()` |
 | 5 | 주문·결제 API에 `Authorization: Bearer <token>` 헤더를 붙임 | [paymentApi.ts](../frontend/src/api/paymentApi.ts) |
 | 6 | Spring이 서명·발급처·대상·만료를 검사. 실패하면 `401` | [SecurityConfiguration](../src/main/java/com/example/payment/config/SecurityConfiguration.java) |
-| 7 | 토큰의 `sub`로 주문 주인을 기록·확인 | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java) `isOwnedBy()` |
+| 7 | 토큰의 `sub`로 주문 주인을 기록·확인 | [PurchaseOrder](../src/main/java/com/example/payment/order/domain/PurchaseOrder.java) `isOwnedBy()` |
 | 8 | API 호출 전에 만료가 30초 안으로 남았으면 토큰을 새로 받음 | [keycloak.ts](../frontend/src/auth/keycloak.ts) `getAccessToken()` |
 
 - 백엔드는 처음 토큰을 검증할 때 Keycloak에서 공개키를 받아 두고, 이후 요청마다 Keycloak을 호출하지 않습니다.
@@ -298,7 +298,7 @@ Windows의 Git Bash에서는 컨테이너 안 경로가 바뀌지 않게 `MSYS_N
 
 보안 처리는 설정 클래스 외에도 주문·결제 서비스에 구현되어 있습니다.
 
-- **회원 ID와 소유권** — [OrderController](../src/main/java/com/example/payment/order/OrderController.java)는 검증된 JWT에서 `sub`를 꺼내 서비스에 전달합니다. [OrderService](../src/main/java/com/example/payment/order/OrderService.java)와 결제 서비스는 이 값으로 주문 주인을 확인합니다. 요청 본문에 회원 ID를 적어 다른 회원의 주문에 접근할 수는 없습니다.
+- **회원 ID와 소유권** — [OrderController](../src/main/java/com/example/payment/order/api/OrderController.java)는 검증된 JWT에서 `sub`를 꺼내 서비스에 전달합니다. [OrderService](../src/main/java/com/example/payment/order/application/OrderService.java)와 결제 서비스는 이 값으로 주문 주인을 확인합니다. 요청 본문에 회원 ID를 적어 다른 회원의 주문에 접근할 수는 없습니다.
 - **결제 금액** — 주문 금액은 서버의 상품 DB 가격으로 계산합니다. 결제 승인 요청의 금액이 저장된 주문 금액과 다르면 거부하고, 토스 승인에도 서버에 저장된 금액을 사용합니다.
 - **결제 상태와 중복 요청** — [PaymentPreparationService](../src/main/java/com/example/payment/payment/application/PaymentPreparationService.java)는 승인 전에 주문 상태, 결제 키 중복, 결제 시도가 해당 주문에 속하는지도 검사합니다. 자세한 처리는 [결제 승인 흐름](architecture.md#결제-승인-흐름)에 있습니다.
 - **토스 시크릿 키** — Spring 서버에서만 사용해 토스 승인·조회 API를 호출합니다. 브라우저에 제공하는 `/payment-config`에는 클라이언트 키와 UI 설정만 담습니다. 키의 용도는 [토스 키](configuration.md#토스-키)에 설명되어 있습니다.

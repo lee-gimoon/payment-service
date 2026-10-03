@@ -1,4 +1,4 @@
-package com.example.payment.order;
+package com.example.payment.order.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;

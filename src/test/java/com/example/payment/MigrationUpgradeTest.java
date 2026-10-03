@@ -87,6 +87,9 @@ class MigrationUpgradeTest {
         // 로그인 도입 전 주문은 주인이 없다.
         assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_orders WHERE customer_id IS NOT NULL", Long.class))
                 .isZero();
+        // V12는 취소 상태와 제약만 더하고, 오래된 결제 대기 주문은 취소 작업이 처리한다.
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_orders WHERE status = 'CANCELED' "
+                + "OR canceled_at IS NOT NULL", Long.class)).isZero();
         assertThat(jdbc.queryForMap("SELECT amount, currency, pg_status, pg_amount FROM payment_attempts WHERE id = 'a-paid'"))
                 .containsEntry("amount", 19000L).containsEntry("currency", "KRW").containsEntry("pg_status", "DONE")
                 .hasEntrySatisfying("pg_amount", amount -> assertThat(amount.toString()).startsWith("19000"));

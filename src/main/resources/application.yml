@@ -38,6 +38,12 @@ payment:
   recovery:
     enabled: ${PAYMENT_RECOVERY_ENABLED:true}
 
+# 결제 기한(after)이 지난 결제 대기 주문을 10분마다 취소한다. 기한은 PT24H, PT2M 같은 ISO-8601 기간으로 적는다.
+order:
+  unpaid-expiry:
+    enabled: ${ORDER_UNPAID_EXPIRY_ENABLED:true}
+    after: ${ORDER_UNPAID_EXPIRY_AFTER:PT24H}
+
 server:
   address: ${PAYMENT_BIND_ADDRESS:127.0.0.1}
   port: ${PORT:8080}

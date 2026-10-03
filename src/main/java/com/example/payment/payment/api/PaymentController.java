@@ -1,6 +1,6 @@
 package com.example.payment.payment.api;
 
-import com.example.payment.order.OrderResponse;
+import com.example.payment.order.api.OrderResponse;
 import com.example.payment.payment.application.PaymentService;
 import com.example.payment.payment.infrastructure.toss.TossProperties;
 import io.swagger.v3.oas.annotations.Operation;

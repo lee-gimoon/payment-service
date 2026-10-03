@@ -1,4 +1,4 @@
-package com.example.payment.order;
+package com.example.payment.order.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -58,6 +58,27 @@ class PurchaseOrderTest {
         assertThatThrownBy(() -> order.markPaid("attempt-2")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> order.releaseApproval("attempt-1")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> order.claimApproval("attempt-2")).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void onlyAnUnpaidOrderCanBeCanceledAndItTakesNoNewPayment() {
+        PurchaseOrder order = TestOrders.order(19_000);
+        order.cancelUnpaid();
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        assertThat(order.isCanceled()).isTrue();
+        assertThat(order.getCanceledAt()).isNotNull();
+        assertThat(order.acceptsNewPayment()).isFalse();
+        assertThatThrownBy(() -> order.claimApproval("attempt-1")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(order::cancelUnpaid).isInstanceOf(IllegalStateException.class);
+
+        // 승인 중이거나 결제된 주문은 돈이 나갔을 수 있어 취소하지 않는다.
+        PurchaseOrder approving = TestOrders.order(19_000);
+        approving.claimApproval("attempt-1");
+        assertThatThrownBy(approving::cancelUnpaid).isInstanceOf(IllegalStateException.class);
+        approving.markPaid("attempt-1");
+        assertThatThrownBy(approving::cancelUnpaid).isInstanceOf(IllegalStateException.class);
+        assertThat(approving.getCanceledAt()).isNull();
     }
 
     @Test

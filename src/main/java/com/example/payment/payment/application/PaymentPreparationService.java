@@ -1,10 +1,10 @@
 package com.example.payment.payment.application;
 
 import com.example.payment.api.error.ApiException;
-import com.example.payment.order.OrderItem;
-import com.example.payment.order.OrderItemRepository;
-import com.example.payment.order.OrderRepository;
-import com.example.payment.order.PurchaseOrder;
+import com.example.payment.order.domain.OrderItem;
+import com.example.payment.order.domain.PurchaseOrder;
+import com.example.payment.order.persistence.OrderItemRepository;
+import com.example.payment.order.persistence.OrderRepository;
 import com.example.payment.payment.domain.PaymentAttempt;
 import com.example.payment.payment.domain.PaymentAttemptStatus;
 import com.example.payment.payment.infrastructure.toss.TossProperties;
@@ -51,6 +51,8 @@ public class PaymentPreparationService {
             }
             return new Prepared(existing, false);
         }
+        // 취소된 주문은 승인을 요청하지 않으므로 청구도 없다.
+        if (order.isCanceled()) throw PaymentAttemptService.orderCanceled();
         if (!order.acceptsNewPayment()) {
             throw new ApiException(HttpStatus.CONFLICT, "PAYMENT_CONFLICT", "이 주문은 다른 결제가 진행 중이거나 완료되었습니다.");
         }

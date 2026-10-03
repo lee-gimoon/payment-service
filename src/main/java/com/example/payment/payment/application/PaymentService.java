@@ -1,7 +1,7 @@
 package com.example.payment.payment.application;
 
-import com.example.payment.order.OrderResponse;
-import com.example.payment.order.OrderService;
+import com.example.payment.order.api.OrderResponse;
+import com.example.payment.order.application.OrderService;
 import com.example.payment.payment.api.ConfirmPaymentRequest;
 import com.example.payment.payment.domain.ApprovalRequest;
 import com.example.payment.payment.domain.PaymentAttempt;

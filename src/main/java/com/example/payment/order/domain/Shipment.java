@@ -1,4 +1,4 @@
-package com.example.payment.order;
+package com.example.payment.order.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -42,7 +42,7 @@ public class Shipment {
 
     protected Shipment() {}
 
-    Shipment(String orderId, Carrier carrier, String trackingNumber) {
+    public Shipment(String orderId, Carrier carrier, String trackingNumber) {
         this.id = UUID.randomUUID().toString();
         this.orderId = orderId;
         this.status = ShipmentStatus.SHIPPED;
@@ -52,7 +52,7 @@ public class Shipment {
     }
 
     /** 배송 중에는 잘못 넣은 택배사·송장번호를 고칠 수 있다. 출고 시각은 처음 등록한 때로 둔다. */
-    void correct(Carrier carrier, String trackingNumber) {
+    public void correct(Carrier carrier, String trackingNumber) {
         if (status == ShipmentStatus.DELIVERED) {
             throw new IllegalStateException("배송 완료된 송장은 고칠 수 없습니다.");
         }
@@ -61,7 +61,7 @@ public class Shipment {
     }
 
     /** 이미 배송 완료면 그대로 둔다. */
-    void markDelivered() {
+    public void markDelivered() {
         if (status == ShipmentStatus.DELIVERED) return;
         status = ShipmentStatus.DELIVERED;
         deliveredAt = Instant.now();

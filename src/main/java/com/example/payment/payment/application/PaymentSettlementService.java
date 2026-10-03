@@ -1,9 +1,9 @@
 package com.example.payment.payment.application;
 
-import com.example.payment.order.OrderItem;
-import com.example.payment.order.OrderItemRepository;
-import com.example.payment.order.OrderRepository;
-import com.example.payment.order.PurchaseOrder;
+import com.example.payment.order.domain.OrderItem;
+import com.example.payment.order.domain.PurchaseOrder;
+import com.example.payment.order.persistence.OrderItemRepository;
+import com.example.payment.order.persistence.OrderRepository;
 import com.example.payment.payment.domain.Payment;
 import com.example.payment.payment.domain.PaymentAttempt;
 import com.example.payment.payment.domain.PaymentAttemptStatus;

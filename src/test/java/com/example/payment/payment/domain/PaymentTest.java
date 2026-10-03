@@ -3,7 +3,7 @@ package com.example.payment.payment.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.example.payment.order.TestOrders;
+import com.example.payment.order.domain.TestOrders;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;

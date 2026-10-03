@@ -1,5 +1,7 @@
-package com.example.payment.order;
+package com.example.payment.order.persistence;
 
+import com.example.payment.order.domain.Shipment;
+import com.example.payment.order.domain.ShipmentStatus;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;

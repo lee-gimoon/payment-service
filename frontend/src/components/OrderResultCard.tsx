@@ -24,7 +24,7 @@ export function OrderResultCard({
     <section className="result-card" aria-live="polite" aria-busy={busy}>
       <div className="result-heading">
         <h2>{statusLabel}</h2>
-        <span className="status-badge">{statusLabel}</span>
+        <span className={order.status === "CANCELED" ? "status-badge canceled" : "status-badge"}>{statusLabel}</span>
       </div>
 
       <p>{order.payment.message}</p>
@@ -69,6 +69,10 @@ export function OrderResultCard({
         {order.delivery?.carrier && order.delivery.trackingNumber && <div>
           <dt>송장</dt>
           <dd>{CARRIERS[order.delivery.carrier].name} {order.delivery.trackingNumber} · <a href={CARRIERS[order.delivery.carrier].trackingUrl(order.delivery.trackingNumber)} target="_blank" rel="noreferrer">배송 조회</a></dd>
+        </div>}
+        {order.canceledAt && <div>
+          <dt>취소 시각</dt>
+          <dd>{formatDateTime(order.canceledAt)}</dd>
         </div>}
         <div>
           <dt>승인 시각</dt>

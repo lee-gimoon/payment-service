@@ -1,4 +1,4 @@
-package com.example.payment.order;
+package com.example.payment.order.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
@@ -48,6 +48,7 @@ public class PurchaseOrder {
     private String approvalAttemptId;
 
     private Instant paidAt;
+    private Instant canceledAt;
 
     // 주문할 때 고른 배송지. 배송지를 받기 전에 만든 주문은 비어 있다.
     @Embedded
@@ -58,7 +59,7 @@ public class PurchaseOrder {
 
     protected PurchaseOrder() {}
 
-    PurchaseOrder(String customerId, String firstProductName, int productCount, int quantity, long amount,
+    public PurchaseOrder(String customerId, String firstProductName, int productCount, int quantity, long amount,
                   ShippingAddress shipping) {
         if (customerId == null || customerId.isBlank()) {
             throw new IllegalArgumentException("주문한 회원을 확인해주세요.");
@@ -93,6 +94,7 @@ public class PurchaseOrder {
     public OrderStatus getStatus() { return status; }
     public String getApprovalAttemptId() { return approvalAttemptId; }
     public Instant getPaidAt() { return paidAt; }
+    public Instant getCanceledAt() { return canceledAt; }
     public ShippingAddress getShipping() { return shipping; }
 
     /** 주인이 없는 이전 주문은 누구의 것도 아니다. */
@@ -103,6 +105,22 @@ public class PurchaseOrder {
     /** 진행 중이거나 성공한 승인이 없을 때만 새 결제 시도와 승인을 받는다. */
     public boolean acceptsNewPayment() {
         return status == OrderStatus.PENDING_PAYMENT;
+    }
+
+    public boolean isCanceled() {
+        return status == OrderStatus.CANCELED;
+    }
+
+    /**
+     * 결제 기한이 지난 결제 대기 주문을 취소한다. 승인 중이거나 결과를 모르는 주문은 돈이 나갔을 수 있어 취소하지 않는다.
+     * 재고는 승인 관문에서만 가져가므로 돌려줄 것이 없다.
+     */
+    public void cancelUnpaid() {
+        if (status != OrderStatus.PENDING_PAYMENT) {
+            throw new IllegalStateException("결제 대기 중인 주문만 취소할 수 있습니다.");
+        }
+        status = OrderStatus.CANCELED;
+        canceledAt = Instant.now();
     }
 
     public void claimApproval(String attemptId) {

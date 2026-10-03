@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { createOrder, getOrder, getPaymentConfig, recordAuthenticationResult, startPaymentAttempt } from "../api/paymentApi";
+import { ApiRequestError, createOrder, getOrder, getPaymentConfig, recordAuthenticationResult, startPaymentAttempt } from "../api/paymentApi";
 import { useAuth } from "../auth/auth";
 import { ShippingLines } from "../components/AddressLines";
 import { AppShell } from "../components/AppShell";
@@ -8,7 +8,7 @@ import { ShippingPicker } from "../components/ShippingPicker";
 import { TeeArtwork } from "../components/TeeArtwork";
 import { formatAmount, paymentStatusLabel } from "../lib/formatters";
 import { useShop } from "../lib/shop";
-import { getPendingOrderId, saveLastOrderId, savePendingOrderId } from "../lib/orderStorage";
+import { clearPendingOrderId, getPendingOrderId, saveLastOrderId, savePendingOrderId } from "../lib/orderStorage";
 import { MAX_PER_OPTION } from "../lib/sizes";
 import { openTossPayment } from "../payments/tossPayments";
 import type { Order, PaymentConfig } from "../types/payment";
@@ -25,6 +25,8 @@ export function CartPage() {
   const [pendingLoading, setPendingLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // 저장해 둔 결제 대기 주문이 결제 기한이 지나 취소됐으면 카드 대신 안내를 보여준다.
+  const [pendingCanceled, setPendingCanceled] = useState(false);
   const [shippingAddressId, setShippingAddressId] = useState<string | null>(null);
   const [deliveryMemo, setDeliveryMemo] = useState("");
   const busyRef = useRef(false);
@@ -38,6 +40,13 @@ export function CartPage() {
 
   function setPendingOrder(order: Order | null) {
     setSavedPendingOrder(order && customerId ? { customerId, order } : null);
+  }
+
+  // 취소된 주문은 다시 결제할 수 없으므로 저장해 둔 대기 주문에서 지운다.
+  function dropCanceledPendingOrder(orderId: string) {
+    if (customerId) clearPendingOrderId(customerId, orderId);
+    setPendingOrder(null);
+    setPendingCanceled(true);
   }
 
   useEffect(() => {
@@ -54,13 +63,18 @@ export function CartPage() {
     const controller = new AbortController();
     abortRef.current = controller;
     setPendingOrder(null);
+    setPendingCanceled(false);
     setError("");
     setBusy(false);
     busyRef.current = false;
     const savedId = isShopAdmin ? null : getPendingOrderId(customerId);
     setPendingLoading(Boolean(savedId));
     if (savedId) {
-      getOrder(savedId).then(order => { if (active) setPendingOrder(order); })
+      getOrder(savedId).then(order => {
+        if (!active) return;
+        if (order.status === "CANCELED") dropCanceledPendingOrder(order.orderId);
+        else setPendingOrder(order);
+      })
         .catch(() => { if (active) setPendingOrder(null); })
         .finally(() => { if (active) setPendingLoading(false); });
     }
@@ -85,6 +99,10 @@ export function CartPage() {
       } else {
         order = await getOrder((pendingOrder as Order).orderId);
         if (signal.aborted) return;
+        if (order.status === "CANCELED") {
+          dropCanceledPendingOrder(order.orderId);
+          return;
+        }
         setPendingOrder(order);
       }
       if (signal.aborted) return;
@@ -100,7 +118,10 @@ export function CartPage() {
         if (!signal.aborted) setPendingOrder(refreshedOrder);
       }
     } catch (actionError) {
-      if (!signal.aborted) {
+      // 결제창을 열기 직전에 결제 기한이 지나 취소된 경우
+      if (!signal.aborted && actionError instanceof ApiRequestError && actionError.code === "ORDER_CANCELED" && pendingOrder) {
+        dropCanceledPendingOrder(pendingOrder.orderId);
+      } else if (!signal.aborted) {
         setError(actionError instanceof Error ? actionError.message : "결제창을 열지 못했습니다. 주문 상태를 확인해주세요.");
       }
     } finally {
@@ -114,6 +135,7 @@ export function CartPage() {
   return <AppShell footerText="장바구니 · 토스페이먼츠 테스트 결제" mainClassName="cart-page">
     <nav className="breadcrumb" aria-label="현재 위치"><Link to="/">스토어</Link><span aria-hidden="true">/</span><span>장바구니</span></nav>
     <div className="page-intro"><p className="eyebrow">YOUR CART</p><h1>장바구니 <span>{cartCount}</span></h1><p>선택한 상품을 확인하고 결제를 진행하세요.</p></div>
+    {pendingCanceled && <p className="info-message" role="status">결제하지 않은 이전 주문은 결제 기한이 지나 자동으로 취소되었습니다. 청구된 금액은 없으니 상품을 다시 담아 새로 주문해주세요.</p>}
 
     {(authStatus === "checking" || pendingLoading) && cart.length === 0 ? <p role="status">결제 대기 주문을 확인하고 있습니다.</p> :
     cart.length === 0 && !showPending ? <div className="empty-state"><h2>장바구니가 비어 있습니다.</h2><p>마음에 드는 티셔츠를 골라 아바타에 입혀보세요.</p><Link className="primary-button" to="/#products">상품 보러 가기</Link></div> :

@@ -18,6 +18,8 @@
 | `TOSS_PAYMENT_METHOD_VARIANT_KEY` | 빈 문자열 | 결제수단 UI의 variantKey |
 | `TOSS_AGREEMENT_VARIANT_KEY` | 빈 문자열 | 약관 UI의 variantKey |
 | `PAYMENT_RECOVERY_ENABLED` | `true` | 미확정 승인 복구 작업 실행 여부 |
+| `ORDER_UNPAID_EXPIRY_ENABLED` | `true` | 미결제 주문 자동 취소 작업 실행 여부 |
+| `ORDER_UNPAID_EXPIRY_AFTER` | `PT24H` | 결제 대기 주문의 결제 기한. ISO-8601 기간(`PT24H`, `PT2M` 등) |
 | `KEYCLOAK_ISSUER_URI` | `http://127.0.0.1:8081/realms/modo-club` | access token 발급자. 공개키를 이 주소에서 찾는다 |
 
 프런트엔드는 `GET /payment-config`로 공개 키와 UI 설정을 받습니다. Keycloak 주소를 바꿀 때만 `frontend/.env.local`에 `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID`를 지정합니다.
@@ -49,6 +51,13 @@ $env:TOSS_SECRET_KEY = 'test_gsk_REPLACE_WITH_YOUR_KEY'
 - 결과를 모르는 승인(`APPROVING`·`UNKNOWN`)을 1분마다 토스에 조회합니다. 한 번에 최대 50건이며, 1시간이 지나도 모르면 `REVIEW_REQUIRED`로 남깁니다.
 - `PAYMENT_RECOVERY_ENABLED=false`는 주기 작업만 끕니다. 승인 요청 중 즉시 조회와, 같은 결제 키로 다시 요청할 때의 조회는 계속 동작합니다.
 - 끄면 미확정 주문이 오래 막힐 수 있으니 로컬 개발에서도 기본값을 유지합니다. 동작 규칙은 [아키텍처](architecture.md#실패와-복구)를 참고합니다.
+
+## 미결제 주문 자동 취소
+
+- 결제 기한(`ORDER_UNPAID_EXPIRY_AFTER`, 기본 24시간)이 지난 결제 대기 주문을 10분마다 `CANCELED`로 바꿉니다. 승인 중·결과 모름·결제 완료 주문과, 최근 30분 안에 결제창을 연 주문은 건드리지 않습니다.
+- 처음 켜면 이미 기한이 지난 로컬 결제 대기 주문(배송지 없이 만든 이전 주문 포함)이 서버 시작 1분 뒤 한꺼번에 취소됩니다.
+- 로컬에서 바로 확인하려면 `ORDER_UNPAID_EXPIRY_AFTER=PT2M`으로 실행하거나, pgAdmin에서 주문의 `created_at`을 하루 전으로 바꿉니다.
+- `ORDER_UNPAID_EXPIRY_ENABLED=false`로 끄면 결제 대기 주문이 계속 남습니다. 동작 규칙은 [아키텍처](architecture.md#미결제-주문-자동-취소)를 참고합니다.
 
 ## 로컬 PostgreSQL과 pgAdmin
 

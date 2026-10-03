@@ -231,10 +231,12 @@ button.secondary:hover:not(:disabled) { background: #dce5ff; }
 .result-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .result-heading h2 { margin: 0; font-size: 25px; }
 .status-badge { border-radius: 30px; background: #e9eeff; color: #3947b0; padding: 6px 12px; font-size: 12px; font-weight: 750; }
+.status-badge.canceled { background: #eef0f6; color: #626983; }
 .result-card > p { color: #626983; }
 .result-details { margin: 22px 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .error { color: #913f31; background: #f9ebe4; border: 1px solid #e7c9ba; padding: 15px; border-radius: 10px; font-size: 13px; }
+.info-message { color: #23243a; background: #e9eeff; border: 1px solid #dce0eb; padding: 15px; border-radius: 10px; font-size: 13px; }
 .result-page { max-width: 830px; min-height: 72vh; }
 .result-page h1 { font-size: clamp(34px, 4vw, 48px); letter-spacing: -.05em; }
 .result-page > p:not(.eyebrow) { color: #626983; }

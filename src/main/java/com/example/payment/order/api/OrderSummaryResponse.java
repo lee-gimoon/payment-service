@@ -1,5 +1,9 @@
-package com.example.payment.order;
+package com.example.payment.order.api;
 
+import com.example.payment.order.domain.DeliveryStatus;
+import com.example.payment.order.domain.OrderStatus;
+import com.example.payment.order.domain.PurchaseOrder;
+import com.example.payment.order.domain.Shipment;
 import java.time.Instant;
 
 /**
@@ -9,7 +13,7 @@ import java.time.Instant;
  */
 public record OrderSummaryResponse(String orderId, String productName, int quantity, long amount, String currency,
                                    Instant createdAt, OrderStatus status, DeliveryStatus delivery) {
-    static OrderSummaryResponse of(PurchaseOrder order, Shipment shipment) {
+    public static OrderSummaryResponse of(PurchaseOrder order, Shipment shipment) {
         DeliveryResponse delivery = DeliveryResponse.of(order, shipment);
         return new OrderSummaryResponse(order.getId(), order.getProductName(), order.getQuantity(),
                 order.getAmount(), order.getCurrency(), order.getCreatedAt(), order.getStatus(),

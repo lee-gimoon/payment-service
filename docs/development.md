@@ -6,9 +6,12 @@
 
 | 경로 | 역할 |
 | --- | --- |
-| `src/main/java/.../config/` | 로그인 토큰 검증(Spring Security), Swagger 설정 |
+| `src/main/java/.../config/` | 로그인 토큰 검증(Spring Security), Swagger 설정, 주기 작업(`@Scheduled`) 켜기 |
 | `src/main/java/.../product/` | 상품 카탈로그, 사이즈별 재고 확인·차감·복원 |
-| `src/main/java/.../order/` | 주문 생성, 구매 항목, 조회, 내 주문 목록, 관리자 주문 관리(송장·배송 상태) |
+| `src/main/java/.../order/api/` | 주문 HTTP 요청·응답 (고객 `/orders`·`/me/orders`, 관리자 `/admin/orders`) |
+| `src/main/java/.../order/application/` | 주문 생성·조회, 내 주문 목록, 관리자 주문 관리(송장·배송 상태), 미결제 주문 자동 취소 |
+| `src/main/java/.../order/domain/` | 주문, 구매 항목, 주문 상태, 주문에 복사한 배송지, 송장·배송 단계, 택배사 |
+| `src/main/java/.../order/persistence/` | 주문·구매 항목·송장 조회와 주문 잠금 |
 | `src/main/java/.../customer/` | 마이페이지 배송지(회원당 최대 10개, 기본 배송지 하나) |
 | `src/main/java/.../chat/api/` | 상담 HTTP 요청·응답 (고객 `/chat`, 관리자 `/admin/chat`) |
 | `src/main/java/.../chat/application/` | 상담방 만들기, 메시지 저장 순서·트랜잭션 경계, 읽음 표시, 새 메시지 이벤트 |
@@ -45,6 +48,7 @@ macOS / Linux에서는 `./gradlew test bootJar`를 사용합니다.
 | --- | --- |
 | [PaymentIntegrationTest](../src/test/java/com/example/payment/PaymentIntegrationTest.java) | 로그인 요구와 주문 소유자, 주문 금액, 트랜잭션 원자성, 승인 슬롯과 DB 제약, 동시 요청, 미확정 복구, 결제 기록, 재시도, 품절 거부와 재고 차감·복원, 마지막 재고 동시 승인, 내 주문 목록, 관리자 계정의 주문·결제 차단, 주문의 배송지 복사·내 배송지 확인·배송지 없는 이전 주문의 결제 차단 |
 | [OrderShippingIntegrationTest](../src/test/java/com/example/payment/order/OrderShippingIntegrationTest.java) | 결제 완료 주문만 배송 목록에 나오는지, 송장 등록·수정·배송 완료와 고객 화면의 배송 단계, 결제 전·배송지 없는 주문 거부, 입력 검증, 고객 계정 차단, DB 제약 |
+| [UnpaidOrderExpiryIntegrationTest](../src/test/java/com/example/payment/order/UnpaidOrderExpiryIntegrationTest.java) | 결제 기한이 지난 결제 대기 주문만 취소되는지(승인 중·결제 완료·최근 결제창 주문 제외), 재고 유지, 취소된 주문의 표시와 결제 시작·승인 거부(토스 미호출), DB 제약 |
 | [CustomerAddressIntegrationTest](../src/test/java/com/example/payment/customer/CustomerAddressIntegrationTest.java) | 첫 배송지의 기본 지정, 기본 배송지 하나 유지(동시 추가·DB 제약 포함), 삭제 후 기본 승계, 다른 회원 배송지 차단, 10개 제한, 입력 검증, 관리자 계정 차단 |
 | [ChatIntegrationTest](../src/test/java/com/example/payment/chat/ChatIntegrationTest.java) | 고객당 상담방 하나, 자기 대화만 조회, 재전송 중복 방지, 동시 전송, 관리자 역할, 읽음 수, 이전·이후 대화 불러오기, 최근 100개 밖의 미답변 상담 조회 |
 | [ChatWebSocketTest](../src/test/java/com/example/payment/chat/ChatWebSocketTest.java) | 실제 포트로 STOMP 연결: 토큰 없는 연결 거부, 관리자 주소·다른 회원 주소 구독 거부, `SEND` 거부, 커밋 후 본인·관리자에게만 알림 |
@@ -52,7 +56,7 @@ macOS / Linux에서는 `./gradlew test bootJar`를 사용합니다.
 | [MigrationUpgradeTest](../src/test/java/com/example/payment/MigrationUpgradeTest.java) | V1 데이터가 최신 스키마로 올바르게 옮겨지는지, 초기 재고(V7·V8)와 승인 진행 중 주문의 재고 차감 |
 
 - 통합 테스트는 Testcontainers의 PostgreSQL에 모든 마이그레이션을 적용하고, 토스 API는 대역을 씁니다. 테스트마다 모든 사이즈 재고를 20개로 맞춥니다.
-- 복구 작업의 주기 실행은 끄고(`payment.recovery.enabled=false`) 테스트에서 직접 호출합니다.
+- 결제 복구와 미결제 주문 취소의 주기 실행은 끄고(`payment.recovery.enabled=false`, `order.unpaid-expiry.enabled=false`) 테스트에서 직접 호출합니다.
 - 결과 보고서는 `build/reports/tests/test/index.html`, 실행 파일은 `build/libs/`에 생깁니다.
 
 ## 프런트엔드 검증
@@ -65,7 +69,7 @@ npm test
 npm run build
 ```
 
-- `npm test`는 SDK 대역으로 결제창 중복 실행·닫기, 지원 결제수단, 인증 복귀 URL, 임시 승인 정보 처리, 배송지 연락처 표시·우편번호 찾기 결과의 주소 조합, 품절로 거절된 승인을 새로고침해도 다시 보내지 않는지, 품절 사이즈를 피한 사이즈 선택, 남은 수량과 담은 수량으로 정하는 최대 수량을 확인하고, 상담 메시지 합치기·중복 제거·입력 검증, 재연결 중 전송·조회 실패·겹친 조회, 늦게 완료된 읽음 요청·조회 이후의 새 답변 배지, 최근 100개 밖의 미답변 상담 목록·관리자 배지, 서버에 연결하지 못했을 때의 오류 안내를 확인합니다. 상담 테스트는 실제 훅·컴포넌트 소스에 제어 가능한 상태·효과 실행기를 연결해 응답 순서를 재현합니다. 실제 브라우저 E2E 테스트는 없습니다.
+- `npm test`는 SDK 대역으로 결제창 중복 실행·닫기, 지원 결제수단, 인증 복귀 URL, 임시 승인 정보 처리, 배송지 연락처 표시·우편번호 찾기 결과의 주소 조합, 품절로 거절된 승인을 새로고침해도 다시 보내지 않는지, 품절 사이즈를 피한 사이즈 선택, 남은 수량과 담은 수량으로 정하는 최대 수량을 확인하고, 상담 메시지 합치기·중복 제거·입력 검증, 재연결 중 전송·조회 실패·겹친 조회, 늦게 완료된 읽음 요청·조회 이후의 새 답변 배지, 최근 100개 밖의 미답변 상담 목록·관리자 배지, 서버에 연결하지 못했을 때의 오류 안내, 주문·결제 상태 문구(`주문 취소` 포함)를 확인합니다. 상담 테스트는 실제 훅·컴포넌트 소스에 제어 가능한 상태·효과 실행기를 연결해 응답 순서를 재현합니다. 실제 브라우저 E2E 테스트는 없습니다.
 - `npm run build`는 타입 검사 후 `frontend/dist/`를 만듭니다. 백엔드 JAR에는 포함되지 않습니다.
 - 화면을 바꾸면 [DESIGN.md](../DESIGN.md) 기준으로 PC·모바일, 키보드 포커스, 처리 중·오류 상태를 확인합니다.
 
@@ -103,6 +107,7 @@ Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹�
 4. 같은 결제 정보를 다시 보내도 새 승인이 생기지 않는지 확인합니다.
 5. 로그아웃하거나 다른 회원으로 로그인하면 그 주문을 조회할 수 없는지 확인합니다.
 6. `웨이브 퍼플 티`의 XL이 `품절`로 비활성화되고, 다른 사이즈는 `남은 수량 3장`과 함께 수량을 3장까지만 고를 수 있는지 확인합니다. 주문을 만든 뒤 그 사이즈 재고를 0으로 바꾸고 결제하면, 결제창 인증 후 `재고가 부족해 결제를 승인하지 않았습니다`가 나오고 토스 상점 결제내역에 승인이 없는지 확인합니다.
+7. 결제 대기 주문의 `created_at`을 pgAdmin에서 하루 전으로 바꾸고 10분 안에(또는 `ORDER_UNPAID_EXPIRY_AFTER=PT2M`으로 실행해) 주문 확인 화면에 회색 `주문 취소` 배지와 취소 시각이 나오는지, 장바구니에 `결제하지 않은 이전 주문은 결제 기한이 지나 자동으로 취소되었습니다`가 나오고 결제 버튼으로 그 주문을 다시 결제할 수 없는지 확인합니다.
 
 결제 키나 시크릿 키는 이슈·문서·로그에 남기지 않습니다.
 
@@ -117,6 +122,7 @@ Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹�
 | [V5](../src/main/resources/db/migration/V5__add_order_customer.sql) | 주문한 회원(`customer_id`) 컬럼 추가. 기존 주문은 비어 있음 |
 | [V6](../src/main/resources/db/migration/V6__add_chat.sql) | 1:1 상담 테이블 `chat_rooms`·`chat_messages` 추가 |
 | [V7](../src/main/resources/db/migration/V7__add_product_stocks.sql) | 사이즈별 재고 `product_stocks` 추가. 사이즈마다 20개(`tee-10`은 3개, XL은 품절)로 시작하고, 승인이 진행 중인 주문의 수량은 미리 뺌 |
+| [V12](../src/main/resources/db/migration/V12__add_order_cancellation.sql) | 주문 상태 `CANCELED`와 취소 시각 `canceled_at` 추가. 취소된 주문은 승인 슬롯이 비어 있도록 제약을 바꾸고, 결제 대기 주문 조회용 부분 인덱스 추가. 기존 데이터는 바꾸지 않음 |
 | [V11](../src/main/resources/db/migration/V11__add_shipments.sql) | 송장·배송 상태 `shipments` 추가(주문당 한 건). 결제 완료 주문 목록용 인덱스 |
 | [V10](../src/main/resources/db/migration/V10__add_order_shipping_address.sql) | 주문에 배송지 복사 컬럼(`shipping_*`) 추가. 주소는 전부 있거나 전부 없게 제약. 기존 주문은 비어 있음 |
 | [V9](../src/main/resources/db/migration/V9__add_customer_addresses.sql) | 마이페이지 배송지 `customer_addresses` 추가. 회원당 기본 배송지 하나를 부분 유니크 인덱스로 보장 |

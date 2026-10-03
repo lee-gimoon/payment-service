@@ -18,6 +18,16 @@ import { removeSessionValue } from "../lib/storage";
 import { readPaymentRedirect, recordPaymentFailure, recordStockRejection } from "../payments/paymentRedirect";
 import type { ConfirmPaymentCommand, Order } from "../types/payment";
 
+// 결제 기한이 지나 취소된 주문은 서버가 승인을 요청하지 않는다. 결과를 모르는 상황이 아니므로 취소된 주문을 보여준다.
+async function confirmOrLoadCanceled(command: ConfirmPaymentCommand): Promise<Order> {
+  try {
+    return await confirmPayment(command);
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.code === "ORDER_CANCELED") return getOrder(command.orderId);
+    throw error;
+  }
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
@@ -66,13 +76,14 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
 
   function showOrder(nextOrder: Order) {
     setOrder(nextOrder);
-    setTitle(nextOrder.payment.status === "SUCCEEDED" ? "결제가 완료되었습니다." : paymentStatusLabel(nextOrder.payment.status));
+    setTitle(nextOrder.payment.status === "SUCCEEDED" ? "결제가 완료되었습니다."
+      : nextOrder.status === "CANCELED" ? "결제 기한이 지나 취소된 주문입니다" : paymentStatusLabel(nextOrder.payment.status));
     setMessage(nextOrder.payment.status === "SUCCEEDED"
       ? "결제가 정상적으로 승인되었습니다. 주문 내역에서 상품과 결제 정보를 확인하세요."
       : nextOrder.payment.message);
     setError("");
     saveLastOrderId(customerId, nextOrder.orderId);
-    if (nextOrder.payment.status === "SUCCEEDED") {
+    if (nextOrder.payment.status === "SUCCEEDED" || nextOrder.status === "CANCELED") {
       clearPendingOrderId(customerId, nextOrder.orderId);
     }
 
@@ -150,7 +161,7 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
         }
 
         const loadedOrder = redirect.confirmation
-          ? await confirmPayment(redirect.confirmation)
+          ? await confirmOrLoadCanceled(redirect.confirmation)
           : await getOrder(redirect.orderId);
 
         if (active) {
@@ -207,7 +218,7 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
     }
 
     void runAction(async () => {
-      showOrder(await confirmPayment(confirmation));
+      showOrder(await confirmOrLoadCanceled(confirmation));
     });
   }
 
@@ -226,14 +237,16 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
     </AppShell>;
   }
 
+  const canceled = order?.status === "CANCELED";
+
   return (
     <AppShell footerText="테스트 결제 결과" mainClassName="result-page">
       <p className="eyebrow">PAYMENT RESULT</p>
       <h1>{title}</h1>
       <p role="status">{message}</p>
 
-      <Link className="primary-button result-cta" to={stockRejected ? "/#products" : order?.orderId || redirect.orderId ? `/orders/${order?.orderId ?? redirect.orderId}` : "/orders"}>
-        {stockRejected ? "다른 상품 고르기" : order?.payment.status === "SUCCEEDED" ? "결제 확인하기" : "주문 상태 확인하기"} <span aria-hidden="true">↗</span>
+      <Link className="primary-button result-cta" to={stockRejected || canceled ? "/#products" : order?.orderId || redirect.orderId ? `/orders/${order?.orderId ?? redirect.orderId}` : "/orders"}>
+        {stockRejected ? "다른 상품 고르기" : canceled ? "상품 다시 고르기" : order?.payment.status === "SUCCEEDED" ? "결제 확인하기" : "주문 상태 확인하기"} <span aria-hidden="true">↗</span>
       </Link>
 
       <section className="result-card" aria-live="polite" aria-busy={busy}>

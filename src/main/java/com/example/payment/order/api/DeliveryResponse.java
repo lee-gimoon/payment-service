@@ -1,5 +1,10 @@
-package com.example.payment.order;
+package com.example.payment.order.api;
 
+import com.example.payment.order.domain.Carrier;
+import com.example.payment.order.domain.DeliveryStatus;
+import com.example.payment.order.domain.OrderStatus;
+import com.example.payment.order.domain.PurchaseOrder;
+import com.example.payment.order.domain.Shipment;
 import java.time.Instant;
 
 /** 주문의 배송 단계. 송장 정보는 송장을 등록한 뒤에만 있다. */

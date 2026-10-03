@@ -1,5 +1,6 @@
-package com.example.payment.order;
+package com.example.payment.order.api;
 
+import com.example.payment.order.domain.Carrier;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 

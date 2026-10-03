@@ -4,7 +4,8 @@ export type PaymentStatus =
   | "SUCCEEDED"
   | "FAILED"
   | "UNKNOWN"
-  | "REVIEW_REQUIRED";
+  | "REVIEW_REQUIRED"
+  | "CANCELED";
 
 export interface PaymentDetails {
   status: PaymentStatus;
@@ -32,6 +33,8 @@ export interface Order {
   payment: PaymentDetails;
   /** 배송 단계. 결제 완료 전 주문은 null이다. */
   delivery: Delivery | null;
+  /** 결제 기한이 지나 주문이 취소된 시각. 취소되지 않은 주문은 null이다. */
+  canceledAt: string | null;
 }
 
 export type DeliveryStatus = "PREPARING" | "SHIPPED" | "DELIVERED";
@@ -57,7 +60,7 @@ export interface ShippingInfo {
   memo: string | null;
 }
 
-export type OrderStatus = "PENDING_PAYMENT" | "PAYMENT_IN_PROGRESS" | "PAID";
+export type OrderStatus = "PENDING_PAYMENT" | "PAYMENT_IN_PROGRESS" | "PAID" | "CANCELED";
 
 export type PaymentAttemptStatus = "STARTED" | "AUTH_CANCELED" | "AUTH_FAILED" |
   "APPROVING" | "UNKNOWN" | "REVIEW_REQUIRED" | "SUCCEEDED" | "FAILED";

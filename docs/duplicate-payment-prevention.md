@@ -6,8 +6,8 @@
 
 | # | 단계 | 막는 것 | 구현 위치 |
 | --- | --- | --- | --- |
-| 1 | **`FOR UPDATE` (비관적 잠금)** | 같은 주문의 요청이 동시에 와서 "슬롯이 비었나?"를 함께 확인하는 것. 요청을 한 줄로 세운다. | [OrderRepository](../src/main/java/com/example/payment/order/OrderRepository.java) `@Lock(PESSIMISTIC_WRITE)` |
-| 2 | **승인 슬롯 + 상태 규칙** | 승인 중이거나 성공한 승인이 있는데 두 번째 승인을 요청하는 것. `STARTED`가 아닌 시도의 승인과 확정된 결과의 변경도 막는다. | [PurchaseOrder](../src/main/java/com/example/payment/order/PurchaseOrder.java) `claimApproval`, [PaymentAttempt](../src/main/java/com/example/payment/payment/domain/PaymentAttempt.java) `requestApproval` |
+| 1 | **`FOR UPDATE` (비관적 잠금)** | 같은 주문의 요청이 동시에 와서 "슬롯이 비었나?"를 함께 확인하는 것. 요청을 한 줄로 세운다. | [OrderRepository](../src/main/java/com/example/payment/order/persistence/OrderRepository.java) `@Lock(PESSIMISTIC_WRITE)` |
+| 2 | **승인 슬롯 + 상태 규칙** | 승인 중이거나 성공한 승인이 있는데 두 번째 승인을 요청하는 것. `STARTED`가 아닌 시도의 승인과 확정된 결과의 변경도 막는다. | [PurchaseOrder](../src/main/java/com/example/payment/order/domain/PurchaseOrder.java) `claimApproval`, [PaymentAttempt](../src/main/java/com/example/payment/payment/domain/PaymentAttempt.java) `requestApproval` |
 | 3 | **멱등 처리** | 같은 요청의 재전송(새로고침, 네트워크 재시도). 같은 결제 키는 토스를 부르지 않고 저장된 결과를 돌려주며, 토스 호출에는 `Idempotency-Key`를 보낸다. | [PaymentPreparationService](../src/main/java/com/example/payment/payment/application/PaymentPreparationService.java), [TossPaymentClient](../src/main/java/com/example/payment/payment/infrastructure/toss/TossPaymentClient.java) |
 | 4 | **DB 제약** | 코드에 버그가 있어도 중복이 저장되는 것 | [V2](../src/main/resources/db/migration/V2__merge_payments_into_attempts.sql)·[V3](../src/main/resources/db/migration/V3__add_completed_payments.sql)·[V4](../src/main/resources/db/migration/V4__align_attempt_finished_at.sql) 마이그레이션 |
 | 5 | **`@Version` (낙관적 잠금)** | 두 트랜잭션이 같은 행을 동시에 고쳐 한쪽 변경이 덮어써지는 것 | `PurchaseOrder`, `PaymentAttempt`의 `version` 필드 |
