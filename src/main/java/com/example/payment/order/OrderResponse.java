@@ -6,17 +6,21 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
-/** @param shipping 주문에 복사한 배송지. 배송지를 받기 전에 만든 주문은 null이다. */
+/**
+ * @param shipping 주문에 복사한 배송지. 배송지를 받기 전에 만든 주문은 null이다.
+ * @param delivery 배송 단계. 결제 완료 전 주문은 null이다.
+ */
 public record OrderResponse(String orderId, String productName, int quantity, long amount, String currency,
                             List<ItemResponse> items, ShippingAddress shipping, Instant createdAt, OrderStatus status,
-                            AttemptResponse latestAttempt, PaymentResponse payment) {
+                            AttemptResponse latestAttempt, PaymentResponse payment, DeliveryResponse delivery) {
 
     /**
      * @param approval 가장 최근에 승인을 요청한 시도. 아직 없으면 결제 대기로 표시한다.
      * @param latest 가장 최근에 생성한 시도. 인증 취소·실패도 포함한다.
+     * @param shipment 관리자가 등록한 송장. 아직 없으면 null이다.
      */
     public static OrderResponse of(PurchaseOrder order, List<OrderItem> orderItems, PaymentAttempt approval,
-                                   PaymentAttempt latest) {
+                                   PaymentAttempt latest, Shipment shipment) {
         PaymentResponse paymentResponse;
         if (approval == null) {
             paymentResponse = new PaymentResponse(PaymentState.READY, null, null, null, null,
@@ -27,13 +31,12 @@ public record OrderResponse(String orderId, String productName, int quantity, lo
                     approval.getLastCheckedAt(), approval.getErrorCode(), message(state),
                     approval.getPgAmount(), approval.getPgCurrency());
         }
-        List<ItemResponse> items = orderItems.stream().map(item ->
-                new ItemResponse(item.getProductId(), item.getProductName(), item.getSize(),
-                        item.getUnitPrice(), item.getQuantity())).toList();
+        List<ItemResponse> items = orderItems.stream().map(ItemResponse::of).toList();
         return new OrderResponse(order.getId(), order.getProductName(), order.getQuantity(),
                 order.getAmount(), order.getCurrency(), items, order.getShipping(), order.getCreatedAt(), order.getStatus(),
                 latest == null ? null : new AttemptResponse(latest.getId(), latest.getStatus(),
-                        latest.getStartedAt(), latest.getFinishedAt(), latest.getErrorCode()), paymentResponse);
+                        latest.getStartedAt(), latest.getFinishedAt(), latest.getErrorCode()), paymentResponse,
+                DeliveryResponse.of(order, shipment));
     }
 
     private static String message(PaymentState state) {
@@ -64,7 +67,12 @@ public record OrderResponse(String orderId, String productName, int quantity, lo
         }
     }
 
-    public record ItemResponse(String productId, String productName, String size, long unitPrice, int quantity) {}
+    public record ItemResponse(String productId, String productName, String size, long unitPrice, int quantity) {
+        static ItemResponse of(OrderItem item) {
+            return new ItemResponse(item.getProductId(), item.getProductName(), item.getSize(),
+                    item.getUnitPrice(), item.getQuantity());
+        }
+    }
 
     public record AttemptResponse(String id, PaymentAttemptStatus status, Instant startedAt,
                                   Instant finishedAt, String errorCode) {}

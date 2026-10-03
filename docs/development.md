@@ -8,7 +8,7 @@
 | --- | --- |
 | `src/main/java/.../config/` | 로그인 토큰 검증(Spring Security), Swagger 설정 |
 | `src/main/java/.../product/` | 상품 카탈로그, 사이즈별 재고 확인·차감·복원 |
-| `src/main/java/.../order/` | 주문 생성, 구매 항목, 조회, 내 주문 목록 |
+| `src/main/java/.../order/` | 주문 생성, 구매 항목, 조회, 내 주문 목록, 관리자 주문 관리(송장·배송 상태) |
 | `src/main/java/.../customer/` | 마이페이지 배송지(회원당 최대 10개, 기본 배송지 하나) |
 | `src/main/java/.../chat/api/` | 상담 HTTP 요청·응답 (고객 `/chat`, 관리자 `/admin/chat`) |
 | `src/main/java/.../chat/application/` | 상담방 만들기, 메시지 저장 순서·트랜잭션 경계, 읽음 표시, 새 메시지 이벤트 |
@@ -23,11 +23,11 @@
 | `docker/keycloak/` | Keycloak realm·client·테스트 회원 설정 |
 | `docker/keycloak-themes/` | 스토어와 같은 디자인의 Keycloak 로그인·회원가입 화면 테마 |
 | `frontend/src/auth/` | Keycloak 로그인, 토큰 보관·갱신, 로그인 상태 |
-| `frontend/src/pages/` | 스토어, 상품, 장바구니, 결제 결과, 주문, 마이페이지, 관리자 상담 관리 화면 |
+| `frontend/src/pages/` | 스토어, 상품, 장바구니, 결제 결과, 주문, 마이페이지, 관리자 홈·주문 관리·상담 관리 화면 |
 | `frontend/src/payments/` | 결제창, 결제수단 제한, 인증 복귀 처리 |
 | `frontend/src/chat/` | 상담 WebSocket 연결, 한 대화의 메시지·보내는 중·안 읽은 수 관리 |
 | `frontend/src/components/ChatWidget.tsx`·`ChatThread.tsx` | 고객 문의 창, 고객·관리자가 함께 쓰는 대화 목록과 입력란 |
-| `frontend/tests/` | SDK 대역을 쓰는 결제창·인증 복귀·품절 거절 복원 테스트, 품절 사이즈 선택·담을 수 있는 수량 테스트, 상담 메시지 합치기·재연결 복구·비동기 읽음 처리 테스트 |
+| `frontend/tests/` | SDK 대역을 쓰는 결제창·인증 복귀·품절 거절 복원 테스트, 품절 사이즈 선택·담을 수 있는 수량·택배사 정보 테스트, 상담 메시지 합치기·재연결 복구·비동기 읽음 처리 테스트 |
 
 `...`는 `com/example/payment`입니다. 도메인 규칙은 [아키텍처](architecture.md)에 있습니다.
 
@@ -44,6 +44,7 @@ macOS / Linux에서는 `./gradlew test bootJar`를 사용합니다.
 | 테스트 | 검증 범위 |
 | --- | --- |
 | [PaymentIntegrationTest](../src/test/java/com/example/payment/PaymentIntegrationTest.java) | 로그인 요구와 주문 소유자, 주문 금액, 트랜잭션 원자성, 승인 슬롯과 DB 제약, 동시 요청, 미확정 복구, 결제 기록, 재시도, 품절 거부와 재고 차감·복원, 마지막 재고 동시 승인, 내 주문 목록, 관리자 계정의 주문·결제 차단, 주문의 배송지 복사·내 배송지 확인·배송지 없는 이전 주문의 결제 차단 |
+| [OrderShippingIntegrationTest](../src/test/java/com/example/payment/order/OrderShippingIntegrationTest.java) | 결제 완료 주문만 배송 목록에 나오는지, 송장 등록·수정·배송 완료와 고객 화면의 배송 단계, 결제 전·배송지 없는 주문 거부, 입력 검증, 고객 계정 차단, DB 제약 |
 | [CustomerAddressIntegrationTest](../src/test/java/com/example/payment/customer/CustomerAddressIntegrationTest.java) | 첫 배송지의 기본 지정, 기본 배송지 하나 유지(동시 추가·DB 제약 포함), 삭제 후 기본 승계, 다른 회원 배송지 차단, 10개 제한, 입력 검증, 관리자 계정 차단 |
 | [ChatIntegrationTest](../src/test/java/com/example/payment/chat/ChatIntegrationTest.java) | 고객당 상담방 하나, 자기 대화만 조회, 재전송 중복 방지, 동시 전송, 관리자 역할, 읽음 수, 이전·이후 대화 불러오기, 최근 100개 밖의 미답변 상담 조회 |
 | [ChatWebSocketTest](../src/test/java/com/example/payment/chat/ChatWebSocketTest.java) | 실제 포트로 STOMP 연결: 토큰 없는 연결 거부, 관리자 주소·다른 회원 주소 구독 거부, `SEND` 거부, 커밋 후 본인·관리자에게만 알림 |
@@ -89,6 +90,7 @@ Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹�
 3. 두 번째 배송지를 `기본 배송지로 지정`해 저장하면 기본 표시가 옮겨 가는지, 기본 배송지를 지우면 남은 배송지가 기본이 되는지 확인합니다.
 4. 장바구니에 상품을 담으면 기본 배송지가 골라져 있고, `변경`으로 다른 배송지를 고르거나 새로 추가할 수 있는지 확인합니다. 결제한 주문의 주문 확인 화면에 배송지와 배송 메모가 나오고, 마이페이지에서 그 배송지를 고쳐도 주문의 배송지는 그대로인지 확인합니다.
 5. 쇼핑몰 관리자로 로그인하면 헤더에 `주문 확인`이 없고, 마이페이지·주문 확인 화면에 관리자 안내가 나오며, 장바구니의 결제 버튼이 막히는지 확인합니다.
+6. 관리자 이름을 눌러 관리자 홈을 열고 **주문 관리**에서 결제한 주문을 고릅니다. 택배사와 송장번호를 등록하면 `배송 중`, `배송 완료 처리`를 누르면 `배송 완료`가 되는지, 고객의 주문 확인 화면과 마이페이지에 같은 단계와 `배송 조회` 링크가 나오는지 확인합니다.
 
 ## 실제 결제 확인
 
@@ -114,6 +116,7 @@ Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹�
 | [V5](../src/main/resources/db/migration/V5__add_order_customer.sql) | 주문한 회원(`customer_id`) 컬럼 추가. 기존 주문은 비어 있음 |
 | [V6](../src/main/resources/db/migration/V6__add_chat.sql) | 1:1 상담 테이블 `chat_rooms`·`chat_messages` 추가 |
 | [V7](../src/main/resources/db/migration/V7__add_product_stocks.sql) | 사이즈별 재고 `product_stocks` 추가. 사이즈마다 20개(`tee-10`은 3개, XL은 품절)로 시작하고, 승인이 진행 중인 주문의 수량은 미리 뺌 |
+| [V11](../src/main/resources/db/migration/V11__add_shipments.sql) | 송장·배송 상태 `shipments` 추가(주문당 한 건). 결제 완료 주문 목록용 인덱스 |
 | [V10](../src/main/resources/db/migration/V10__add_order_shipping_address.sql) | 주문에 배송지 복사 컬럼(`shipping_*`) 추가. 주소는 전부 있거나 전부 없게 제약. 기존 주문은 비어 있음 |
 | [V9](../src/main/resources/db/migration/V9__add_customer_addresses.sql) | 마이페이지 배송지 `customer_addresses` 추가. 회원당 기본 배송지 하나를 부분 유니크 인덱스로 보장 |
 | [V8](../src/main/resources/db/migration/V8__vary_initial_stock.sql) | `tee-04`~`tee-09`의 초기 재고를 사이즈별 1~10장(한 번 무작위로 뽑은 고정값)으로 바꿈. `tee-01`~`tee-03`은 20장, `tee-10`은 그대로. 값을 덮어쓰므로 V7 직후 판매·조정이 없다는 전제이며, 유일하게 V7 뒤 따로 실행된 로컬 DB에서 잃은 판매가 없음을 확인함 |

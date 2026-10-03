@@ -8,6 +8,8 @@ import {
 import { AuthProvider } from "./auth/auth";
 import { ChatWidget } from "./components/ChatWidget";
 import { AdminChatPage } from "./pages/AdminChatPage";
+import { AdminHomePage } from "./pages/AdminHomePage";
+import { AdminOrdersPage } from "./pages/AdminOrdersPage";
 import { PaymentResultPage } from "./pages/PaymentResultPage";
 import { CartPage } from "./pages/CartPage";
 import { MyPage } from "./pages/MyPage";
@@ -35,6 +37,8 @@ createRoot(root).render(
         <Route path="/orders/:orderId" element={<OrderPage />} />
         <Route path="/payment/result" element={<PaymentResultPage />} />
         <Route path="/mypage" element={<MyPage />} />
+        <Route path="/admin" element={<AdminHomePage />} />
+        <Route path="/admin/orders/:orderId?" element={<AdminOrdersPage />} />
         <Route path="/admin/chat/:roomId?" element={<AdminChatPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

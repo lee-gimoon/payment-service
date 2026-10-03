@@ -11,6 +11,7 @@ import org.springframework.transaction.TransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -24,7 +25,8 @@ public class ApiExceptionHandler {
                 .body(new ErrorResponse(exception.code(), exception.getMessage()));
     }
 
-    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ErrorResponse> invalidRequest(Exception exception) {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse("INVALID_REQUEST", "요청 형식과 값을 확인해주세요."));

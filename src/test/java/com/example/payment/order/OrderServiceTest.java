@@ -44,7 +44,7 @@ class OrderServiceTest {
                 "tee-04", "블루 스타 티", "BLUE / BOXY", "그래픽", 27_000,
                 "#4e78d7", "#dbe9fa", "star", "", 4)));
         service = new OrderService(orders, mock(OrderItemRepository.class),
-                mock(PaymentAttemptRepository.class), new ProductCatalog(products), inventory, addresses);
+                mock(PaymentAttemptRepository.class), new ProductCatalog(products), inventory, addresses, mock(ShipmentRepository.class));
     }
 
     @Test

@@ -30,6 +30,21 @@ export interface Order {
   status: OrderStatus;
   latestAttempt: PaymentAttempt | null;
   payment: PaymentDetails;
+  /** 배송 단계. 결제 완료 전 주문은 null이다. */
+  delivery: Delivery | null;
+}
+
+export type DeliveryStatus = "PREPARING" | "SHIPPED" | "DELIVERED";
+
+export type Carrier = "CJ" | "HANJIN" | "LOTTE" | "EPOST" | "LOGEN";
+
+/** 송장 정보는 관리자가 송장을 등록한 뒤에만 있다. */
+export interface Delivery {
+  status: DeliveryStatus;
+  carrier: Carrier | null;
+  trackingNumber: string | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
 }
 
 export interface ShippingInfo {

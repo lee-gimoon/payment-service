@@ -1,4 +1,4 @@
-import type { OrderStatus } from "./payment";
+import type { DeliveryStatus, OrderStatus } from "./payment";
 
 /** 마이페이지 주문 목록의 한 줄. 결제 상세는 주문 확인 화면에서 본다. */
 export interface OrderSummary {
@@ -9,6 +9,8 @@ export interface OrderSummary {
   currency: string;
   createdAt: string;
   status: OrderStatus;
+  /** 배송 단계. 결제 완료 전 주문은 null이다. */
+  delivery: DeliveryStatus | null;
 }
 
 export interface Address {

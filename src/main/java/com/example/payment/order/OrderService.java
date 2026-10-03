@@ -10,7 +10,10 @@ import com.example.payment.product.ProductInventory;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,17 +26,19 @@ public class OrderService {
     private final ProductCatalog productCatalog;
     private final ProductInventory inventory;
     private final CustomerAddressService customerAddresses;
+    private final ShipmentRepository shipments;
 
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                         PaymentAttemptRepository paymentAttemptRepository,
                         ProductCatalog productCatalog, ProductInventory inventory,
-                        CustomerAddressService customerAddresses) {
+                        CustomerAddressService customerAddresses, ShipmentRepository shipments) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentAttemptRepository = paymentAttemptRepository;
         this.productCatalog = productCatalog;
         this.inventory = inventory;
         this.customerAddresses = customerAddresses;
+        this.shipments = shipments;
     }
 
     @Transactional
@@ -75,7 +80,7 @@ public class OrderService {
             lines.add(new OrderItem(order, products.get(lineNumber), item.size(), item.quantity(), lineNumber));
         }
         orderItemRepository.saveAll(lines);
-        return OrderResponse.of(order, lines, null, null);
+        return OrderResponse.of(order, lines, null, null, null);
     }
 
     /** 내 배송지를 주문에 복사한다. 이후 마이페이지에서 배송지를 고쳐도 이 주문의 배송지는 그대로다. */
@@ -100,8 +105,10 @@ public class OrderService {
     /** 마이페이지 주문 내역. 최근 주문부터 최대 50건이다. */
     @Transactional(readOnly = true)
     public List<OrderSummaryResponse> listMine(String customerId) {
-        return orderRepository.findTop50ByCustomerIdOrderByCreatedAtDesc(customerId).stream()
-                .map(OrderSummaryResponse::of).toList();
+        List<PurchaseOrder> mine = orderRepository.findTop50ByCustomerIdOrderByCreatedAtDesc(customerId);
+        Map<String, Shipment> byOrder = shipments.findByOrderIdIn(mine.stream().map(PurchaseOrder::getId).toList())
+                .stream().collect(Collectors.toMap(Shipment::getOrderId, Function.identity()));
+        return mine.stream().map(order -> OrderSummaryResponse.of(order, byOrder.get(order.getId()))).toList();
     }
 
     /** 다른 회원의 주문은 존재 여부를 알리지 않고 없는 주문처럼 응답한다. */
@@ -113,6 +120,7 @@ public class OrderService {
         return OrderResponse.of(order, orderItemRepository.findByOrderId(orderId),
                 paymentAttemptRepository.findFirstByOrderIdAndApprovalRequestedAtNotNullOrderByApprovalRequestedAtDesc(orderId)
                         .orElse(null),
-                paymentAttemptRepository.findFirstByOrderIdOrderByStartedAtDesc(orderId).orElse(null));
+                paymentAttemptRepository.findFirstByOrderIdOrderByStartedAtDesc(orderId).orElse(null),
+                shipments.findByOrderId(orderId).orElse(null));
     }
 }

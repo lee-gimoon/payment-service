@@ -7,6 +7,7 @@ import { AddressForm } from "../components/AddressForm";
 import { AddressLines } from "../components/AddressLines";
 import { AppShell } from "../components/AppShell";
 import { emptyAddressInput, MAX_ADDRESSES, toAddressInput } from "../lib/addresses";
+import { deliveryStatusLabel } from "../lib/delivery";
 import { formatAmount, formatDateTime, orderStatusLabel } from "../lib/formatters";
 import type { Address, AddressInput, OrderSummary } from "../types/myPage";
 
@@ -46,7 +47,7 @@ export function MyPage() {
         <p className="subtle">주문·결제·배송지·고객 상담은 일반 회원 기능입니다. 상품을 직접 사 보려면 일반 회원 계정으로 로그인해주세요.</p>
       </div>
       <div className="actions">
-        <Link className="primary-button" to="/admin/chat">상담 관리로 이동</Link>
+        <Link className="primary-button" to="/admin">관리자 홈으로 이동</Link>
         <a className="secondary-link" href={accountUrl("/mypage")}>계정 설정</a>
       </div>
     </section>}
@@ -92,7 +93,8 @@ function MyOrders() {
           </span>
           <span className="order-history-side">
             <strong>{formatAmount(order.amount)}</strong>
-            <span className="status-badge">{orderStatusLabel(order.status)}</span>
+            {/* 결제 완료 뒤에는 배송 단계를 보여준다. */}
+            <span className="status-badge">{order.delivery ? deliveryStatusLabel(order.delivery) : orderStatusLabel(order.status)}</span>
           </span>
         </Link>
       </li>)}</ul>}

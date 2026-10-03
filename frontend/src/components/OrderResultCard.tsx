@@ -1,4 +1,5 @@
 import { formatPhone } from "../lib/addresses";
+import { CARRIERS, deliveryStatusLabel } from "../lib/delivery";
 import {
   formatAmount,
   formatDateTime,
@@ -60,6 +61,14 @@ export function OrderResultCard({
         {order.shipping?.memo && <div>
           <dt>배송 메모</dt>
           <dd>{order.shipping.memo}</dd>
+        </div>}
+        {order.delivery && <div>
+          <dt>배송 상태</dt>
+          <dd>{deliveryStatusLabel(order.delivery.status)}</dd>
+        </div>}
+        {order.delivery?.carrier && order.delivery.trackingNumber && <div>
+          <dt>송장</dt>
+          <dd>{CARRIERS[order.delivery.carrier].name} {order.delivery.trackingNumber} · <a href={CARRIERS[order.delivery.carrier].trackingUrl(order.delivery.trackingNumber)} target="_blank" rel="noreferrer">배송 조회</a></dd>
         </div>}
         <div>
           <dt>승인 시각</dt>

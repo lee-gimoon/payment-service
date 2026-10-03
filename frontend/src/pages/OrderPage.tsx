@@ -73,7 +73,7 @@ export function OrderPage() {
         <h2 id="admin-order-title">관리자 계정은 주문을 조회할 수 없습니다</h2>
         <p className="subtle">주문은 주문한 일반 회원만 확인할 수 있습니다.</p>
       </div>
-      <Link className="primary-button" to="/admin/chat">상담 관리로 이동</Link>
+      <Link className="primary-button" to="/admin">관리자 홈으로 이동</Link>
     </section>}
     {authStatus === "signedIn" && !isShopAdmin && <OrderLookup orderId={lookupOrderId} busy={busy} onOrderIdChange={setLookupOrderId} onSubmit={handleLookup} />}
     {busy && !order && <p role="status">주문을 불러오고 있습니다.</p>}

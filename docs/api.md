@@ -31,6 +31,11 @@
 | GET | `/admin/chat/rooms/{roomId}/messages` | 관리자 | `200` 대화 | `403 FORBIDDEN`, `404 CHAT_ROOM_NOT_FOUND` | 한 고객과의 대화 |
 | POST | `/admin/chat/rooms/{roomId}/messages` | 관리자 | `201` 메시지, 재전송 `200` | `403 FORBIDDEN`, `404 CHAT_ROOM_NOT_FOUND`, `409 CHAT_MESSAGE_CONFLICT` | 답장 |
 | POST | `/admin/chat/rooms/{roomId}/read` | 관리자 | `204` | `403 FORBIDDEN`, `404 CHAT_ROOM_NOT_FOUND` | 고객 메시지 읽음 표시 |
+| GET | `/admin/orders?delivery=` | 관리자 | `200` 주문 배열 | `403 FORBIDDEN` | 결제 완료 주문 목록. 배송 단계로 거르기, 최대 100건 |
+| GET | `/admin/orders/summary` | 관리자 | `200` 개수 | `403 FORBIDDEN` | 상품 준비 중·배송 중 주문 수 |
+| GET | `/admin/orders/{orderId}` | 관리자 | `200` 주문 상세 | `403 FORBIDDEN`, `404 ORDER_NOT_FOUND` | 상품, 배송지, 배송 상태 |
+| PUT | `/admin/orders/{orderId}/shipment` | 관리자 | `200` 주문 상세 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAID`·`SHIPPING_ADDRESS_REQUIRED`·`DELIVERY_COMPLETED` | 송장 등록(배송 중으로)·배송 중 송장 수정 |
+| POST | `/admin/orders/{orderId}/shipment/delivered` | 관리자 | `200` 주문 상세 | `404 ORDER_NOT_FOUND`, `409 SHIPMENT_NOT_REGISTERED` | 배송 완료 처리 |
 
 - 로그인이 필요한 API에 토큰이 없거나, 서명·발급자·만료·대상(`aud`)이 맞지 않으면 `401 UNAUTHORIZED`다.
 - 다른 회원의 주문과 시도는 존재 여부를 알리지 않고 `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`로 응답한다.
@@ -155,8 +160,10 @@
 
 ```json
 [{ "orderId": "f96d4e32-...", "productName": "선데이 크루 티 외 1종", "quantity": 3, "amount": 65000,
-   "currency": "KRW", "createdAt": "2026-10-03T12:00:00Z", "status": "PENDING_PAYMENT" }]
+   "currency": "KRW", "createdAt": "2026-10-03T12:00:00Z", "status": "PAID", "delivery": "SHIPPED" }]
 ```
+
+`delivery`는 배송 단계(`PREPARING`·`SHIPPED`·`DELIVERED`)이며 결제 완료 전 주문은 `null`이다.
 
 배송지 추가·수정 요청:
 
@@ -223,6 +230,10 @@
     "message": "결제가 완료되었습니다.",
     "paidAmount": 19000,
     "paidCurrency": "KRW"
+  },
+  "delivery": {
+    "status": "SHIPPED", "carrier": "CJ", "trackingNumber": "123456789012",
+    "shippedAt": "2026-09-29T02:00:00Z", "deliveredAt": null
   }
 }
 ```
@@ -233,6 +244,7 @@
 | `payment` | 가장 최근에 **승인을 요청한** 시도의 상태와 PG 응답 정보 |
 | `payment.paidAmount`·`pgStatus`·`approvedAt` | PG가 알려준 값. 값이 있어도 결제 완료라는 뜻은 아니다. |
 | `shipping` | 주문할 때 복사한 배송지. `phone`은 숫자만 담는다. 배송지를 받기 전에 만든 주문은 `null` |
+| `delivery` | 배송 단계. 결제 완료 전 주문은 `null`, 결제 완료 뒤 송장 전이면 `PREPARING`(송장 필드는 `null`), 송장을 등록하면 `SHIPPED`, 관리자가 완료 처리하면 `DELIVERED` |
 | `payment.checkedAt` | 서버가 PG 결과를 마지막으로 기록한 시각 |
 
 - 두 필드는 서로 다른 시도를 가리킬 수 있다. 예를 들어 승인 실패 뒤 결제창을 닫으면 `latestAttempt`는 `AUTH_CANCELED`, `payment`는 `FAILED`다.
@@ -362,6 +374,22 @@
 - 연결이 끊긴 동안의 메시지는 알림으로 다시 오지 않는다. 다시 연결하면 `after`로 조회해 채운다.
 - 보낸 사람도 자기 메시지 알림을 받는다. 같은 회원이 여러 탭을 열어도 모든 탭이 맞춰진다.
 
+## 관리자 주문 관리
+
+결제 완료 주문의 배송을 관리자가 처리한다. 모두 `shop-admin` 역할이 필요하다.
+
+```text
+결제 완료 ─(송장 등록)→ 배송 중 ─(배송 완료 처리)→ 배송 완료
+PREPARING               SHIPPED                    DELIVERED
+```
+
+- `GET /admin/orders`는 결제 완료 주문만 돌려준다. `delivery=PREPARING`은 먼저 결제된 주문부터, 그 밖은 최근 순서다. 목록의 배송지는 받는 분 이름(`recipientName`)만 담고, 전체 주소는 상세에서 본다.
+- 송장 등록 요청은 `{ "carrier": "CJ", "trackingNumber": "123456789012" }`이다. 택배사는 `CJ`·`HANJIN`·`LOTTE`·`EPOST`·`LOGEN`, 송장번호는 하이픈 없는 숫자 8~20자리다. 맞지 않으면 `400 INVALID_REQUEST`다.
+- 결제 전 주문은 `409 ORDER_NOT_PAID`, 배송지 없이 만든 이전 주문은 `409 SHIPPING_ADDRESS_REQUIRED`다.
+- 배송 중에 다시 보내면 송장을 고친다. 출고 시각은 처음 등록한 때로 둔다. 배송 완료 뒤에는 `409 DELIVERY_COMPLETED`다.
+- 배송 완료 처리는 송장을 등록한 주문만 된다(`409 SHIPMENT_NOT_REGISTERED`). 이미 완료됐으면 그대로 돌려준다.
+- 주문당 배송은 한 건이다. 나눠 보내기와 택배사 배송 추적 연동은 없다.
+
 ## 오류 응답
 
 ```json
@@ -374,7 +402,7 @@
 | `401` | `UNAUTHORIZED` |
 | `403` | `FORBIDDEN` |
 | `404` | `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `ATTEMPT_NOT_FOUND`, `ADDRESS_NOT_FOUND`, `CHAT_ROOM_NOT_FOUND` |
-| `409` | `ORDER_NOT_PAYABLE`, `SHIPPING_ADDRESS_REQUIRED`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `OUT_OF_STOCK`, `ADDRESS_LIMIT_EXCEEDED`, `CHAT_MESSAGE_CONFLICT` |
+| `409` | `ORDER_NOT_PAYABLE`, `SHIPPING_ADDRESS_REQUIRED`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `OUT_OF_STOCK`, `ADDRESS_LIMIT_EXCEEDED`, `ORDER_NOT_PAID`, `DELIVERY_COMPLETED`, `SHIPMENT_NOT_REGISTERED`, `CHAT_MESSAGE_CONFLICT` |
 | `503` | `PAYMENT_NOT_CONFIGURED`, `STORAGE_UNAVAILABLE` |
 
 - 승인 결과의 `422`는 이 형식이 아니라 주문 본문을 반환한다.

@@ -23,11 +23,14 @@ export function AppShell({ children, footerText, mainClassName }: AppShellProps)
           {!(status === "signedIn" && customer?.isShopAdmin) && <Link to="/orders">주문 확인</Link>}
           <Link to="/cart">장바구니 <span>{cartCount}</span></Link>
           {status === "signedIn" && <>
-            {customer?.isShopAdmin && <Link to="/admin/chat">상담 관리</Link>}
+            {customer?.isShopAdmin && <><Link to="/admin/orders">주문 관리</Link><Link to="/admin/chat">상담 관리</Link></>}
+            {/* 이름은 일반 회원에게는 마이페이지, 관리자에게는 관리자 홈 링크다. */}
             {customer?.isShopAdmin
-              ? <strong className="nav-customer">{customer.name}님</strong>
-              : <Link className="nav-mypage" to="/mypage" aria-label={`${customer?.name}님 마이페이지`}>
-                <span className="nav-customer">{customer?.name}님</span><span className="nav-mypage-short">마이페이지</span>
+              ? <Link className="nav-account" to="/admin" aria-label={`${customer.name}님 관리자 홈`}>
+                <span className="nav-customer">{customer.name}님</span><span className="nav-account-short">관리자</span>
+              </Link>
+              : <Link className="nav-account" to="/mypage" aria-label={`${customer?.name}님 마이페이지`}>
+                <span className="nav-customer">{customer?.name}님</span><span className="nav-account-short">마이페이지</span>
               </Link>}
             <button className="nav-button" type="button" onClick={logout}>로그아웃</button>
           </>}
