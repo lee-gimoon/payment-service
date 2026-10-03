@@ -4,8 +4,9 @@ import { createAddress, deleteAddress, getAddresses, getMyOrders, makeDefaultAdd
 import { useAuth } from "../auth/auth";
 import { accountUrl } from "../auth/keycloak";
 import { AddressForm } from "../components/AddressForm";
+import { AddressLines } from "../components/AddressLines";
 import { AppShell } from "../components/AppShell";
-import { emptyAddressInput, formatPhone, MAX_ADDRESSES, toAddressInput } from "../lib/addresses";
+import { emptyAddressInput, MAX_ADDRESSES, toAddressInput } from "../lib/addresses";
 import { formatAmount, formatDateTime, orderStatusLabel } from "../lib/formatters";
 import type { Address, AddressInput, OrderSummary } from "../types/myPage";
 
@@ -53,7 +54,7 @@ export function MyPage() {
       <MyOrders key={`orders-${customer.id}`} />
       <MyAddresses key={`addresses-${customer.id}`} />
       <section className="mypage-section" aria-labelledby="account-title">
-        <div className="mypage-heading"><h2 id="account-title">계정 설정</h2></div>
+        <div className="card-heading"><h2 id="account-title">계정 설정</h2></div>
         <p className="subtle">이름, 이메일, 비밀번호, 2단계 인증은 로그인 서비스(Keycloak)의 계정 화면에서 바꿉니다.</p>
         <a className="secondary-link" href={accountUrl("/mypage")}>계정 설정 열기 <span aria-hidden="true">↗</span></a>
       </section>
@@ -76,7 +77,7 @@ function MyOrders() {
   }, [version]);
 
   return <section className="mypage-section" aria-labelledby="orders-title">
-    <div className="mypage-heading">
+    <div className="card-heading">
       <h2 id="orders-title">내 주문 내역</h2>
       {orders && orders.length > 0 && <span className="subtle">최근 {orders.length}건</span>}
     </div>
@@ -151,7 +152,7 @@ function MyAddresses() {
   const full = addresses !== null && addresses.length >= MAX_ADDRESSES;
 
   return <section className="mypage-section" aria-labelledby="addresses-title">
-    <div className="mypage-heading">
+    <div className="card-heading">
       <h2 id="addresses-title">내 배송지</h2>
       {addresses && <span className="subtle">{addresses.length}/{MAX_ADDRESSES}개</span>}
       {addresses && !editing && <button className="secondary" type="button" disabled={full || busyId !== null}
@@ -170,12 +171,7 @@ function MyAddresses() {
       : addresses === null ? <p role="status">배송지를 불러오고 있습니다.</p>
       : addresses.length === 0 ? !editing && <p className="mypage-empty">저장한 배송지가 없습니다. 자주 쓰는 배송지를 추가해 두세요.</p>
       : <ul className="address-list">{addresses.map(address => <li key={address.id} className={address.defaultAddress ? "address-card default" : "address-card"}>
-        <div className="address-card-title">
-          <strong>{address.label}</strong>
-          {address.defaultAddress && <span className="status-badge">기본 배송지</span>}
-        </div>
-        <p>{address.recipientName} · {formatPhone(address.phone)}</p>
-        <p>({address.postalCode}) {address.address}{address.addressDetail && `, ${address.addressDetail}`}</p>
+        <AddressLines address={address} />
         <div className="address-actions">
           {!address.defaultAddress && <button className="text-button" type="button" disabled={busyId !== null}
             onClick={() => void act(address.id, () => makeDefaultAddress(address.id))}>기본 배송지로 지정</button>}

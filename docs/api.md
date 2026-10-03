@@ -12,9 +12,9 @@
 | --- | --- | --- | --- | --- | --- |
 | GET | `/products` | — | `200` 상품 배열 | — | 판매 중인 상품 목록과 사이즈별 품절 여부·남은 수량 |
 | GET | `/products/{id}` | — | `200` 상품 | `404 PRODUCT_NOT_FOUND` | 판매 중인 상품 상세와 사이즈별 품절 여부·남은 수량 |
-| POST | `/orders` | 필요 | `201` 주문 | `400 INVALID_CART`·`PRODUCT_NOT_FOUND`, `409 OUT_OF_STOCK` | 서버 가격으로 주문 생성. 재고는 확인만 함 |
+| POST | `/orders` | 필요 | `201` 주문 | `400 INVALID_CART`·`PRODUCT_NOT_FOUND`·`ADDRESS_REQUIRED`·`ADDRESS_NOT_FOUND`, `409 OUT_OF_STOCK` | 서버 가격으로 주문 생성, 고른 배송지를 주문에 복사. 재고는 확인만 함 |
 | GET | `/orders/{orderId}` | 필요 | `200` 주문 | `404 ORDER_NOT_FOUND` | 저장된 주문·결제 결과 조회. PG 호출 없음 |
-| POST | `/orders/{orderId}/payment-attempts` | 필요 | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE`·`OUT_OF_STOCK` | 결제창을 열기 전 시도 생성. 재고는 확인만 함 |
+| POST | `/orders/{orderId}/payment-attempts` | 필요 | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE`·`SHIPPING_ADDRESS_REQUIRED`·`OUT_OF_STOCK` | 결제창을 열기 전 시도 생성. 재고는 확인만 함 |
 | POST | `/payment-attempts/{attemptId}/authentication-result` | 필요 | `200` 시도 | `400 INVALID_ATTEMPT_STATUS`, `404 ATTEMPT_NOT_FOUND` | 인증 취소·실패 기록 |
 | GET | `/payment-config` | — | `200` 공개 설정 | — | 키 설정 여부, 클라이언트 키, UI variant 키 |
 | GET | `/me/orders` | 필요 | `200` 주문 요약 배열 | — | 내 주문 목록. 최근 50건 |
@@ -83,7 +83,11 @@
 ## 주문 생성
 
 ```json
-{ "items": [{ "productId": "tee-01", "size": "M", "quantity": 1 }] }
+{
+  "items": [{ "productId": "tee-01", "size": "M", "quantity": 1 }],
+  "addressId": "2b7c9a64-5a8e-4a39-9f3c-2d4f1e6b8a10",
+  "deliveryMemo": "문 앞에 놓아주세요"
+}
 ```
 
 - 항목 1~20개, 사이즈 `S`·`M`·`L`·`XL`, 항목당 수량 1~10, 총수량 최대 100.
@@ -92,12 +96,16 @@
 - 호출할 때마다 새 주문이 생긴다. 중복 결제 방지는 같은 주문번호 안에서만 적용된다.
 - 주문에는 토큰의 회원 ID(`sub`)가 저장된다. 이후 그 주문의 조회·시도·승인은 같은 회원만 할 수 있다.
 - 품절 사이즈나 남은 수량보다 많은 수량을 담으면 `409 OUT_OF_STOCK`이다. 주문을 만들어도 재고는 아직 가져가지 않는다.
+- `addressId`는 마이페이지에 저장한 내 배송지 ID이며 필수다. 없으면 `400 ADDRESS_REQUIRED`, 없는 배송지나 다른 회원의 배송지면 `400 ADDRESS_NOT_FOUND`다.
+- 서버가 받는 분·연락처·우편번호·주소·상세 주소를 주문에 복사한다. 이후 배송지를 고치거나 지워도 주문의 배송지는 바뀌지 않는다.
+- `deliveryMemo`는 선택이며 최대 50자다. 넘으면 `400 INVALID_REQUEST`다.
 
 ## 시도 생성과 인증 결과
 
 `POST /orders/{orderId}/payment-attempts` → `{ "id": "...", "orderId": "...", "status": "STARTED" }`
 
 - `PENDING_PAYMENT` 주문에만 만들 수 있고, 호출할 때마다 새 시도가 생긴다.
+- 배송지를 받기 전에 만든 주문은 보낼 곳이 없으므로 `409 SHIPPING_ADDRESS_REQUIRED`로 거부한다.
 - 응답의 `id`를 결제창 복귀 URL과 승인 요청의 `attemptId`로 쓴다.
 - 주문 항목 중 남은 수량이 부족한 사이즈가 있으면 결제창을 열기 전에 `409 OUT_OF_STOCK`으로 거부한다.
 
@@ -177,7 +185,7 @@
 - 응답의 `phone`은 숫자만 담고, `defaultAddress`가 기본 배송지 여부다.
 - 회원당 최대 10개다. 넘으면 `409 ADDRESS_LIMIT_EXCEEDED`다.
 - 기본 배송지는 회원당 하나다. 첫 배송지는 자동으로 기본이 되고, 기본 배송지를 지우면 남은 것 중 가장 최근에 추가한 배송지가 기본이 된다.
-- 배송지는 아직 주문에 연결하지 않는다. 주문할 때 배송지를 고르는 기능은 다음 단계다.
+- 주문할 때는 이 배송지 중 하나를 `addressId`로 고른다. 주문에는 그때 주소가 복사된다.
 
 ## 주문 응답
 
@@ -193,6 +201,10 @@
   "items": [
     { "productId": "tee-01", "productName": "선데이 크루 티", "size": "M", "unitPrice": 19000, "quantity": 1 }
   ],
+  "shipping": {
+    "recipientName": "홍길동", "phone": "01012345678", "postalCode": "06236",
+    "address": "서울 강남구 테헤란로 123 (역삼동)", "addressDetail": "101호", "memo": "문 앞에 놓아주세요"
+  },
   "createdAt": "2026-09-28T01:00:00Z",
   "status": "PAID",
   "latestAttempt": {
@@ -220,6 +232,7 @@
 | `latestAttempt` | 가장 최근에 **만든** 시도. 인증 취소·실패도 포함. 없으면 `null` |
 | `payment` | 가장 최근에 **승인을 요청한** 시도의 상태와 PG 응답 정보 |
 | `payment.paidAmount`·`pgStatus`·`approvedAt` | PG가 알려준 값. 값이 있어도 결제 완료라는 뜻은 아니다. |
+| `shipping` | 주문할 때 복사한 배송지. `phone`은 숫자만 담는다. 배송지를 받기 전에 만든 주문은 `null` |
 | `payment.checkedAt` | 서버가 PG 결과를 마지막으로 기록한 시각 |
 
 - 두 필드는 서로 다른 시도를 가리킬 수 있다. 예를 들어 승인 실패 뒤 결제창을 닫으면 `latestAttempt`는 `AUTH_CANCELED`, `payment`는 `FAILED`다.
@@ -357,11 +370,11 @@
 
 | HTTP | 코드 |
 | --- | --- |
-| `400` | `INVALID_REQUEST`, `INVALID_CART`, `PRODUCT_NOT_FOUND`, `AMOUNT_MISMATCH`, `INVALID_ATTEMPT_STATUS` |
+| `400` | `INVALID_REQUEST`, `INVALID_CART`, `PRODUCT_NOT_FOUND`, `ADDRESS_REQUIRED`, `ADDRESS_NOT_FOUND`(주문 생성), `AMOUNT_MISMATCH`, `INVALID_ATTEMPT_STATUS` |
 | `401` | `UNAUTHORIZED` |
 | `403` | `FORBIDDEN` |
 | `404` | `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `ATTEMPT_NOT_FOUND`, `ADDRESS_NOT_FOUND`, `CHAT_ROOM_NOT_FOUND` |
-| `409` | `ORDER_NOT_PAYABLE`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `OUT_OF_STOCK`, `ADDRESS_LIMIT_EXCEEDED`, `CHAT_MESSAGE_CONFLICT` |
+| `409` | `ORDER_NOT_PAYABLE`, `SHIPPING_ADDRESS_REQUIRED`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `OUT_OF_STOCK`, `ADDRESS_LIMIT_EXCEEDED`, `CHAT_MESSAGE_CONFLICT` |
 | `503` | `PAYMENT_NOT_CONFIGURED`, `STORAGE_UNAVAILABLE` |
 
 - 승인 결과의 `422`는 이 형식이 아니라 주문 본문을 반환한다.

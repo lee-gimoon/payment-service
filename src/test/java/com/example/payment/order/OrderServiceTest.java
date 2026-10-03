@@ -10,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.example.payment.api.error.ApiException;
+import com.example.payment.customer.AddressResponse;
+import com.example.payment.customer.CustomerAddressService;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductCatalog;
@@ -30,6 +32,9 @@ class OrderServiceTest {
     void setUp() {
         orders = mock(OrderRepository.class);
         inventory = mock(ProductInventory.class);
+        CustomerAddressService addresses = mock(CustomerAddressService.class);
+        when(addresses.forOrder("customer-1", "address-1")).thenReturn(new AddressResponse("address-1", "집", "김모도",
+                "01012345678", "06236", "서울 강남구 테헤란로 123", "101호", true));
         when(orders.save(any(PurchaseOrder.class))).thenAnswer(call -> call.getArgument(0));
         ProductRepository products = mock(ProductRepository.class);
         when(products.findByIdAndActiveTrue("tee-01")).thenReturn(Optional.of(new Product(
@@ -39,19 +44,20 @@ class OrderServiceTest {
                 "tee-04", "블루 스타 티", "BLUE / BOXY", "그래픽", 27_000,
                 "#4e78d7", "#dbe9fa", "star", "", 4)));
         service = new OrderService(orders, mock(OrderItemRepository.class),
-                mock(PaymentAttemptRepository.class), new ProductCatalog(products), inventory);
+                mock(PaymentAttemptRepository.class), new ProductCatalog(products), inventory, addresses);
     }
 
     @Test
     void cartTotalComesFromCatalogAndKeepsProductOptions() {
-        OrderResponse order = service.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-01", "M", 2),
-                new CreateOrderRequest.Item("tee-04", "L", 1))), "customer-1");
+        OrderResponse order = service.create(new CreateOrderRequest(List.of(new CreateOrderRequest.Item("tee-01", "M", 2),
+                new CreateOrderRequest.Item("tee-04", "L", 1)), "address-1", null), "customer-1");
 
         assertThat(order.amount()).isEqualTo(65_000);
         assertThat(order.quantity()).isEqualTo(3);
         assertThat(order.items()).extracting(OrderResponse.ItemResponse::size).containsExactly("M", "L");
         assertThat(order.items()).extracting(OrderResponse.ItemResponse::unitPrice).containsExactly(19_000L, 27_000L);
+        assertThat(order.shipping()).isEqualTo(new ShippingAddress("김모도", "01012345678", "06236",
+                "서울 강남구 테헤란로 123", "101호", null));
         verify(inventory).requireAvailable(List.of(
                 new ProductInventory.Line("tee-01", "선데이 크루 티", "M", 2),
                 new ProductInventory.Line("tee-04", "블루 스타 티", "L", 1)));
@@ -62,19 +68,18 @@ class OrderServiceTest {
         doThrow(new ApiException(HttpStatus.CONFLICT, "OUT_OF_STOCK", "블루 스타 티 L 사이즈의 재고가 부족합니다."))
                 .when(inventory).requireAvailable(any());
         assertThatThrownBy(() -> service.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-04", "L", 1))), "customer-1"))
+                new CreateOrderRequest.Item("tee-04", "L", 1)), "address-1", null), "customer-1"))
                 .isInstanceOf(ApiException.class).extracting("code").isEqualTo("OUT_OF_STOCK");
         verify(orders, never()).save(any());
     }
 
     @Test
     void duplicateOptionAndOutOfRangeQuantityAreRejected() {
-        assertThatThrownBy(() -> service.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-01", "M", 1),
-                new CreateOrderRequest.Item("tee-01", "M", 1))), "customer-1"))
+        assertThatThrownBy(() -> service.create(new CreateOrderRequest(List.of(new CreateOrderRequest.Item("tee-01", "M", 1),
+                new CreateOrderRequest.Item("tee-01", "M", 1)), "address-1", null), "customer-1"))
                 .isInstanceOf(ApiException.class).extracting("code").isEqualTo("INVALID_CART");
         assertThatThrownBy(() -> service.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-01", "M", 11))), "customer-1"))
+                new CreateOrderRequest.Item("tee-01", "M", 11)), "address-1", null), "customer-1"))
                 .isInstanceOf(ApiException.class).extracting("code").isEqualTo("INVALID_CART");
     }
 }

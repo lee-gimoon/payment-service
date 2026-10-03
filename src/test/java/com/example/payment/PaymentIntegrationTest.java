@@ -79,6 +79,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 class PaymentIntegrationTest {
     private static final String CUSTOMER = "customer-1";
     private static final String OTHER_CUSTOMER = "customer-2";
+    // 테스트마다 두 회원에게 저장 배송지를 하나씩 만든다. 주문은 내 배송지를 골라야 만들 수 있다.
+    private static final String CUSTOMER_ADDRESS = "address-customer-1";
+    private static final String OTHER_CUSTOMER_ADDRESS = "address-customer-2";
 
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine");
@@ -104,18 +107,22 @@ class PaymentIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbc.execute("TRUNCATE TABLE payments, payment_attempts, purchase_orders CASCADE");
+        jdbc.execute("TRUNCATE TABLE payments, payment_attempts, purchase_orders, customer_addresses CASCADE");
         // 테스트마다 모든 사이즈의 재고를 같은 수량으로 맞춘다. 초기 재고 값은 MigrationUpgradeTest가 확인한다.
         jdbc.update("UPDATE product_stocks SET quantity = 20");
+        saveAddress(CUSTOMER_ADDRESS, CUSTOMER);
+        saveAddress(OTHER_CUSTOMER_ADDRESS, OTHER_CUSTOMER);
     }
 
     @Test
     void freshDatabaseAppliesAllMigrations() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success AND version IS NOT NULL "
-                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
+                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
         assertThat(columns("payment_attempts")).contains("amount", "currency", "payment_key", "approval_requested_at",
                 "last_checked_at", "pg_status", "pg_approved_at", "pg_amount", "pg_currency");
-        assertThat(columns("purchase_orders")).contains("approval_attempt_id", "paid_at", "customer_id");
+        assertThat(columns("purchase_orders")).contains("approval_attempt_id", "paid_at", "customer_id",
+                "shipping_recipient_name", "shipping_phone", "shipping_postal_code", "shipping_address",
+                "shipping_address_detail", "shipping_memo");
         assertThat(columns("payments")).containsExactlyInAnyOrder("id", "order_id", "attempt_id", "payment_key",
                 "amount", "currency", "approved_at", "created_at");
         assertThat(columns("product_stocks")).containsExactlyInAnyOrder("product_id", "size", "quantity");
@@ -134,7 +141,7 @@ class PaymentIntegrationTest {
                 .andExpect(jsonPath("$[0].sizes[1].remaining").value(10));
 
         mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
-                {"items":[
+                {"addressId":"address-customer-1","items":[
                   {"productId":"tee-01","size":"M","quantity":2},
                   {"productId":"tee-04","size":"L","quantity":1}
                 ]}
@@ -172,7 +179,7 @@ class PaymentIntegrationTest {
                 "{\"productId\":\"tee-01\",\"size\":\"M\",\"quantity\":1}",
                 "{\"productId\":\"tee-01\",\"size\":\"L\",\"quantity\":2}")) {
             mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"items\":[" + item + "]}"))
+                            .content("{\"addressId\":\"address-customer-1\",\"items\":[" + item + "]}"))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value("OUT_OF_STOCK"));
         }
@@ -181,11 +188,61 @@ class PaymentIntegrationTest {
     }
 
     @Test
+    void orderKeepsACopyOfTheChosenAddressAfterTheSavedAddressChanges() throws Exception {
+        String orderId = orders.create(new CreateOrderRequest(List.of(new CreateOrderRequest.Item("tee-01", "M", 1)),
+                CUSTOMER_ADDRESS, "  문 앞에 놓아주세요  "), CUSTOMER).orderId();
+
+        jdbc.update("UPDATE customer_addresses SET address = '부산 해운대구 해운대로 1', address_detail = '' WHERE id = ?",
+                CUSTOMER_ADDRESS);
+        jdbc.update("DELETE FROM customer_addresses WHERE id = ?", CUSTOMER_ADDRESS);
+
+        mvc.perform(get("/orders/{id}", orderId).with(signedIn()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.shipping.recipientName").value("김모도"))
+                .andExpect(jsonPath("$.shipping.phone").value("01012345678"))
+                .andExpect(jsonPath("$.shipping.postalCode").value("06236"))
+                .andExpect(jsonPath("$.shipping.address").value("서울 강남구 테헤란로 123"))
+                .andExpect(jsonPath("$.shipping.addressDetail").value("101호"))
+                .andExpect(jsonPath("$.shipping.memo").value("문 앞에 놓아주세요"));
+    }
+
+    @Test
+    void ordersNeedOneOfTheCustomersOwnAddresses() throws Exception {
+        for (var invalid : List.of(
+                List.of("{\"items\":[{\"productId\":\"tee-01\",\"size\":\"M\",\"quantity\":1}]}", "ADDRESS_REQUIRED"),
+                List.of("{\"addressId\":\"" + OTHER_CUSTOMER_ADDRESS
+                        + "\",\"items\":[{\"productId\":\"tee-01\",\"size\":\"M\",\"quantity\":1}]}", "ADDRESS_NOT_FOUND"),
+                List.of("{\"addressId\":\"missing\",\"items\":[{\"productId\":\"tee-01\",\"size\":\"M\",\"quantity\":1}]}",
+                        "ADDRESS_NOT_FOUND"),
+                List.of("{\"addressId\":\"" + CUSTOMER_ADDRESS + "\",\"deliveryMemo\":\"" + "가".repeat(51)
+                        + "\",\"items\":[{\"productId\":\"tee-01\",\"size\":\"M\",\"quantity\":1}]}", "INVALID_REQUEST"))) {
+            mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content(invalid.get(0)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(invalid.get(1)));
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_orders", Long.class)).isZero();
+    }
+
+    @Test
+    void ordersCreatedBeforeCheckoutAskedForAnAddressCannotStartAPayment() {
+        String orderId = order();
+        jdbc.update("UPDATE purchase_orders SET shipping_recipient_name = NULL, shipping_phone = NULL, "
+                + "shipping_postal_code = NULL, shipping_address = NULL, shipping_address_detail = NULL, "
+                + "shipping_memo = NULL WHERE id = ?", orderId);
+        assertThatThrownBy(() -> attempts.start(orderId, CUSTOMER))
+                .isInstanceOf(ApiException.class).extracting("code").isEqualTo("SHIPPING_ADDRESS_REQUIRED");
+        // 주소는 전부 있거나 전부 없어야 한다.
+        assertThatThrownBy(() -> jdbc.update("UPDATE purchase_orders SET shipping_phone = '01012345678' WHERE id = ?",
+                orderId)).isInstanceOf(DataAccessException.class);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempts", Long.class)).isZero();
+    }
+
+    @Test
     void ordersAndPaymentsRequireSignInButCatalogIsPublic() throws Exception {
         mvc.perform(get("/products")).andExpect(status().isOk());
         mvc.perform(get("/payment-config")).andExpect(status().isOk());
         mvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON).content("""
-                {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
+                {"addressId":"address-customer-1","items":[{"productId":"tee-01","size":"M","quantity":1}]}
                 """))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("WWW-Authenticate", startsWith("Bearer")))
@@ -231,10 +288,9 @@ class PaymentIntegrationTest {
     void myOrdersListOnlyTheCustomersOwnOrdersNewestFirst() throws Exception {
         String older = order();
         jdbc.update("UPDATE purchase_orders SET created_at = now() - interval '1 hour' WHERE id = ?", older);
-        orders.create(new CreateOrderRequest(List.of(new CreateOrderRequest.Item("tee-02", "S", 1))), OTHER_CUSTOMER);
-        String newer = orders.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-01", "M", 2),
-                new CreateOrderRequest.Item("tee-04", "L", 1))), CUSTOMER).orderId();
+        orders.create(cart(OTHER_CUSTOMER_ADDRESS, new CreateOrderRequest.Item("tee-02", "S", 1)), OTHER_CUSTOMER);
+        String newer = orders.create(cart(CUSTOMER_ADDRESS, new CreateOrderRequest.Item("tee-01", "M", 2),
+                new CreateOrderRequest.Item("tee-04", "L", 1)), CUSTOMER).orderId();
 
         mvc.perform(get("/me/orders").with(signedIn()))
                 .andExpect(status().isOk())
@@ -259,7 +315,7 @@ class PaymentIntegrationTest {
 
         mvc.perform(get("/products").with(admin)).andExpect(status().isOk());
         mvc.perform(post("/orders").with(admin).contentType(MediaType.APPLICATION_JSON).content("""
-                {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
+                {"addressId":"address-customer-1","items":[{"productId":"tee-01","size":"M","quantity":1}]}
                 """))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
@@ -308,9 +364,8 @@ class PaymentIntegrationTest {
 
     @Test
     void paidOrderReturnsPurchasedItems() throws Exception {
-        String orderId = orders.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-01", "M", 1),
-                new CreateOrderRequest.Item("tee-02", "L", 1))), CUSTOMER).orderId();
+        String orderId = orders.create(cart(CUSTOMER_ADDRESS, new CreateOrderRequest.Item("tee-01", "M", 1),
+                new CreateOrderRequest.Item("tee-02", "L", 1)), CUSTOMER).orderId();
         Checkout checkout = checkout(orderId);
         when(toss.confirm(any())).thenReturn(succeeded(47_000));
 
@@ -326,9 +381,8 @@ class PaymentIntegrationTest {
 
     @Test
     void orderItemsHaveIndependentIdsAndKeepTheirOrder() throws Exception {
-        String orderId = orders.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-02", "M", 1),
-                new CreateOrderRequest.Item("tee-01", "S", 1))), CUSTOMER).orderId();
+        String orderId = orders.create(cart(CUSTOMER_ADDRESS, new CreateOrderRequest.Item("tee-02", "M", 1),
+                new CreateOrderRequest.Item("tee-01", "S", 1)), CUSTOMER).orderId();
 
         assertThat(jdbc.queryForList(
                 "SELECT id FROM purchase_order_items WHERE order_id = ? ORDER BY line_number", String.class, orderId))
@@ -352,7 +406,7 @@ class PaymentIntegrationTest {
                     .andExpect(jsonPath("$.amount").value(19000))
                     .andExpect(jsonPath("$.items[0].unitPrice").value(19000));
             mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
-                    {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
+                    {"addressId":"address-customer-1","items":[{"productId":"tee-01","size":"M","quantity":1}]}
                     """))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.amount").value(23000));
@@ -370,7 +424,7 @@ class PaymentIntegrationTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.length()").value(9));
             mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
-                    {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
+                    {"addressId":"address-customer-1","items":[{"productId":"tee-01","size":"M","quantity":1}]}
                     """))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
@@ -392,11 +446,11 @@ class PaymentIntegrationTest {
                 "{\"productId\":\"tee-01\",\"size\":\"M\",\"quantity\":11}",
                 "{\"productId\":\"missing\",\"size\":\"M\",\"quantity\":1}")) {
             mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"items\":[" + item + "]}"))
+                            .content("{\"addressId\":\"address-customer-1\",\"items\":[" + item + "]}"))
                     .andExpect(status().isBadRequest());
         }
         mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
-                {"items":[
+                {"addressId":"address-customer-1","items":[
                   {"productId":"tee-01","size":"M","quantity":1},
                   {"productId":"tee-01","size":"M","quantity":1}
                 ]}
@@ -562,9 +616,8 @@ class PaymentIntegrationTest {
 
     @Test
     void approvalTakesEveryLineOrNone() {
-        String orderId = orders.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-02", "L", 1),
-                new CreateOrderRequest.Item("tee-01", "M", 2))), CUSTOMER).orderId();
+        String orderId = orders.create(cart(CUSTOMER_ADDRESS, new CreateOrderRequest.Item("tee-02", "L", 1),
+                new CreateOrderRequest.Item("tee-01", "M", 2)), CUSTOMER).orderId();
         Checkout checkout = checkout(orderId);
         ConfirmPaymentRequest confirmation = new ConfirmPaymentRequest(orderId, "payment-key",
                 BigDecimal.valueOf(66_000), checkout.attemptId());
@@ -620,8 +673,8 @@ class PaymentIntegrationTest {
         verify(toss).confirm(any());
         verify(toss, never()).lookup(any());
 
-        String otherOrder = orders.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-01", "M", 1))), OTHER_CUSTOMER).orderId();
+        String otherOrder = orders.create(cart(OTHER_CUSTOMER_ADDRESS, new CreateOrderRequest.Item("tee-01", "M", 1)),
+                OTHER_CUSTOMER).orderId();
         String otherAttempt = attempts.start(otherOrder, OTHER_CUSTOMER).id();
         when(toss.confirm(any())).thenReturn(succeeded(19_000));
         assertThat(payments.confirm(new ConfirmPaymentRequest(otherOrder, "valid-key",
@@ -1025,9 +1078,20 @@ class PaymentIntegrationTest {
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("APPROVING");
     }
 
+    private static CreateOrderRequest cart(String addressId, CreateOrderRequest.Item... items) {
+        return new CreateOrderRequest(List.of(items), addressId, null);
+    }
+
+    private void saveAddress(String addressId, String customerId) {
+        jdbc.update("""
+                INSERT INTO customer_addresses (id, customer_id, label, recipient_name, phone, postal_code, address,
+                    address_detail, is_default, created_at, updated_at)
+                VALUES (?, ?, '집', '김모도', '01012345678', '06236', '서울 강남구 테헤란로 123', '101호', true, now(), now())
+                """, addressId, customerId);
+    }
+
     private String order() {
-        return orders.create(new CreateOrderRequest(List.of(
-                new CreateOrderRequest.Item("tee-01", "M", 1))), CUSTOMER).orderId();
+        return orders.create(cart(CUSTOMER_ADDRESS, new CreateOrderRequest.Item("tee-01", "M", 1)), CUSTOMER).orderId();
     }
 
     private Checkout checkout(String orderId) {

@@ -16,11 +16,12 @@ export function getPaymentConfig(): Promise<PaymentConfig> {
   return request<PaymentConfig>("/payment-config");
 }
 
-export async function createOrder(items: CartItem[]): Promise<Order> {
+/** 서버가 내 배송지(addressId)를 주문에 복사한다. 빈 배송 메모는 보내지 않는다. */
+export async function createOrder(items: CartItem[], addressId: string, deliveryMemo: string): Promise<Order> {
   return request<Order>("/orders", await signedIn({
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items })
+    body: JSON.stringify({ items, addressId, deliveryMemo: deliveryMemo.trim() || null })
   }));
 }
 

@@ -24,10 +24,22 @@ export interface Order {
   amount: number;
   currency: string;
   items: OrderItem[];
+  /** 주문에 복사해 둔 배송지. 배송지를 받기 전에 만든 주문은 null이다. */
+  shipping: ShippingInfo | null;
   createdAt: string;
   status: OrderStatus;
   latestAttempt: PaymentAttempt | null;
   payment: PaymentDetails;
+}
+
+export interface ShippingInfo {
+  recipientName: string;
+  /** 숫자만 담긴다. */
+  phone: string;
+  postalCode: string;
+  address: string;
+  addressDetail: string;
+  memo: string | null;
 }
 
 export type OrderStatus = "PENDING_PAYMENT" | "PAYMENT_IN_PROGRESS" | "PAID";

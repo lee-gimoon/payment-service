@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { createOrder, getOrder, getPaymentConfig, recordAuthenticationResult, startPaymentAttempt } from "../api/paymentApi";
 import { useAuth } from "../auth/auth";
+import { ShippingLines } from "../components/AddressLines";
 import { AppShell } from "../components/AppShell";
+import { ShippingPicker } from "../components/ShippingPicker";
 import { TeeArtwork } from "../components/TeeArtwork";
 import { formatAmount, paymentStatusLabel } from "../lib/formatters";
 import { useShop } from "../lib/shop";
@@ -23,11 +25,16 @@ export function CartPage() {
   const [pendingLoading, setPendingLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [shippingAddressId, setShippingAddressId] = useState<string | null>(null);
+  const [deliveryMemo, setDeliveryMemo] = useState("");
   const busyRef = useRef(false);
   const abortRef = useRef(new AbortController());
   const productById = new Map(products.map(product => [product.id, product]));
   const total = cart.reduce((sum, item) => sum + (productById.get(item.productId)?.price ?? 0) * item.quantity, 0);
   const showPending = cart.length === 0 && pendingOrder !== null;
+  const canChooseShipping = authStatus === "signedIn" && !isShopAdmin;
+  // 새 주문은 배송지를 골라야 하고, 배송지 없이 만든 이전 주문은 결제할 수 없다.
+  const missingShipping = canChooseShipping && (showPending ? !pendingOrder.shipping : cart.length > 0 && !shippingAddressId);
 
   function setPendingOrder(order: Order | null) {
     setSavedPendingOrder(order && customerId ? { customerId, order } : null);
@@ -61,7 +68,7 @@ export function CartPage() {
   }, [customerId, isShopAdmin]);
 
   async function handlePay() {
-    if (busyRef.current || !customerId || isShopAdmin || !paymentConfig?.enabled || (cart.length === 0 && !pendingOrder) || (cart.length > 0 && (catalogError || cart.some(item => !productById.has(item.productId))))) return;
+    if (busyRef.current || !customerId || isShopAdmin || missingShipping || !paymentConfig?.enabled || (cart.length === 0 && !pendingOrder) || (cart.length > 0 && (catalogError || cart.some(item => !productById.has(item.productId))))) return;
     const signal = abortRef.current.signal;
     busyRef.current = true;
     setBusy(true);
@@ -69,7 +76,7 @@ export function CartPage() {
     try {
       let order: Order;
       if (cart.length > 0) {
-        order = await createOrder(cart);
+        order = await createOrder(cart, shippingAddressId as string, deliveryMemo);
         savePendingOrderId(customerId, order.orderId);
         saveLastOrderId(customerId, order.orderId);
         if (signal.aborted) return;
@@ -111,6 +118,7 @@ export function CartPage() {
     {(authStatus === "checking" || pendingLoading) && cart.length === 0 ? <p role="status">결제 대기 주문을 확인하고 있습니다.</p> :
     cart.length === 0 && !showPending ? <div className="empty-state"><h2>장바구니가 비어 있습니다.</h2><p>마음에 드는 티셔츠를 골라 아바타에 입혀보세요.</p><Link className="primary-button" to="/#products">상품 보러 가기</Link></div> :
       <div className="cart-layout">
+        <div className="cart-main">
         <section className="checkout-card" aria-label={showPending ? "결제 대기 주문" : "담은 상품"}>
           {showPending ? <>
             <p className="eyebrow">SAVED ORDER</p>
@@ -141,6 +149,16 @@ export function CartPage() {
             <Link className="back-link" to="/#products">← 쇼핑 계속하기</Link>
           </>}
         </section>
+        {canChooseShipping && (showPending
+          ? <section className="checkout-card shipping-card" aria-labelledby="pending-shipping-title">
+            <div className="card-heading"><h2 id="pending-shipping-title">배송지</h2></div>
+            {pendingOrder.shipping
+              ? <div className="address-card"><ShippingLines shipping={pendingOrder.shipping} /></div>
+              : <p className="shipping-warning">배송지 없이 만든 이전 주문이라 결제할 수 없습니다. 상품을 다시 담아 새로 주문해주세요.</p>}
+          </section>
+          : <ShippingPicker key={customerId} selectedId={shippingAddressId} onSelect={setShippingAddressId}
+            memo={deliveryMemo} onMemoChange={setDeliveryMemo} disabled={busy} />)}
+        </div>
 
         <aside className="checkout-card cart-payment" aria-label="결제 금액">
           <h2>결제 금액</h2>
@@ -151,10 +169,10 @@ export function CartPage() {
           </dl>
           {authStatus !== "signedIn" ? <button className="primary-button wide" type="button" onClick={() => login("/cart")} disabled={authStatus === "checking"}>
             로그인하고 결제하기
-          </button> : <button className="primary-button wide" type="button" onClick={handlePay} disabled={isShopAdmin || busy || loading || Boolean(catalogError) || cart.some(item => !productById.has(item.productId)) || !paymentConfig?.enabled || (showPending && (pendingOrder.status !== "PENDING_PAYMENT" || !["READY", "FAILED"].includes(pendingOrder.payment.status)))}>
+          </button> : <button className="primary-button wide" type="button" onClick={handlePay} disabled={isShopAdmin || missingShipping || busy || loading || Boolean(catalogError) || cart.some(item => !productById.has(item.productId)) || !paymentConfig?.enabled || (showPending && (pendingOrder.status !== "PENDING_PAYMENT" || !["READY", "FAILED"].includes(pendingOrder.payment.status)))}>
             {busy ? "처리 중…" : "결제하기"}
           </button>}
-          <p className="notice">{authStatus === "signedOut" ? "주문과 결제는 로그인한 회원만 할 수 있습니다. 담은 상품은 로그인한 뒤에도 그대로 남아 있습니다." : isShopAdmin ? "관리자 계정은 주문·결제를 할 수 없습니다. 상품을 직접 사 보려면 일반 회원 계정으로 로그인해주세요." : paymentConfig === null ? "결제 설정을 확인하고 있습니다." : paymentConfig.enabled ? "결제 시 서버가 상품 가격으로 주문 금액을 확정하고 토스 결제창을 엽니다." : "테스트 결제 키가 없어 결제창을 열 수 없습니다."}</p>
+          <p className="notice">{authStatus === "signedOut" ? "주문과 결제는 로그인한 회원만 할 수 있습니다. 담은 상품은 로그인한 뒤에도 그대로 남아 있습니다." : isShopAdmin ? "관리자 계정은 주문·결제를 할 수 없습니다. 상품을 직접 사 보려면 일반 회원 계정으로 로그인해주세요." : missingShipping && !showPending ? "배송지를 골라야 결제할 수 있습니다." : paymentConfig === null ? "결제 설정을 확인하고 있습니다." : paymentConfig.enabled ? "결제 시 서버가 상품 가격으로 주문 금액을 확정하고 토스 결제창을 엽니다." : "테스트 결제 키가 없어 결제창을 열 수 없습니다."}</p>
           <p className="subtle">토스페이먼츠 테스트 환경이며 실제 금액은 청구되지 않습니다.</p>
         </aside>
       </div>}

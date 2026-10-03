@@ -255,6 +255,20 @@ button.secondary:hover:not(:disabled) { background: #dce5ff; }
 .page-intro h1 span { color: #4258e7; font-size: .62em; vertical-align: middle; }
 .page-intro > p:last-child { color: #70748d; }
 .cart-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(290px, 1fr); gap: 24px; align-items: start; }
+.cart-main { display: grid; gap: 24px; min-width: 0; }
+.cart-page .checkout-card .card-heading h2 { margin: 0; }
+.shipping-card .address-card { margin-bottom: 4px; }
+.shipping-warning { color: #913f31; font-size: 14px; }
+.address-choices { border: 0; padding: 0; margin: 0; display: grid; gap: 10px; }
+.address-choices legend { font-size: 13px; font-weight: 800; margin-bottom: 10px; }
+.address-choice { display: flex; gap: 12px; align-items: flex-start; margin: 0; padding: 14px 16px; border: 1px solid #dce0eb; border-radius: 14px; background: white; color: #23243a; font-size: inherit; font-weight: inherit; cursor: pointer; }
+.address-choice.selected { border-color: #4258e7; background: #f3f5ff; }
+.address-choice input { width: auto; margin-top: 5px; flex: none; }
+.address-choice > span { min-width: 0; }
+.address-choice p { margin: 6px 0; font-size: 14px; overflow-wrap: anywhere; }
+.address-choice-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.text-link { color: #4258e7; font-size: 13px; font-weight: 700; }
+.memo-field { margin-top: 16px; }
 .cart-page .checkout-card { margin: 0; }
 .cart-page .checkout-card h2 { margin: 0 0 16px; font-size: 24px; }
 .cart-page .cart-lines { margin-bottom: 0; }
@@ -265,9 +279,9 @@ button.secondary:hover:not(:disabled) { background: #dce5ff; }
 .mypage { max-width: 960px; }
 .mypage .lookup-card { margin-top: 0; }
 .mypage-section { margin-top: 24px; padding: 30px 38px; background: white; border: 1px solid #dce0eb; border-radius: 22px; }
-.mypage-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 16px; }
-.mypage-heading h2 { margin: 0; font-size: 22px; }
-.mypage-heading button { margin-left: auto; }
+.card-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 16px; }
+.card-heading h2 { margin: 0; font-size: 22px; }
+.card-heading button { margin-left: auto; }
 .mypage-empty { color: #70748d; }
 .secondary-link { display: inline-block; background: #e9eeff; color: #23243a; border-radius: 10px; padding: 11px 18px; font-weight: 750; text-decoration: none; white-space: nowrap; }
 .secondary-link:hover { background: #dce5ff; }

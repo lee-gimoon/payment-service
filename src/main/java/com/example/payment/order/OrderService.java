@@ -1,6 +1,8 @@
 package com.example.payment.order;
 
 import com.example.payment.api.error.ApiException;
+import com.example.payment.customer.AddressResponse;
+import com.example.payment.customer.CustomerAddressService;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductCatalog;
@@ -20,15 +22,18 @@ public class OrderService {
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final ProductCatalog productCatalog;
     private final ProductInventory inventory;
+    private final CustomerAddressService customerAddresses;
 
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                         PaymentAttemptRepository paymentAttemptRepository,
-                        ProductCatalog productCatalog, ProductInventory inventory) {
+                        ProductCatalog productCatalog, ProductInventory inventory,
+                        CustomerAddressService customerAddresses) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentAttemptRepository = paymentAttemptRepository;
         this.productCatalog = productCatalog;
         this.inventory = inventory;
+        this.customerAddresses = customerAddresses;
     }
 
     @Transactional
@@ -59,10 +64,11 @@ public class OrderService {
             productIds.add(product.getId());
             stockLines.add(new ProductInventory.Line(product.getId(), product.getName(), item.size(), item.quantity()));
         }
+        ShippingAddress shipping = shippingAddress(request, customerId);
         // 재고는 승인 직전에 가져간다. 여기서는 품절 상품으로 주문을 만들지 않도록 확인만 한다.
         inventory.requireAvailable(stockLines);
         PurchaseOrder order = orderRepository.save(new PurchaseOrder(customerId,
-                products.getFirst().getName(), productIds.size(), totalQuantity, totalAmount));
+                products.getFirst().getName(), productIds.size(), totalQuantity, totalAmount, shipping));
         List<OrderItem> lines = new ArrayList<>();
         for (int lineNumber = 0; lineNumber < request.items().size(); lineNumber++) {
             CreateOrderRequest.Item item = request.items().get(lineNumber);
@@ -70,6 +76,21 @@ public class OrderService {
         }
         orderItemRepository.saveAll(lines);
         return OrderResponse.of(order, lines, null, null);
+    }
+
+    /** 내 배송지를 주문에 복사한다. 이후 마이페이지에서 배송지를 고쳐도 이 주문의 배송지는 그대로다. */
+    private ShippingAddress shippingAddress(CreateOrderRequest request, String customerId) {
+        if (request.addressId() == null || request.addressId().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ADDRESS_REQUIRED", "배송지를 골라주세요.");
+        }
+        String memo = request.deliveryMemo() == null || request.deliveryMemo().isBlank()
+                ? null : request.deliveryMemo().strip();
+        if (memo != null && memo.length() > 50) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "배송 메모는 50자까지 쓸 수 있습니다.");
+        }
+        AddressResponse address = customerAddresses.forOrder(customerId, request.addressId());
+        return new ShippingAddress(address.recipientName(), address.phone(), address.postalCode(),
+                address.address(), address.addressDetail(), memo);
     }
 
     private ApiException invalidCart() {

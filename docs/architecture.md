@@ -42,7 +42,7 @@
 | --- | --- | --- |
 | `products` | 상품 카탈로그(초기 10종) | — |
 | `product_stocks` | 상품·사이즈별 남은 수량 | `quantity` |
-| `purchase_orders` | 서버가 계산한 주문 금액, 주문한 회원, 주문 상태 | `customer_id`, `status`, `approval_attempt_id`, `paid_at` |
+| `purchase_orders` | 서버가 계산한 주문 금액, 주문한 회원, 주문 상태, 주문할 때 복사한 배송지(`shipping_*`) | `customer_id`, `status`, `approval_attempt_id`, `paid_at` |
 | `purchase_order_items` | 주문 당시 상품명·단가·사이즈·수량 | — |
 | `customer_addresses` | 회원이 마이페이지에서 관리하는 배송지. 회원당 최대 10개, 기본 배송지 하나 | — |
 | `payment_attempts` | 시도별 인증·승인 상태와 PG 응답 증거 | `status`, `payment_key`, `amount`, `pg_*`, `last_checked_at` |
@@ -190,4 +190,4 @@ stateDiagram-v2
 - 복구 주기·기한·배치 크기는 코드 상수다. 서버를 여러 대 띄우면 같은 결제를 중복 조회할 수 있다(결과 기록은 안전하다).
 - 결과가 미확정이거나 수동 확인 중인 주문은 확정될 때까지 재고를 붙잡는다. 결제 취소·환불이 없으므로 취소에 따른 재고 복원도 없다.
 - 재고 보충·수정 API가 없어 재고는 SQL로 바꾼다. 남은 수량 알림, 재입고 알림도 없다.
-- 마이페이지에 배송지를 저장할 수 있지만 아직 주문에 연결하지 않는다. 배송 처리, 관리자 주문 관리, 상품 관리 API, 결제 완료 후 후속 작업은 구현하지 않았다. 로그인 방식은 [로그인과 회원](authentication.md)에 있다.
+- 주문에 배송지를 복사해 두지만 배송 처리(송장·배송 상태)와 관리자 주문 관리는 아직 없다. 배송지를 받기 전에 만든 주문은 결제를 새로 시작할 수 없다. 그 밖에 상품 관리 API와 결제 완료 후 후속 작업은 구현하지 않았다. 로그인 방식은 [로그인과 회원](authentication.md)에 있다.

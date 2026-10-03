@@ -13,7 +13,10 @@ class PurchaseOrderTest {
         assertThat(order.isOwnedBy(TestOrders.CUSTOMER_ID)).isTrue();
         assertThat(order.isOwnedBy("customer-2")).isFalse();
         assertThat(order.isOwnedBy(null)).isFalse();
-        assertThatThrownBy(() -> new PurchaseOrder(" ", "선데이 크루 티", 1, 1, 19_000))
+        assertThatThrownBy(() -> new PurchaseOrder(" ", "선데이 크루 티", 1, 1, 19_000, TestOrders.SHIPPING))
+                .isInstanceOf(IllegalArgumentException.class);
+        // 새 주문은 배송지 없이 만들 수 없다.
+        assertThatThrownBy(() -> new PurchaseOrder(TestOrders.CUSTOMER_ID, "선데이 크루 티", 1, 1, 19_000, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

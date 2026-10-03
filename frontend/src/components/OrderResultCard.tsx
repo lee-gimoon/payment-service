@@ -1,3 +1,4 @@
+import { formatPhone } from "../lib/addresses";
 import {
   formatAmount,
   formatDateTime,
@@ -50,6 +51,16 @@ export function OrderResultCard({
           <dt>상품 {index + 1}</dt>
           <dd>{item.productName} · {item.size} · {item.quantity}장 · {formatAmount(item.unitPrice * item.quantity)}</dd>
         </div>)}
+        <div>
+          <dt>배송지</dt>
+          <dd>{order.shipping
+            ? `${order.shipping.recipientName} · ${formatPhone(order.shipping.phone)} · (${order.shipping.postalCode}) ${order.shipping.address}${order.shipping.addressDetail ? `, ${order.shipping.addressDetail}` : ""}`
+            : "배송지 없음 (배송지를 받기 전에 만든 주문)"}</dd>
+        </div>
+        {order.shipping?.memo && <div>
+          <dt>배송 메모</dt>
+          <dd>{order.shipping.memo}</dd>
+        </div>}
         <div>
           <dt>승인 시각</dt>
           <dd>{formatDateTime(order.payment.approvedAt)}</dd>

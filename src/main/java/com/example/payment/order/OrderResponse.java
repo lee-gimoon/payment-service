@@ -6,8 +6,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
+/** @param shipping 주문에 복사한 배송지. 배송지를 받기 전에 만든 주문은 null이다. */
 public record OrderResponse(String orderId, String productName, int quantity, long amount, String currency,
-                            List<ItemResponse> items, Instant createdAt, OrderStatus status,
+                            List<ItemResponse> items, ShippingAddress shipping, Instant createdAt, OrderStatus status,
                             AttemptResponse latestAttempt, PaymentResponse payment) {
 
     /**
@@ -30,7 +31,7 @@ public record OrderResponse(String orderId, String productName, int quantity, lo
                 new ItemResponse(item.getProductId(), item.getProductName(), item.getSize(),
                         item.getUnitPrice(), item.getQuantity())).toList();
         return new OrderResponse(order.getId(), order.getProductName(), order.getQuantity(),
-                order.getAmount(), order.getCurrency(), items, order.getCreatedAt(), order.getStatus(),
+                order.getAmount(), order.getCurrency(), items, order.getShipping(), order.getCreatedAt(), order.getStatus(),
                 latest == null ? null : new AttemptResponse(latest.getId(), latest.getStatus(),
                         latest.getStartedAt(), latest.getFinishedAt(), latest.getErrorCode()), paymentResponse);
     }

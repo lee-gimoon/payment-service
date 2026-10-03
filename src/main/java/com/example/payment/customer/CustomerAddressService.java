@@ -23,6 +23,16 @@ public class CustomerAddressService {
                 .map(AddressResponse::of).toList();
     }
 
+    /** 주문에 복사할 내 배송지. 다른 회원의 배송지는 없는 배송지처럼 거부한다. */
+    @Transactional(readOnly = true)
+    public AddressResponse forOrder(String customerId, String addressId) {
+        return addresses.findById(addressId)
+                .filter(address -> address.getCustomerId().equals(customerId))
+                .map(AddressResponse::of)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "ADDRESS_NOT_FOUND",
+                        "배송지를 찾을 수 없습니다. 배송지를 다시 골라주세요."));
+    }
+
     /** 첫 배송지는 고르지 않아도 기본 배송지가 된다. */
     @Transactional
     public AddressResponse create(String customerId, AddressRequest request) {

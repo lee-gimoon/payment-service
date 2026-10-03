@@ -1,6 +1,7 @@
 package com.example.payment.order;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -48,14 +49,22 @@ public class PurchaseOrder {
 
     private Instant paidAt;
 
+    // 주문할 때 고른 배송지. 배송지를 받기 전에 만든 주문은 비어 있다.
+    @Embedded
+    private ShippingAddress shipping;
+
     @Version
     private Long version;
 
     protected PurchaseOrder() {}
 
-    PurchaseOrder(String customerId, String firstProductName, int productCount, int quantity, long amount) {
+    PurchaseOrder(String customerId, String firstProductName, int productCount, int quantity, long amount,
+                  ShippingAddress shipping) {
         if (customerId == null || customerId.isBlank()) {
             throw new IllegalArgumentException("주문한 회원을 확인해주세요.");
+        }
+        if (shipping == null) {
+            throw new IllegalArgumentException("배송지를 확인해주세요.");
         }
         if (firstProductName == null || firstProductName.isBlank() || productCount < 1
                 || quantity < 1 || quantity > 100 || productCount > quantity || amount <= 0) {
@@ -68,6 +77,7 @@ public class PurchaseOrder {
         this.quantity = quantity;
         this.amount = amount;
         this.currency = "KRW";
+        this.shipping = shipping;
         String suffix = productCount > 1 ? " 외 " + (productCount - 1) + "종" : "";
         this.productName = firstProductName.substring(0,
                 Math.min(firstProductName.length(), 100 - suffix.length())) + suffix;
@@ -83,6 +93,7 @@ public class PurchaseOrder {
     public OrderStatus getStatus() { return status; }
     public String getApprovalAttemptId() { return approvalAttemptId; }
     public Instant getPaidAt() { return paidAt; }
+    public ShippingAddress getShipping() { return shipping; }
 
     /** 주인이 없는 이전 주문은 누구의 것도 아니다. */
     public boolean isOwnedBy(String customerId) {

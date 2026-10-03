@@ -38,6 +38,11 @@ public class PaymentAttemptService {
         if (!order.acceptsNewPayment()) {
             throw new ApiException(HttpStatus.CONFLICT, "ORDER_NOT_PAYABLE", "이 주문은 새 결제를 시작할 수 없습니다.");
         }
+        // 배송지를 받기 전에 만든 주문은 보낼 곳이 없으므로 새로 결제하지 않는다.
+        if (order.getShipping() == null) {
+            throw new ApiException(HttpStatus.CONFLICT, "SHIPPING_ADDRESS_REQUIRED",
+                    "배송지 없이 만든 이전 주문이라 결제할 수 없습니다. 상품을 다시 담아 새로 주문해주세요.");
+        }
         // 품절된 주문은 결제창을 열기 전에 알린다. 재고는 승인 관문에서 가져간다.
         inventory.requireAvailable(orderItems.findByOrderId(orderId).stream().map(OrderItem::stockLine).toList());
         return AttemptResponse.of(attempts.save(PaymentAttempt.start(order)));
