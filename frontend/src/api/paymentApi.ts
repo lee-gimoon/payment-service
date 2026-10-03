@@ -28,6 +28,10 @@ export function getProducts(): Promise<Product[]> {
   return request<Product[]>("/products");
 }
 
+export function getProduct(productId: string): Promise<Product> {
+  return request<Product>(`/products/${encodeURIComponent(productId)}`);
+}
+
 export async function getOrder(orderId: string): Promise<Order> {
   return request<Order>(`/orders/${encodeURIComponent(orderId)}`, await signedIn());
 }

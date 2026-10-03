@@ -10,8 +10,8 @@
 
 | Method | Path | 로그인 | 정상 응답 | 주요 오류 | 동작 |
 | --- | --- | --- | --- | --- | --- |
-| GET | `/products` | — | `200` 상품 배열 | — | 판매 중인 상품 목록과 사이즈별 품절 여부 |
-| GET | `/products/{id}` | — | `200` 상품 | `404 PRODUCT_NOT_FOUND` | 판매 중인 상품 상세와 사이즈별 품절 여부 |
+| GET | `/products` | — | `200` 상품 배열 | — | 판매 중인 상품 목록과 사이즈별 품절 여부·남은 수량 |
+| GET | `/products/{id}` | — | `200` 상품 | `404 PRODUCT_NOT_FOUND` | 판매 중인 상품 상세와 사이즈별 품절 여부·남은 수량 |
 | POST | `/orders` | 필요 | `201` 주문 | `400 INVALID_CART`·`PRODUCT_NOT_FOUND`, `409 OUT_OF_STOCK` | 서버 가격으로 주문 생성. 재고는 확인만 함 |
 | GET | `/orders/{orderId}` | 필요 | `200` 주문 | `404 ORDER_NOT_FOUND` | 저장된 주문·결제 결과 조회. PG 호출 없음 |
 | POST | `/orders/{orderId}/payment-attempts` | 필요 | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE`·`OUT_OF_STOCK` | 결제창을 열기 전 시도 생성. 재고는 확인만 함 |
@@ -59,16 +59,17 @@
   "artwork": "sun",
   "badge": "BEST",
   "sizes": [
-    { "size": "S", "soldOut": false },
-    { "size": "M", "soldOut": false },
-    { "size": "L", "soldOut": true },
-    { "size": "XL", "soldOut": false }
+    { "size": "S", "soldOut": false, "remaining": 10 },
+    { "size": "M", "soldOut": false, "remaining": 3 },
+    { "size": "L", "soldOut": true, "remaining": 0 },
+    { "size": "XL", "soldOut": false, "remaining": 10 }
   ]
 }
 ```
 
-- `sizes`는 `S`·`M`·`L`·`XL` 순서다. 남은 수량은 알려주지 않고 품절 여부만 알려준다.
-- 재고는 주문 생성과 시도 생성에서 확인만 하고, 승인 요청(`POST /payments/confirm`) 때 가져간다. 승인 실패가 확인되면 돌려준다.
+- `sizes`는 `S`·`M`·`L`·`XL` 순서다.
+- `remaining`은 남은 수량이지만 최대 10까지만 알려준다. 한 옵션은 주문당 최대 10장이라 화면에는 10까지만 필요하고, 실제 재고량은 공개하지 않는다. `10`은 "10장 이상"으로 읽는다.
+- 남은 수량은 조회 시점의 값이며 재고를 잡아 두지 않는다. 재고는 주문 생성과 시도 생성에서 확인만 하고, 승인 요청(`POST /payments/confirm`) 때 가져간다. 승인 실패가 확인되면 돌려준다.
 - 그래서 주문할 때 재고가 있었어도 승인 전에 다른 주문이 먼저 가져가면 승인 요청이 `409 OUT_OF_STOCK`이 된다. 이때는 토스 승인을 호출하지 않으므로 결제 금액이 청구되지 않는다.
 
 ## 주문 생성

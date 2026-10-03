@@ -138,6 +138,10 @@ h1, h2, h3 { line-height: 1.15; }
 .size-options button.selected { background: #23243a; border-color: #23243a; color: white; }
 .size-options button:disabled { display: grid; place-content: center; gap: 1px; line-height: 1.1; }
 .size-options button small { color: #70748d; font-size: 10px; font-weight: 750; }
+.stock-note { margin: 10px 0 0; font-size: 13px; color: #70748d; }
+.quantity-field { display: flex; align-items: center; gap: 14px; margin: 0 0 28px; }
+.quantity-field > span { font-size: 14px; font-weight: 800; }
+.quantity-field .quantity-control { width: fit-content; }
 .add-to-cart { min-width: 240px; }
 .subtle { font-size: 12px; color: #70748d; }
 
@@ -196,6 +200,7 @@ h1, h2, h3 { line-height: 1.15; }
 .cart-line-info a:hover { color: #4258e7; }
 .cart-line-info strong { font-size: 15px; }
 .cart-line-info small { font-size: 12px; color: #70748d; }
+.cart-line-info .stock-warning { color: #913f31; }
 .text-button { border: 0; background: transparent; color: #70748d; padding: 4px 0; font-size: 12px; text-decoration: underline; }
 .quantity-control { display: flex; align-items: center; border: 1px solid #dce0eb; border-radius: 10px; }
 .quantity-control button { width: 40px; height: 40px; border: 0; background: transparent; font-size: 18px; }

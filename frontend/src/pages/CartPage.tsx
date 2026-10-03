@@ -7,6 +7,7 @@ import { TeeArtwork } from "../components/TeeArtwork";
 import { formatAmount, paymentStatusLabel } from "../lib/formatters";
 import { useShop } from "../lib/shop";
 import { getPendingOrderId, saveLastOrderId, savePendingOrderId } from "../lib/orderStorage";
+import { MAX_PER_OPTION } from "../lib/sizes";
 import { openTossPayment } from "../payments/tossPayments";
 import type { Order, PaymentConfig } from "../types/payment";
 
@@ -121,15 +122,17 @@ export function CartPage() {
             <ul className="cart-lines">{cart.map(item => {
               const product = productById.get(item.productId);
               if (!product) return null;
+              const remaining = product.sizes.find(option => option.size === item.size)?.remaining ?? 0;
               return <li key={`${item.productId}-${item.size}`}>
                 <Link className="cart-swatch" to={`/products/${product.id}`} style={{ backgroundColor: product.stage }} aria-label={`${product.name} 상품 보기`}><TeeArtwork product={product} /></Link>
                 <div className="cart-line-info"><Link to={`/products/${product.id}`}><strong>{product.name}</strong></Link><small>사이즈 {item.size} · {formatAmount(product.price)}</small>
+                  {item.quantity > remaining && <small className="stock-warning">{remaining === 0 ? "품절된 사이즈입니다. 삭제해주세요." : `남은 수량이 ${remaining}장입니다. 수량을 줄여주세요.`}</small>}
                   <button className="text-button" type="button" onClick={() => removeFromCart(item.productId, item.size)} disabled={busy}>삭제</button>
                 </div>
                 <div className="quantity-control" aria-label={`${product.name} ${item.size} 수량`}>
                   <button type="button" aria-label="수량 줄이기" onClick={() => changeQuantity(item.productId, item.size, -1)} disabled={busy}>−</button>
                   <span>{item.quantity}</span>
-                  <button type="button" aria-label="수량 늘리기" onClick={() => changeQuantity(item.productId, item.size, 1)} disabled={busy || item.quantity >= 10}>+</button>
+                  <button type="button" aria-label="수량 늘리기" onClick={() => changeQuantity(item.productId, item.size, 1)} disabled={busy || item.quantity >= Math.min(MAX_PER_OPTION, remaining)}>+</button>
                 </div>
               </li>;
             })}</ul>

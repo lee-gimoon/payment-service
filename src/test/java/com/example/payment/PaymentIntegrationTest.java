@@ -127,7 +127,8 @@ class PaymentIntegrationTest {
                 .andExpect(jsonPath("$[0].price").value(19000))
                 .andExpect(jsonPath("$[0].sizes.length()").value(4))
                 .andExpect(jsonPath("$[0].sizes[1].size").value("M"))
-                .andExpect(jsonPath("$[0].sizes[1].soldOut").value(false));
+                .andExpect(jsonPath("$[0].sizes[1].soldOut").value(false))
+                .andExpect(jsonPath("$[0].sizes[1].remaining").value(10));
 
         mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
                 {"items":[
@@ -158,8 +159,11 @@ class PaymentIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sizes[1].size").value("M"))
                 .andExpect(jsonPath("$.sizes[1].soldOut").value(true))
+                .andExpect(jsonPath("$.sizes[1].remaining").value(0))
                 .andExpect(jsonPath("$.sizes[2].soldOut").value(false))
-                .andExpect(jsonPath("$.sizes[2].quantity").doesNotExist());
+                .andExpect(jsonPath("$.sizes[2].remaining").value(1))
+                // 남은 수량은 한 옵션의 주문 한도(10장)까지만 알린다.
+                .andExpect(jsonPath("$.sizes[0].remaining").value(10));
 
         for (String item : List.of(
                 "{\"productId\":\"tee-01\",\"size\":\"M\",\"quantity\":1}",

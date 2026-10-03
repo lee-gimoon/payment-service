@@ -59,10 +59,11 @@ export interface Product {
 
 export type ShirtSize = "S" | "M" | "L" | "XL";
 
-/** 서버는 남은 수량 대신 품절 여부만 알려준다. */
 export interface ProductSize {
   size: ShirtSize;
   soldOut: boolean;
+  /** 남은 수량. 서버는 실제 재고량을 숨기려고 10장 이상이면 10으로 보낸다. */
+  remaining: number;
 }
 
 export interface CartItem {
