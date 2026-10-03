@@ -46,7 +46,7 @@ macOS / Linux에서는 `./gradlew test bootJar`를 사용합니다.
 | [ChatIntegrationTest](../src/test/java/com/example/payment/chat/ChatIntegrationTest.java) | 고객당 상담방 하나, 자기 대화만 조회, 재전송 중복 방지, 동시 전송, 관리자 역할, 읽음 수, 이전·이후 대화 불러오기, 최근 100개 밖의 미답변 상담 조회 |
 | [ChatWebSocketTest](../src/test/java/com/example/payment/chat/ChatWebSocketTest.java) | 실제 포트로 STOMP 연결: 토큰 없는 연결 거부, 관리자 주소·다른 회원 주소 구독 거부, `SEND` 거부, 커밋 후 본인·관리자에게만 알림 |
 | [TossPaymentClientTest](../src/test/java/com/example/payment/payment/infrastructure/toss/TossPaymentClientTest.java) | 토스 요청의 인증·멱등키·금액, 응답 분류(성공·거절·오류·불일치) |
-| [MigrationUpgradeTest](../src/test/java/com/example/payment/MigrationUpgradeTest.java) | V1 데이터가 최신 스키마로 올바르게 옮겨지는지, 초기 재고와 승인 진행 중 주문의 재고 차감 |
+| [MigrationUpgradeTest](../src/test/java/com/example/payment/MigrationUpgradeTest.java) | V1 데이터가 최신 스키마로 올바르게 옮겨지는지, 초기 재고(V7·V8)와 승인 진행 중 주문의 재고 차감 |
 
 - 통합 테스트는 Testcontainers의 PostgreSQL에 모든 마이그레이션을 적용하고, 토스 API는 대역을 씁니다. 테스트마다 모든 사이즈 재고를 20개로 맞춥니다.
 - 복구 작업의 주기 실행은 끄고(`payment.recovery.enabled=false`) 테스트에서 직접 호출합니다.
@@ -104,6 +104,7 @@ Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹�
 | [V5](../src/main/resources/db/migration/V5__add_order_customer.sql) | 주문한 회원(`customer_id`) 컬럼 추가. 기존 주문은 비어 있음 |
 | [V6](../src/main/resources/db/migration/V6__add_chat.sql) | 1:1 상담 테이블 `chat_rooms`·`chat_messages` 추가 |
 | [V7](../src/main/resources/db/migration/V7__add_product_stocks.sql) | 사이즈별 재고 `product_stocks` 추가. 사이즈마다 20개(`tee-10`은 3개, XL은 품절)로 시작하고, 승인이 진행 중인 주문의 수량은 미리 뺌 |
+| [V8](../src/main/resources/db/migration/V8__vary_initial_stock.sql) | `tee-04`~`tee-09`의 초기 재고를 사이즈별 1~10장(한 번 무작위로 뽑은 고정값)으로 바꿈. `tee-01`~`tee-03`은 20장, `tee-10`은 그대로 |
 
 - 서버를 시작하면 Flyway가 아직 적용하지 않은 버전만 차례로 적용합니다. Hibernate는 스키마를 검증만 합니다.
 - 이미 적용한 파일은 수정하지 않고 다음 버전을 추가합니다. 추가할 때는 `PaymentIntegrationTest`의 버전 목록과 `MigrationUpgradeTest`도 갱신합니다.
