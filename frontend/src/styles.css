@@ -43,9 +43,6 @@ header nav span { color: #4258e7; }
 .nav-button { border: 0; background: transparent; padding: 0; color: inherit; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .nav-button:hover { color: #4258e7; }
 .nav-customer { font-size: 14px; max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-account { display: inline-flex; font-weight: 800; }
-.nav-account .nav-customer { display: inline-block; }
-.nav-account-short { display: none; }
 
 main { padding: 26px clamp(20px, 5vw, 70px) 64px; }
 .eyebrow { margin: 0 0 18px; color: #4258e7; font-size: 12px; font-weight: 850; letter-spacing: .2em; }
@@ -459,8 +456,6 @@ footer span { color: #70748d; font-weight: 500; }
   header nav { gap: 6px 13px; flex-wrap: wrap; justify-content: flex-end; }
   header nav a, .nav-button { font-size: 12px; }
   .nav-customer, .nav-register { display: none; }
-  .nav-account .nav-customer { display: none; }
-  .nav-account-short { display: inline; }
   main { padding: 12px 20px 45px; }
   .hero { border-radius: 20px; }
   .hero-copy { padding: 30px 24px 6px; }

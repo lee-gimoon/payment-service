@@ -8,7 +8,7 @@ import { AdminGate } from "../components/AdminGate";
 import { AppShell } from "../components/AppShell";
 import type { AdminOrderCounts } from "../types/admin";
 
-// 관리자 계정의 첫 화면. 일반 회원의 마이페이지처럼 헤더의 관리자 이름에서 들어온다.
+// 관리자 계정의 첫 화면. 일반 회원의 마이페이지처럼 헤더의 `관리자 홈` 메뉴로 들어온다.
 export function AdminHomePage() {
   const { status, customer } = useAuth();
 
