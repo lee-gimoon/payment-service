@@ -79,6 +79,13 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
     if (requestError instanceof ApiRequestError && requestError.status === 401) {
       setNeedsSignIn(true);
     }
+    // 재고가 부족하면 서버는 승인을 요청하지 않는다. 결과를 모르는 상황이 아니므로 조회를 안내하지 않는다.
+    if (requestError instanceof ApiRequestError && requestError.code === "OUT_OF_STOCK") {
+      setTitle("재고가 부족해 결제를 승인하지 않았습니다");
+      setMessage("결제수단 인증은 완료됐지만 승인을 요청하지 않아 결제 금액이 청구되지 않습니다. 스토어에서 다른 사이즈나 상품을 골라 새로 주문해주세요.");
+      setError(requestError.message);
+      return;
+    }
     setTitle("결제 결과 확인이 필요합니다");
     setMessage(
       "요청 결과를 받지 못했습니다. 주문 내역을 조회하고, 확인되지 않으면 주문번호로 문의해주세요."

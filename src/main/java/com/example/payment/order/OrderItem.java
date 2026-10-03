@@ -1,6 +1,7 @@
 package com.example.payment.order;
 
 import com.example.payment.product.Product;
+import com.example.payment.product.ProductInventory;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -10,7 +11,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import java.util.Set;
 
 /** 상품 정보가 변경되어도 주문 당시의 이름, 단가, 옵션을 보존한다. */
 @Entity
@@ -48,7 +48,7 @@ public class OrderItem {
 
     public OrderItem(PurchaseOrder order, Product product, String size, int quantity, int lineNumber) {
         if (order == null || lineNumber < 0 || product == null || !product.isActive() || product.getPrice() <= 0
-                || size == null || !Set.of("S", "M", "L", "XL").contains(size)
+                || size == null || !Product.SIZES.contains(size)
                 || quantity < 1 || quantity > 10) {
             throw new IllegalArgumentException("판매 중인 상품과 유효한 옵션·수량이 필요합니다.");
         }
@@ -67,4 +67,8 @@ public class OrderItem {
     public String getSize() { return size; }
     public long getUnitPrice() { return unitPrice; }
     public int getQuantity() { return quantity; }
+
+    public ProductInventory.Line stockLine() {
+        return new ProductInventory.Line(getProductId(), productName, size, quantity);
+    }
 }

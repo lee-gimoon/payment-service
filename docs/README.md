@@ -4,7 +4,7 @@
 
 | 문서 | 읽을 때 |
 | --- | --- |
-| [아키텍처](architecture.md) | 결제 규칙, 상태, 복구 정책, 설계 결정을 볼 때 ([도메인 그림](payment-domain-target.png) 포함) |
+| [아키텍처](architecture.md) | 결제 규칙, 상태, 재고, 복구 정책, 설계 결정을 볼 때 ([도메인 그림](payment-domain-target.png) 포함) |
 | [중복 결제 방지](duplicate-payment-prevention.md) | 같은 주문의 중복 승인을 막는 단계와 각 단계의 역할을 볼 때 |
 | [API](api.md) | 클라이언트를 연동하거나 요청·응답 계약을 바꿀 때 |
 | [1:1 상담](chat.md) | 고객·관리자 상담의 테이블, 메시지 저장 순서, 중복·읽음 규칙을 볼 때 |

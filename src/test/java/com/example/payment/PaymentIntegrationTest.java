@@ -102,17 +102,20 @@ class PaymentIntegrationTest {
     @BeforeEach
     void cleanDatabase() {
         jdbc.execute("TRUNCATE TABLE payments, payment_attempts, purchase_orders CASCADE");
+        // 테스트마다 모든 사이즈의 재고를 같은 수량으로 맞춘다. 초기 재고 값은 MigrationUpgradeTest가 확인한다.
+        jdbc.update("UPDATE product_stocks SET quantity = 20");
     }
 
     @Test
     void freshDatabaseAppliesAllMigrations() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success AND version IS NOT NULL "
-                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6");
+                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7");
         assertThat(columns("payment_attempts")).contains("amount", "currency", "payment_key", "approval_requested_at",
                 "last_checked_at", "pg_status", "pg_approved_at", "pg_amount", "pg_currency");
         assertThat(columns("purchase_orders")).contains("approval_attempt_id", "paid_at", "customer_id");
         assertThat(columns("payments")).containsExactlyInAnyOrder("id", "order_id", "attempt_id", "payment_key",
                 "amount", "currency", "approved_at", "created_at");
+        assertThat(columns("product_stocks")).containsExactlyInAnyOrder("product_id", "size", "quantity");
     }
 
     @Test
@@ -121,7 +124,10 @@ class PaymentIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(10))
                 .andExpect(jsonPath("$[0].id").value("tee-01"))
-                .andExpect(jsonPath("$[0].price").value(19000));
+                .andExpect(jsonPath("$[0].price").value(19000))
+                .andExpect(jsonPath("$[0].sizes.length()").value(4))
+                .andExpect(jsonPath("$[0].sizes[1].size").value("M"))
+                .andExpect(jsonPath("$[0].sizes[1].soldOut").value(false));
 
         mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON).content("""
                 {"items":[
@@ -140,6 +146,31 @@ class PaymentIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT amount FROM purchase_orders", Long.class)).isEqualTo(65000);
         assertThat(jdbc.queryForObject("SELECT customer_id FROM purchase_orders", String.class)).isEqualTo(CUSTOMER);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_order_items", Long.class)).isEqualTo(2);
+        // 주문 생성은 재고를 확인만 하고 가져가지 않는다.
+        assertThat(stock("tee-01", "M")).isEqualTo(20);
+    }
+
+    @Test
+    void soldOutSizesAreShownAndCannotBeOrdered() throws Exception {
+        setStock("tee-01", "M", 0);
+        setStock("tee-01", "L", 1);
+        mvc.perform(get("/products/tee-01"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sizes[1].size").value("M"))
+                .andExpect(jsonPath("$.sizes[1].soldOut").value(true))
+                .andExpect(jsonPath("$.sizes[2].soldOut").value(false))
+                .andExpect(jsonPath("$.sizes[2].quantity").doesNotExist());
+
+        for (String item : List.of(
+                "{\"productId\":\"tee-01\",\"size\":\"M\",\"quantity\":1}",
+                "{\"productId\":\"tee-01\",\"size\":\"L\",\"quantity\":2}")) {
+            mvc.perform(post("/orders").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"items\":[" + item + "]}"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("OUT_OF_STOCK"));
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_orders", Long.class)).isZero();
+        assertThatThrownBy(() -> setStock("tee-01", "L", -1)).isInstanceOf(DataAccessException.class);
     }
 
     @Test
@@ -340,6 +371,7 @@ class PaymentIntegrationTest {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(attemptStatus(checkout.attemptId())).isEqualTo("APPROVING");
             assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
+            assertThat(stock("tee-01", "M")).isEqualTo(19);
             assertThat(paymentCount()).isZero();
             assertThat(sent).isEqualTo(new ApprovalRequest(checkout.attemptId(), checkout.orderId(),
                     "payment-key", 19_000, "KRW"));
@@ -357,6 +389,7 @@ class PaymentIntegrationTest {
         assertThat(payment.getPaymentKey()).isEqualTo("payment-key");
         assertThat(payment.getAmount()).isEqualTo(19_000);
         assertThat(payment.getApprovedAt()).isEqualTo(Instant.parse("2026-09-11T01:00:00Z"));
+        assertThat(stock("tee-01", "M")).isEqualTo(19);
         verify(toss, never()).lookup(any());
     }
 
@@ -442,7 +475,71 @@ class PaymentIntegrationTest {
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("STARTED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PENDING_PAYMENT");
         assertThat(slot(checkout.orderId())).isNull();
+        assertThat(stock("tee-01", "M")).isEqualTo(20);
         verifyNoInteractions(toss);
+    }
+
+    @Test
+    void itemsSoldOutAfterOrderingAreRejectedBeforeOpeningWindowAndAtApproval() throws Exception {
+        Checkout checkout = checkout(order());
+        setStock("tee-01", "M", 0);
+
+        assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER))
+                .isInstanceOf(ApiException.class).extracting("code").isEqualTo("OUT_OF_STOCK");
+        mvc.perform(post("/payments/confirm").with(signedIn()).contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmJson(checkout, "payment-key", 19_000)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("OUT_OF_STOCK"));
+        // 승인을 요청하지 않았으므로 시도는 인증 대기로 남고, 재고가 채워지면 같은 주문을 결제할 수 있다.
+        assertThat(approvalCount()).isZero();
+        assertThat(attemptStatus(checkout.attemptId())).isEqualTo("STARTED");
+        assertThat(orderStatus(checkout.orderId())).isEqualTo("PENDING_PAYMENT");
+        assertThat(slot(checkout.orderId())).isNull();
+        assertThat(stock("tee-01", "M")).isZero();
+        verifyNoInteractions(toss);
+    }
+
+    @Test
+    void approvalTakesEveryLineOrNone() {
+        String orderId = orders.create(new CreateOrderRequest(List.of(
+                new CreateOrderRequest.Item("tee-02", "L", 1),
+                new CreateOrderRequest.Item("tee-01", "M", 2))), CUSTOMER).orderId();
+        Checkout checkout = checkout(orderId);
+        ConfirmPaymentRequest confirmation = new ConfirmPaymentRequest(orderId, "payment-key",
+                BigDecimal.valueOf(66_000), checkout.attemptId());
+        setStock("tee-02", "L", 0);
+
+        assertThatThrownBy(() -> payments.confirm(confirmation, CUSTOMER))
+                .isInstanceOf(ApiException.class).extracting("code").isEqualTo("OUT_OF_STOCK");
+        // tee-01 M을 먼저 뺐더라도 tee-02 L이 부족하면 함께 롤백된다.
+        assertThat(stock("tee-01", "M")).isEqualTo(20);
+        verifyNoInteractions(toss);
+
+        setStock("tee-02", "L", 1);
+        when(toss.confirm(any())).thenReturn(succeeded(66_000));
+        assertThat(payments.confirm(confirmation, CUSTOMER).status().name()).isEqualTo("PAID");
+        assertThat(stock("tee-01", "M")).isEqualTo(18);
+        assertThat(stock("tee-02", "L")).isZero();
+    }
+
+    @Test
+    void lastItemGoesToOnlyOneOfTwoConcurrentApprovals() throws Exception {
+        setStock("tee-01", "M", 1);
+        Checkout first = checkout(order());
+        Checkout second = checkout(order());
+        when(toss.confirm(any())).thenReturn(succeeded(19_000));
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var firstResult = executor.submit(() -> confirmOrErrorCode(first, start));
+            var secondResult = executor.submit(() -> confirmOrErrorCode(second, start));
+            start.countDown();
+            assertThat(List.of(firstResult.get(10, TimeUnit.SECONDS), secondResult.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder("PAID", "OUT_OF_STOCK");
+        }
+        assertThat(stock("tee-01", "M")).isZero();
+        assertThat(approvalCount()).isEqualTo(1);
+        assertThat(paymentCount()).isEqualTo(1);
+        verify(toss).confirm(any());
     }
 
     @Test
@@ -490,6 +587,8 @@ class PaymentIntegrationTest {
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PENDING_PAYMENT");
         assertThat(slot(checkout.orderId())).isNull();
         assertThat(paymentCount()).isZero();
+        // 실패가 확인되면 승인 관문에서 가져간 재고를 돌려준다.
+        assertThat(stock("tee-01", "M")).isEqualTo(20);
         verify(toss, never()).lookup(any());
     }
 
@@ -527,6 +626,7 @@ class PaymentIntegrationTest {
         assertThat(saved.getPgCurrency()).isEqualTo(lookupResult.pgCurrency());
         assertThat(saved.getStatus()).isEqualTo(PaymentAttemptStatus.REVIEW_REQUIRED);
         assertThat(paymentCount()).isZero();
+        assertThat(stock("tee-01", "M")).isEqualTo(19);
         assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
         verify(toss).confirm(any());
         verify(toss).lookup(any());
@@ -572,6 +672,8 @@ class PaymentIntegrationTest {
         payments.confirm(request(checkout, "payment-key"), CUSTOMER);
         assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
         assertThat(paymentCount()).isZero();
+        // 결과를 모르는 동안 재고를 붙잡아 두고, 같은 결제 키의 재요청은 다시 가져가지 않는다.
+        assertThat(stock("tee-01", "M")).isEqualTo(19);
         verify(toss).confirm(any());
         verify(toss).lookup(any());
     }
@@ -630,12 +732,14 @@ class PaymentIntegrationTest {
         when(toss.confirm(any())).thenReturn(PaymentResult.failed("REJECT_CARD_COMPANY"), succeeded(19_000));
         assertThat(payments.confirm(request(first, "failed-key"), CUSTOMER).payment().status()).isEqualTo(PaymentState.FAILED);
         assertThat(orderStatus(first.orderId())).isEqualTo("PENDING_PAYMENT");
+        assertThat(stock("tee-01", "M")).isEqualTo(20);
 
         Checkout retry = checkout(first.orderId());
         assertThat(payments.confirm(request(retry, "success-key"), CUSTOMER).payment().status()).isEqualTo(PaymentState.SUCCEEDED);
         assertThat(jdbc.queryForList("SELECT status FROM payment_attempts WHERE order_id = ? AND payment_key IS NOT NULL "
                 + "ORDER BY approval_requested_at", String.class, first.orderId())).containsExactly("FAILED", "SUCCEEDED");
         assertThat(approvalCount()).isEqualTo(2);
+        assertThat(stock("tee-01", "M")).isEqualTo(19);
         assertThat(slot(first.orderId())).isEqualTo(retry.attemptId());
         // 시도는 둘이지만 실제 결제 기록은 성공한 시도 하나뿐이다.
         assertThat(paymentCount()).isEqualTo(1);
@@ -682,6 +786,7 @@ class PaymentIntegrationTest {
         recovery.recoverUnresolved();
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("UNKNOWN");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PAYMENT_IN_PROGRESS");
+        assertThat(stock("tee-01", "M")).isEqualTo(19);
         assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
 
         makeStale(checkout.attemptId());
@@ -689,6 +794,7 @@ class PaymentIntegrationTest {
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("FAILED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PENDING_PAYMENT");
         assertThat(slot(checkout.orderId())).isNull();
+        assertThat(stock("tee-01", "M")).isEqualTo(20);
         assertThat(checkout(checkout.orderId()).attemptId()).isNotEqualTo(checkout.attemptId());
         verify(toss, never()).confirm(any());
     }
@@ -874,6 +980,24 @@ class PaymentIntegrationTest {
 
     private long paymentCount() {
         return jdbc.queryForObject("SELECT count(*) FROM payments", Long.class);
+    }
+
+    private int stock(String productId, String size) {
+        return jdbc.queryForObject("SELECT quantity FROM product_stocks WHERE product_id = ? AND size = ?",
+                Integer.class, productId, size);
+    }
+
+    private void setStock(String productId, String size, int quantity) {
+        jdbc.update("UPDATE product_stocks SET quantity = ? WHERE product_id = ? AND size = ?", quantity, productId, size);
+    }
+
+    private String confirmOrErrorCode(Checkout checkout, CountDownLatch start) throws InterruptedException {
+        start.await();
+        try {
+            return payments.confirm(request(checkout, "key-" + checkout.attemptId()), CUSTOMER).status().name();
+        } catch (ApiException exception) {
+            return exception.code();
+        }
     }
 
     private void insertPayment(String orderId, String attemptId, String paymentKey) {

@@ -54,9 +54,16 @@ export interface Product {
   stage: string;
   artwork: string;
   badge: string;
+  sizes: ProductSize[];
 }
 
 export type ShirtSize = "S" | "M" | "L" | "XL";
+
+/** 서버는 남은 수량 대신 품절 여부만 알려준다. */
+export interface ProductSize {
+  size: ShirtSize;
+  soldOut: boolean;
+}
 
 export interface CartItem {
   productId: string;

@@ -3,6 +3,7 @@ package com.example.payment;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -11,7 +12,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-/** V1 스키마에 쌓인 주문·시도·거래가 이후 마이그레이션에서 시도, 주문 슬롯, 성공한 결제로 옮겨지는지 확인한다. */
+/**
+ * V1 스키마에 쌓인 주문·시도·거래가 이후 마이그레이션에서 시도, 주문 슬롯, 성공한 결제로 옮겨지고,
+ * 승인이 진행 중인 주문의 상품만큼 초기 재고가 빠지는지 확인한다.
+ */
 @Testcontainers
 class MigrationUpgradeTest {
     @Container
@@ -49,6 +53,13 @@ class MigrationUpgradeTest {
         attempt(jdbc, "a-review", "order-review", "REVIEW_REQUIRED", "now()");
         payment(jdbc, "a-review", "order-review", "key-review", "REVIEW_REQUIRED", "NULL", "NULL", "NULL", "NULL");
 
+        // 승인이 진행 중인 주문(V2 이후 PAYMENT_IN_PROGRESS)의 상품은 V7에서 재고를 이미 가져간 것으로 본다.
+        item(jdbc, "order-unknown", "S", 2);
+        item(jdbc, "order-approving", "S", 1);
+        item(jdbc, "order-review", "L", 1);
+        item(jdbc, "order-paid", "M", 1);
+        item(jdbc, "order-retry", "XL", 3);
+
         Flyway.configure().dataSource(dataSource).load().migrate();
 
         // V2가 옛 거래 테이블을 지우고, V3가 성공한 결제만 새 payments로 다시 만든다.
@@ -78,6 +89,10 @@ class MigrationUpgradeTest {
         assertThat(jdbc.queryForMap("SELECT amount, currency, pg_status, pg_amount FROM payment_attempts WHERE id = 'a-paid'"))
                 .containsEntry("amount", 19000L).containsEntry("currency", "KRW").containsEntry("pg_status", "DONE")
                 .hasEntrySatisfying("pg_amount", amount -> assertThat(amount.toString()).startsWith("19000"));
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM product_stocks", Long.class)).isEqualTo(40);
+        assertThat(stocks(jdbc, "tee-01")).isEqualTo(Map.of("S", 17, "M", 20, "L", 19, "XL", 20));
+        assertThat(stocks(jdbc, "tee-10")).isEqualTo(Map.of("S", 3, "M", 3, "L", 3, "XL", 0));
     }
 
     private static void order(JdbcTemplate jdbc, String id, String status) {
@@ -85,6 +100,17 @@ class MigrationUpgradeTest {
                 INSERT INTO purchase_orders (id, product_name, quantity, amount, currency, status, created_at)
                 VALUES (?, '선데이 크루 티', 1, 19000, 'KRW', ?, now() - interval '10 minutes')
                 """, id, status);
+    }
+
+    private static void item(JdbcTemplate jdbc, String orderId, String size, int quantity) {
+        jdbc.update("INSERT INTO purchase_order_items (id, order_id, line_number, product_id, product_name, size, "
+                + "unit_price, quantity) VALUES (gen_random_uuid()::text, ?, 0, 'tee-01', '선데이 크루 티', ?, 19000, ?)",
+                orderId, size, quantity);
+    }
+
+    private static Map<String, Integer> stocks(JdbcTemplate jdbc, String productId) {
+        return jdbc.queryForList("SELECT size, quantity FROM product_stocks WHERE product_id = ?", productId).stream()
+                .collect(Collectors.toMap(row -> (String) row.get("size"), row -> (Integer) row.get("quantity")));
     }
 
     private static void attempt(JdbcTemplate jdbc, String id, String orderId, String status, String finishedAt) {

@@ -1,11 +1,14 @@
 package com.example.payment.payment.application;
 
 import com.example.payment.api.error.ApiException;
+import com.example.payment.order.OrderItem;
+import com.example.payment.order.OrderItemRepository;
 import com.example.payment.order.OrderRepository;
 import com.example.payment.order.PurchaseOrder;
 import com.example.payment.payment.domain.PaymentAttempt;
 import com.example.payment.payment.domain.PaymentAttemptStatus;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
+import com.example.payment.product.ProductInventory;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
@@ -15,11 +18,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PaymentAttemptService {
     private final OrderRepository orders;
+    private final OrderItemRepository orderItems;
     private final PaymentAttemptRepository attempts;
+    private final ProductInventory inventory;
 
-    public PaymentAttemptService(OrderRepository orders, PaymentAttemptRepository attempts) {
+    public PaymentAttemptService(OrderRepository orders, OrderItemRepository orderItems,
+                                 PaymentAttemptRepository attempts, ProductInventory inventory) {
         this.orders = orders;
+        this.orderItems = orderItems;
         this.attempts = attempts;
+        this.inventory = inventory;
     }
 
     @Transactional
@@ -30,6 +38,8 @@ public class PaymentAttemptService {
         if (!order.acceptsNewPayment()) {
             throw new ApiException(HttpStatus.CONFLICT, "ORDER_NOT_PAYABLE", "이 주문은 새 결제를 시작할 수 없습니다.");
         }
+        // 품절된 주문은 결제창을 열기 전에 알린다. 재고는 승인 관문에서 가져간다.
+        inventory.requireAvailable(orderItems.findByOrderId(orderId).stream().map(OrderItem::stockLine).toList());
         return AttemptResponse.of(attempts.save(PaymentAttempt.start(order)));
     }
 

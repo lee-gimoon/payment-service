@@ -10,14 +10,14 @@
 
 | Method | Path | 로그인 | 정상 응답 | 주요 오류 | 동작 |
 | --- | --- | --- | --- | --- | --- |
-| GET | `/products` | — | `200` 상품 배열 | — | 판매 중인 상품 목록 |
-| GET | `/products/{id}` | — | `200` 상품 | `404 PRODUCT_NOT_FOUND` | 판매 중인 상품 상세 |
-| POST | `/orders` | 필요 | `201` 주문 | `400 INVALID_CART`·`PRODUCT_NOT_FOUND` | 서버 가격으로 주문 생성 |
+| GET | `/products` | — | `200` 상품 배열 | — | 판매 중인 상품 목록과 사이즈별 품절 여부 |
+| GET | `/products/{id}` | — | `200` 상품 | `404 PRODUCT_NOT_FOUND` | 판매 중인 상품 상세와 사이즈별 품절 여부 |
+| POST | `/orders` | 필요 | `201` 주문 | `400 INVALID_CART`·`PRODUCT_NOT_FOUND`, `409 OUT_OF_STOCK` | 서버 가격으로 주문 생성. 재고는 확인만 함 |
 | GET | `/orders/{orderId}` | 필요 | `200` 주문 | `404 ORDER_NOT_FOUND` | 저장된 주문·결제 결과 조회. PG 호출 없음 |
-| POST | `/orders/{orderId}/payment-attempts` | 필요 | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE` | 결제창을 열기 전 시도 생성 |
+| POST | `/orders/{orderId}/payment-attempts` | 필요 | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE`·`OUT_OF_STOCK` | 결제창을 열기 전 시도 생성. 재고는 확인만 함 |
 | POST | `/payment-attempts/{attemptId}/authentication-result` | 필요 | `200` 시도 | `400 INVALID_ATTEMPT_STATUS`, `404 ATTEMPT_NOT_FOUND` | 인증 취소·실패 기록 |
 | GET | `/payment-config` | — | `200` 공개 설정 | — | 키 설정 여부, 클라이언트 키, UI variant 키 |
-| POST | `/payments/confirm` | 필요 | `200` / `202` / `422` 주문 | `400 AMOUNT_MISMATCH`, `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`, `409 PAYMENT_CONFLICT`·`ATTEMPT_CONFLICT`, `503 PAYMENT_NOT_CONFIGURED` | 인증 후 최종 승인 |
+| POST | `/payments/confirm` | 필요 | `200` / `202` / `422` 주문 | `400 AMOUNT_MISMATCH`, `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`, `409 PAYMENT_CONFLICT`·`ATTEMPT_CONFLICT`·`OUT_OF_STOCK`, `503 PAYMENT_NOT_CONFIGURED` | 인증 후 재고 차감과 최종 승인 |
 | GET | `/chat/messages` | 필요 | `200` 대화 | `403 FORBIDDEN` | 내 상담 대화. 보낸 적 없으면 빈 목록 |
 | POST | `/chat/messages` | 필요 | `201` 메시지, 재전송 `200` | `403 FORBIDDEN`, `409 CHAT_MESSAGE_CONFLICT` | 상담 메시지 보내기. 첫 메시지면 상담방 생성 |
 | POST | `/chat/read` | 필요 | `204` | `403 FORBIDDEN` | 관리자 답변 읽음 표시 |
@@ -45,6 +45,32 @@
 - `enabled`는 클라이언트·시크릿 키가 모두 설정됐는지만 나타낸다. 키의 실제 유효성은 확인하지 않는다.
 - 키가 없으면 상품·주문·시도 API는 동작하지만 승인은 `503 PAYMENT_NOT_CONFIGURED`로 거부한다.
 
+## 상품과 재고
+
+```json
+{
+  "id": "tee-01",
+  "name": "선데이 크루 티",
+  "subtitle": "IVORY / REGULAR",
+  "category": "베이식",
+  "price": 19000,
+  "color": "#fff5de",
+  "stage": "#f9e9d9",
+  "artwork": "sun",
+  "badge": "BEST",
+  "sizes": [
+    { "size": "S", "soldOut": false },
+    { "size": "M", "soldOut": false },
+    { "size": "L", "soldOut": true },
+    { "size": "XL", "soldOut": false }
+  ]
+}
+```
+
+- `sizes`는 `S`·`M`·`L`·`XL` 순서다. 남은 수량은 알려주지 않고 품절 여부만 알려준다.
+- 재고는 주문 생성과 시도 생성에서 확인만 하고, 승인 요청(`POST /payments/confirm`) 때 가져간다. 승인 실패가 확인되면 돌려준다.
+- 그래서 주문할 때 재고가 있었어도 승인 전에 다른 주문이 먼저 가져가면 승인 요청이 `409 OUT_OF_STOCK`이 된다. 이때는 토스 승인을 호출하지 않으므로 결제 금액이 청구되지 않는다.
+
 ## 주문 생성
 
 ```json
@@ -56,6 +82,7 @@
 - 가격은 요청으로 받지 않는다. 서버가 계산한 `amount`를 결제창과 승인 요청에 쓴다.
 - 호출할 때마다 새 주문이 생긴다. 중복 결제 방지는 같은 주문번호 안에서만 적용된다.
 - 주문에는 토큰의 회원 ID(`sub`)가 저장된다. 이후 그 주문의 조회·시도·승인은 같은 회원만 할 수 있다.
+- 품절 사이즈나 남은 수량보다 많은 수량을 담으면 `409 OUT_OF_STOCK`이다. 주문을 만들어도 재고는 아직 가져가지 않는다.
 
 ## 시도 생성과 인증 결과
 
@@ -63,6 +90,7 @@
 
 - `PENDING_PAYMENT` 주문에만 만들 수 있고, 호출할 때마다 새 시도가 생긴다.
 - 응답의 `id`를 결제창 복귀 URL과 승인 요청의 `attemptId`로 쓴다.
+- 주문 항목 중 남은 수량이 부족한 사이즈가 있으면 결제창을 열기 전에 `409 OUT_OF_STOCK`으로 거부한다.
 
 `POST /payment-attempts/{attemptId}/authentication-result`
 
@@ -99,6 +127,7 @@
 | `202` | `APPROVING`, `UNKNOWN`, `REVIEW_REQUIRED` | 아직 확정되지 않음. 결제 성공이 아니다. |
 | `422` | `FAILED` | 승인 실패. 새 시도로 다시 결제할 수 있다. |
 
+- 새 승인이면 승인 슬롯을 잡기 전에 주문 항목의 재고를 가져간다. 한 항목이라도 부족하면 `409 OUT_OF_STOCK`으로 거부하고 토스를 호출하지 않는다. 시도는 `STARTED`로 남고, 재고가 채워지면 같은 주문으로 다시 결제할 수 있다.
 - 같은 주문·결제 키·시도·금액으로 다시 보내면 토스를 다시 호출하지 않고 **현재** 주문 결과를 반환한다. 시도가 1분 넘게 `APPROVING`·`UNKNOWN`이면 그때만 토스 조회를 한 번 한다.
 - `APPROVING`·`UNKNOWN`은 서버의 복구 작업이 확정한다. 클라이언트는 새 결제를 시작하지 말고 `GET /orders/{orderId}`로 다시 조회한다.
 - `REVIEW_REQUIRED`는 사람이 확인해야 하며 조회를 반복해도 풀리지 않을 수 있다.
@@ -285,7 +314,7 @@
 | `401` | `UNAUTHORIZED` |
 | `403` | `FORBIDDEN` |
 | `404` | `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `ATTEMPT_NOT_FOUND`, `CHAT_ROOM_NOT_FOUND` |
-| `409` | `ORDER_NOT_PAYABLE`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `CHAT_MESSAGE_CONFLICT` |
+| `409` | `ORDER_NOT_PAYABLE`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `OUT_OF_STOCK`, `CHAT_MESSAGE_CONFLICT` |
 | `503` | `PAYMENT_NOT_CONFIGURED`, `STORAGE_UNAVAILABLE` |
 
 - 승인 결과의 `422`는 이 형식이 아니라 주문 본문을 반환한다.

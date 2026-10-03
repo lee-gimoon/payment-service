@@ -136,6 +136,8 @@ h1, h2, h3 { line-height: 1.15; }
 .size-options { display: flex; flex-wrap: wrap; gap: 9px; }
 .size-options button { width: 57px; height: 49px; background: white; color: #23243a; border: 1px solid #cfd4e4; border-radius: 11px; font-weight: 800; }
 .size-options button.selected { background: #23243a; border-color: #23243a; color: white; }
+.size-options button:disabled { display: grid; place-content: center; gap: 1px; line-height: 1.1; }
+.size-options button small { color: #70748d; font-size: 10px; font-weight: 750; }
 .add-to-cart { min-width: 240px; }
 .subtle { font-size: 12px; color: #70748d; }
 

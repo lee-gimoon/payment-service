@@ -4,6 +4,7 @@ import com.example.payment.api.error.ApiException;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
 import com.example.payment.product.Product;
 import com.example.payment.product.ProductCatalog;
+import com.example.payment.product.ProductInventory;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -18,14 +19,16 @@ public class OrderService {
     private final OrderItemRepository orderItemRepository;
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final ProductCatalog productCatalog;
+    private final ProductInventory inventory;
 
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                         PaymentAttemptRepository paymentAttemptRepository,
-                        ProductCatalog productCatalog) {
+                        ProductCatalog productCatalog, ProductInventory inventory) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentAttemptRepository = paymentAttemptRepository;
         this.productCatalog = productCatalog;
+        this.inventory = inventory;
     }
 
     @Transactional
@@ -34,13 +37,14 @@ public class OrderService {
             throw invalidCart();
         }
         List<Product> products = new ArrayList<>();
+        List<ProductInventory.Line> stockLines = new ArrayList<>();
         Set<String> selectedOptions = new HashSet<>();
         Set<String> productIds = new HashSet<>();
         int totalQuantity = 0;
         long totalAmount = 0;
         for (CreateOrderRequest.Item item : request.items()) {
             if (item == null || item.productId() == null || item.size() == null
-                    || !Set.of("S", "M", "L", "XL").contains(item.size())
+                    || !Product.SIZES.contains(item.size())
                     || item.quantity() < 1 || item.quantity() > 10
                     || !selectedOptions.add(item.productId() + ":" + item.size())) {
                 throw invalidCart();
@@ -53,7 +57,10 @@ public class OrderService {
             totalAmount = Math.addExact(totalAmount, Math.multiplyExact(product.getPrice(), item.quantity()));
             products.add(product);
             productIds.add(product.getId());
+            stockLines.add(new ProductInventory.Line(product.getId(), product.getName(), item.size(), item.quantity()));
         }
+        // 재고는 승인 직전에 가져간다. 여기서는 품절 상품으로 주문을 만들지 않도록 확인만 한다.
+        inventory.requireAvailable(stockLines);
         PurchaseOrder order = orderRepository.save(new PurchaseOrder(customerId,
                 products.getFirst().getName(), productIds.size(), totalQuantity, totalAmount));
         List<OrderItem> lines = new ArrayList<>();

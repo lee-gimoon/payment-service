@@ -4,10 +4,14 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.List;
 
 @Entity
 @Table(name = "products")
 public class Product {
+    /** 모든 상품이 같은 사이즈를 판매한다. 사이즈마다 재고를 따로 센다. */
+    public static final List<String> SIZES = List.of("S", "M", "L", "XL");
+
     @Id
     @Column(length = 32)
     private String id;

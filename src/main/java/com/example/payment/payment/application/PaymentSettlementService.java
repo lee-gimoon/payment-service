@@ -1,5 +1,7 @@
 package com.example.payment.payment.application;
 
+import com.example.payment.order.OrderItem;
+import com.example.payment.order.OrderItemRepository;
 import com.example.payment.order.OrderRepository;
 import com.example.payment.order.PurchaseOrder;
 import com.example.payment.payment.domain.Payment;
@@ -8,6 +10,7 @@ import com.example.payment.payment.domain.PaymentAttemptStatus;
 import com.example.payment.payment.domain.PaymentResult;
 import com.example.payment.payment.persistence.PaymentAttemptRepository;
 import com.example.payment.payment.persistence.PaymentRepository;
+import com.example.payment.product.ProductInventory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -21,12 +24,17 @@ public class PaymentSettlementService {
     private final PaymentAttemptRepository attempts;
     private final PaymentRepository payments;
     private final OrderRepository orders;
+    private final OrderItemRepository orderItems;
+    private final ProductInventory inventory;
 
     public PaymentSettlementService(PaymentAttemptRepository attempts, PaymentRepository payments,
-                                    OrderRepository orders) {
+                                    OrderRepository orders, OrderItemRepository orderItems,
+                                    ProductInventory inventory) {
         this.attempts = attempts;
         this.payments = payments;
         this.orders = orders;
+        this.orderItems = orderItems;
+        this.inventory = inventory;
     }
 
     @Transactional
@@ -52,6 +60,8 @@ public class PaymentSettlementService {
             case FAILED -> {
                 attempt.fail(result);
                 order.releaseApproval(attempt.getId());
+                // 승인 관문에서 가져간 재고를 슬롯과 함께 돌려준다. 결과를 모르는 동안에는 돌려주지 않는다.
+                inventory.putBack(orderItems.findByOrderId(orderId).stream().map(OrderItem::stockLine).toList());
             }
             case UNKNOWN -> attempt.markUnknown(result);
             case REVIEW_REQUIRED -> attempt.requireReview(result);

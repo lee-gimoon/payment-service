@@ -4,9 +4,8 @@ import { AppShell } from "../components/AppShell";
 import { AvatarArtwork } from "../components/TeeArtwork";
 import { formatAmount } from "../lib/formatters";
 import { useShop } from "../lib/shop";
+import { availableSize } from "../lib/sizes";
 import type { ShirtSize } from "../types/payment";
-
-const SIZES: ShirtSize[] = ["S", "M", "L", "XL"];
 
 export function ProductDetailPage() {
   const { productId } = useParams();
@@ -15,6 +14,7 @@ export function ProductDetailPage() {
   const product = products.find(item => item.id === productId);
   const [size, setSize] = useState<ShirtSize>("M");
   const [error, setError] = useState("");
+  const selectedSize = product ? availableSize(product.sizes, size) : null;
 
   useEffect(() => {
     document.title = `${product?.name ?? "상품 보기"} · MODO CLUB`;
@@ -22,8 +22,8 @@ export function ProductDetailPage() {
   }, [product?.name]);
 
   function handleAdd() {
-    if (!product) return;
-    if (!addToCart(product.id, size)) {
+    if (!product || !selectedSize) return;
+    if (!addToCart(product.id, selectedSize)) {
       setError("한 상품의 같은 사이즈는 최대 10장까지 담을 수 있습니다.");
       return;
     }
@@ -47,9 +47,11 @@ export function ProductDetailPage() {
           <strong className="look-price">{formatAmount(product.price)}</strong>
           <fieldset className="size-field">
             <legend>사이즈 선택</legend>
-            <div className="size-options">{SIZES.map(option => <button type="button" key={option} className={size === option ? "selected" : ""} aria-pressed={size === option} onClick={() => setSize(option)}>{option}</button>)}</div>
+            <div className="size-options">{product.sizes.map(option => <button type="button" key={option.size} className={selectedSize === option.size ? "selected" : ""} aria-pressed={selectedSize === option.size} disabled={option.soldOut} onClick={() => setSize(option.size)}>{option.size}{option.soldOut && <small> 품절</small>}</button>)}</div>
           </fieldset>
-          <button className="primary-button add-to-cart" type="button" onClick={handleAdd}>장바구니 담기 <span aria-hidden="true">↗</span></button>
+          {selectedSize
+            ? <button className="primary-button add-to-cart" type="button" onClick={handleAdd}>장바구니 담기 <span aria-hidden="true">↗</span></button>
+            : <><button className="primary-button add-to-cart" type="button" disabled>품절</button><p className="subtle" role="status">모든 사이즈가 품절되었습니다.</p></>}
           {error && <p className="error" role="alert">{error}</p>}
           <p className="subtle">상품 이미지와 아바타는 시안용 일러스트입니다.</p>
         </div>
