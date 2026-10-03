@@ -10,6 +10,7 @@ import { ChatWidget } from "./components/ChatWidget";
 import { AdminChatPage } from "./pages/AdminChatPage";
 import { PaymentResultPage } from "./pages/PaymentResultPage";
 import { CartPage } from "./pages/CartPage";
+import { MyPage } from "./pages/MyPage";
 import { OrderPage } from "./pages/OrderPage";
 import { ProductDetailPage } from "./pages/ProductDetailPage";
 import { StorePage } from "./pages/StorePage";
@@ -33,6 +34,7 @@ createRoot(root).render(
         <Route path="/orders" element={<OrderPage />} />
         <Route path="/orders/:orderId" element={<OrderPage />} />
         <Route path="/payment/result" element={<PaymentResultPage />} />
+        <Route path="/mypage" element={<MyPage />} />
         <Route path="/admin/chat/:roomId?" element={<AdminChatPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

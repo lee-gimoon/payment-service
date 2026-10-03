@@ -3,7 +3,7 @@
 기본 주소는 `http://127.0.0.1:8080`이다. 로컬 프런트엔드는 Vite 프록시로 같은 API를 호출한다.
 
 - 요청·응답은 JSON이며 금액은 원화(`KRW`) 정수다.
-- 주문·결제·상담 API는 Keycloak이 발급한 access token을 `Authorization: Bearer <token>` 헤더로 보내야 한다. 주문은 주문한 회원만 조회·결제할 수 있다. 로그인 흐름은 [로그인과 회원](authentication.md)을 참고한다.
+- 주문·결제·마이페이지·상담 API는 Keycloak이 발급한 access token을 `Authorization: Bearer <token>` 헤더로 보내야 한다. 주문은 주문한 회원만 조회·결제할 수 있다. 로그인 흐름은 [로그인과 회원](authentication.md)을 참고한다.
 - 필드 스키마는 실행 중인 서버의 [Swagger UI](http://127.0.0.1:8080/swagger-ui.html)에서 확인한다.
 
 ## 엔드포인트
@@ -17,6 +17,12 @@
 | POST | `/orders/{orderId}/payment-attempts` | 필요 | `201` 시도 | `404 ORDER_NOT_FOUND`, `409 ORDER_NOT_PAYABLE`·`OUT_OF_STOCK` | 결제창을 열기 전 시도 생성. 재고는 확인만 함 |
 | POST | `/payment-attempts/{attemptId}/authentication-result` | 필요 | `200` 시도 | `400 INVALID_ATTEMPT_STATUS`, `404 ATTEMPT_NOT_FOUND` | 인증 취소·실패 기록 |
 | GET | `/payment-config` | — | `200` 공개 설정 | — | 키 설정 여부, 클라이언트 키, UI variant 키 |
+| GET | `/me/orders` | 필요 | `200` 주문 요약 배열 | — | 내 주문 목록. 최근 50건 |
+| GET | `/me/addresses` | 필요 | `200` 배송지 배열 | — | 내 배송지 목록. 기본 배송지 먼저 |
+| POST | `/me/addresses` | 필요 | `201` 배송지 | `409 ADDRESS_LIMIT_EXCEEDED` | 배송지 추가. 첫 배송지는 기본 배송지 |
+| PUT | `/me/addresses/{addressId}` | 필요 | `200` 배송지 | `404 ADDRESS_NOT_FOUND` | 배송지 수정 |
+| PUT | `/me/addresses/{addressId}/default` | 필요 | `200` 배송지 | `404 ADDRESS_NOT_FOUND` | 기본 배송지 지정 |
+| DELETE | `/me/addresses/{addressId}` | 필요 | `204` | `404 ADDRESS_NOT_FOUND` | 배송지 삭제 |
 | POST | `/payments/confirm` | 필요 | `200` / `202` / `422` 주문 | `400 AMOUNT_MISMATCH`, `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`, `409 PAYMENT_CONFLICT`·`ATTEMPT_CONFLICT`·`OUT_OF_STOCK`, `503 PAYMENT_NOT_CONFIGURED` | 인증 후 재고 차감과 최종 승인 |
 | GET | `/chat/messages` | 필요 | `200` 대화 | `403 FORBIDDEN` | 내 상담 대화. 보낸 적 없으면 빈 목록 |
 | POST | `/chat/messages` | 필요 | `201` 메시지, 재전송 `200` | `403 FORBIDDEN`, `409 CHAT_MESSAGE_CONFLICT` | 상담 메시지 보내기. 첫 메시지면 상담방 생성 |
@@ -29,6 +35,8 @@
 - 로그인이 필요한 API에 토큰이 없거나, 서명·발급자·만료·대상(`aud`)이 맞지 않으면 `401 UNAUTHORIZED`다.
 - 다른 회원의 주문과 시도는 존재 여부를 알리지 않고 `404 ORDER_NOT_FOUND`·`ATTEMPT_NOT_FOUND`로 응답한다.
 - `/admin/**` 경로는 쇼핑몰 관리자 전용이다. 토큰의 `realm_access.roles`에 `shop-admin`이 없으면 `403 FORBIDDEN`이다.
+- 쇼핑몰 관리자 계정은 직원 계정이다. 주문·결제(`/orders/**`, `/payment-attempts/**`, `/payments/**`), 마이페이지(`/me/**`), 고객 상담(`/chat/**`)을 관리자 토큰으로 호출하면 `403 FORBIDDEN`이다.
+- 다른 회원의 배송지는 존재 여부를 알리지 않고 `404 ADDRESS_NOT_FOUND`로 응답한다.
 - 고객 상담 API는 상담방 ID를 받지 않는다. 서버가 토큰의 회원 ID로 그 회원의 상담방을 찾는다.
 - 고객 상담 API(`/chat/**`)는 쇼핑몰 관리자가 호출하면 `403 FORBIDDEN`이다. 관리자는 `/admin/chat/**`로 답한다.
 
@@ -132,6 +140,44 @@
 - 같은 주문·결제 키·시도·금액으로 다시 보내면 토스를 다시 호출하지 않고 **현재** 주문 결과를 반환한다. 시도가 1분 넘게 `APPROVING`·`UNKNOWN`이면 그때만 토스 조회를 한 번 한다.
 - `APPROVING`·`UNKNOWN`은 서버의 복구 작업이 확정한다. 클라이언트는 새 결제를 시작하지 말고 `GET /orders/{orderId}`로 다시 조회한다.
 - `REVIEW_REQUIRED`는 사람이 확인해야 하며 조회를 반복해도 풀리지 않을 수 있다.
+
+## 마이페이지
+
+`GET /me/orders`는 로그인한 회원의 주문을 최근 순으로 최대 50건 돌려준다. 결제 시도와 상품별 내역은 `GET /orders/{orderId}`로 본다.
+
+```json
+[{ "orderId": "f96d4e32-...", "productName": "선데이 크루 티 외 1종", "quantity": 3, "amount": 65000,
+   "currency": "KRW", "createdAt": "2026-10-03T12:00:00Z", "status": "PENDING_PAYMENT" }]
+```
+
+배송지 추가·수정 요청:
+
+```json
+{
+  "label": "집",
+  "recipientName": "홍길동",
+  "phone": "010-1234-5678",
+  "postalCode": "06236",
+  "address": "서울 강남구 테헤란로 123 (역삼동)",
+  "addressDetail": "101호",
+  "makeDefault": false
+}
+```
+
+| 필드 | 검증 |
+| --- | --- |
+| `label` | 공백 불가, 최대 20자 (예: 집, 회사) |
+| `recipientName` | 공백 불가, 최대 50자 |
+| `phone` | `0`으로 시작하는 9~11자리 숫자. 하이픈은 있어도 되고, 저장할 때 숫자만 남긴다 |
+| `postalCode` | 숫자 5자리 |
+| `address` | 공백 불가, 최대 200자 |
+| `addressDetail` | 선택, 최대 100자 |
+| `makeDefault` | `true`면 기본 배송지로 지정. `false`여도 이미 기본인 배송지를 해제하지 않는다 |
+
+- 응답의 `phone`은 숫자만 담고, `defaultAddress`가 기본 배송지 여부다.
+- 회원당 최대 10개다. 넘으면 `409 ADDRESS_LIMIT_EXCEEDED`다.
+- 기본 배송지는 회원당 하나다. 첫 배송지는 자동으로 기본이 되고, 기본 배송지를 지우면 남은 것 중 가장 최근에 추가한 배송지가 기본이 된다.
+- 배송지는 아직 주문에 연결하지 않는다. 주문할 때 배송지를 고르는 기능은 다음 단계다.
 
 ## 주문 응답
 
@@ -314,8 +360,8 @@
 | `400` | `INVALID_REQUEST`, `INVALID_CART`, `PRODUCT_NOT_FOUND`, `AMOUNT_MISMATCH`, `INVALID_ATTEMPT_STATUS` |
 | `401` | `UNAUTHORIZED` |
 | `403` | `FORBIDDEN` |
-| `404` | `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `ATTEMPT_NOT_FOUND`, `CHAT_ROOM_NOT_FOUND` |
-| `409` | `ORDER_NOT_PAYABLE`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `OUT_OF_STOCK`, `CHAT_MESSAGE_CONFLICT` |
+| `404` | `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `ATTEMPT_NOT_FOUND`, `ADDRESS_NOT_FOUND`, `CHAT_ROOM_NOT_FOUND` |
+| `409` | `ORDER_NOT_PAYABLE`, `PAYMENT_CONFLICT`, `ATTEMPT_CONFLICT`, `OUT_OF_STOCK`, `ADDRESS_LIMIT_EXCEEDED`, `CHAT_MESSAGE_CONFLICT` |
 | `503` | `PAYMENT_NOT_CONFIGURED`, `STORAGE_UNAVAILABLE` |
 
 - 승인 결과의 `422`는 이 형식이 아니라 주문 본문을 반환한다.

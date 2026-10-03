@@ -76,6 +76,13 @@ public class OrderService {
         return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CART", "상품과 사이즈, 수량을 확인해주세요.");
     }
 
+    /** 마이페이지 주문 내역. 최근 주문부터 최대 50건이다. */
+    @Transactional(readOnly = true)
+    public List<OrderSummaryResponse> listMine(String customerId) {
+        return orderRepository.findTop50ByCustomerIdOrderByCreatedAtDesc(customerId).stream()
+                .map(OrderSummaryResponse::of).toList();
+    }
+
     /** 다른 회원의 주문은 존재 여부를 알리지 않고 없는 주문처럼 응답한다. */
     @Transactional(readOnly = true)
     public OrderResponse get(String orderId, String customerId) {

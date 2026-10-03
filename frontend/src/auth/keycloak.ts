@@ -77,6 +77,11 @@ export function register(returnPath: string): Promise<void> {
   return keycloak.register({ redirectUri: appUrl(returnPath), locale: "ko" });
 }
 
+/** Keycloak 계정 화면(이름·이메일·비밀번호·2단계 인증). 돌아오기 링크는 returnPath로 연결한다. */
+export function accountUrl(returnPath: string): string {
+  return keycloak.createAccountUrl({ redirectUri: appUrl(returnPath) });
+}
+
 export function logout(): Promise<void> {
   return keycloak.logout({ redirectUri: appUrl("/") });
 }

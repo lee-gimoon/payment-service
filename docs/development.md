@@ -8,7 +8,8 @@
 | --- | --- |
 | `src/main/java/.../config/` | 로그인 토큰 검증(Spring Security), Swagger 설정 |
 | `src/main/java/.../product/` | 상품 카탈로그, 사이즈별 재고 확인·차감·복원 |
-| `src/main/java/.../order/` | 주문 생성, 구매 항목, 조회 |
+| `src/main/java/.../order/` | 주문 생성, 구매 항목, 조회, 내 주문 목록 |
+| `src/main/java/.../customer/` | 마이페이지 배송지(회원당 최대 10개, 기본 배송지 하나) |
 | `src/main/java/.../chat/api/` | 상담 HTTP 요청·응답 (고객 `/chat`, 관리자 `/admin/chat`) |
 | `src/main/java/.../chat/application/` | 상담방 만들기, 메시지 저장 순서·트랜잭션 경계, 읽음 표시, 새 메시지 이벤트 |
 | `src/main/java/.../chat/domain/` | 상담방, 메시지, 보낸 쪽 |
@@ -22,7 +23,7 @@
 | `docker/keycloak/` | Keycloak realm·client·테스트 회원 설정 |
 | `docker/keycloak-themes/` | 스토어와 같은 디자인의 Keycloak 로그인·회원가입 화면 테마 |
 | `frontend/src/auth/` | Keycloak 로그인, 토큰 보관·갱신, 로그인 상태 |
-| `frontend/src/pages/` | 스토어, 상품, 장바구니, 결제 결과, 주문, 관리자 상담 관리 화면 |
+| `frontend/src/pages/` | 스토어, 상품, 장바구니, 결제 결과, 주문, 마이페이지, 관리자 상담 관리 화면 |
 | `frontend/src/payments/` | 결제창, 결제수단 제한, 인증 복귀 처리 |
 | `frontend/src/chat/` | 상담 WebSocket 연결, 한 대화의 메시지·보내는 중·안 읽은 수 관리 |
 | `frontend/src/components/ChatWidget.tsx`·`ChatThread.tsx` | 고객 문의 창, 고객·관리자가 함께 쓰는 대화 목록과 입력란 |
@@ -42,7 +43,8 @@ macOS / Linux에서는 `./gradlew test bootJar`를 사용합니다.
 
 | 테스트 | 검증 범위 |
 | --- | --- |
-| [PaymentIntegrationTest](../src/test/java/com/example/payment/PaymentIntegrationTest.java) | 로그인 요구와 주문 소유자, 주문 금액, 트랜잭션 원자성, 승인 슬롯과 DB 제약, 동시 요청, 미확정 복구, 결제 기록, 재시도, 품절 거부와 재고 차감·복원, 마지막 재고 동시 승인 |
+| [PaymentIntegrationTest](../src/test/java/com/example/payment/PaymentIntegrationTest.java) | 로그인 요구와 주문 소유자, 주문 금액, 트랜잭션 원자성, 승인 슬롯과 DB 제약, 동시 요청, 미확정 복구, 결제 기록, 재시도, 품절 거부와 재고 차감·복원, 마지막 재고 동시 승인, 내 주문 목록, 관리자 계정의 주문·결제 차단 |
+| [CustomerAddressIntegrationTest](../src/test/java/com/example/payment/customer/CustomerAddressIntegrationTest.java) | 첫 배송지의 기본 지정, 기본 배송지 하나 유지(동시 추가·DB 제약 포함), 삭제 후 기본 승계, 다른 회원 배송지 차단, 10개 제한, 입력 검증, 관리자 계정 차단 |
 | [ChatIntegrationTest](../src/test/java/com/example/payment/chat/ChatIntegrationTest.java) | 고객당 상담방 하나, 자기 대화만 조회, 재전송 중복 방지, 동시 전송, 관리자 역할, 읽음 수, 이전·이후 대화 불러오기, 최근 100개 밖의 미답변 상담 조회 |
 | [ChatWebSocketTest](../src/test/java/com/example/payment/chat/ChatWebSocketTest.java) | 실제 포트로 STOMP 연결: 토큰 없는 연결 거부, 관리자 주소·다른 회원 주소 구독 거부, `SEND` 거부, 커밋 후 본인·관리자에게만 알림 |
 | [TossPaymentClientTest](../src/test/java/com/example/payment/payment/infrastructure/toss/TossPaymentClientTest.java) | 토스 요청의 인증·멱등키·금액, 응답 분류(성공·거절·오류·불일치) |
@@ -62,13 +64,13 @@ npm test
 npm run build
 ```
 
-- `npm test`는 SDK 대역으로 결제창 중복 실행·닫기, 지원 결제수단, 인증 복귀 URL, 임시 승인 정보 처리, 품절로 거절된 승인을 새로고침해도 다시 보내지 않는지, 품절 사이즈를 피한 사이즈 선택, 남은 수량과 담은 수량으로 정하는 최대 수량을 확인하고, 상담 메시지 합치기·중복 제거·입력 검증, 재연결 중 전송·조회 실패·겹친 조회, 늦게 완료된 읽음 요청·조회 이후의 새 답변 배지, 최근 100개 밖의 미답변 상담 목록·관리자 배지, 서버에 연결하지 못했을 때의 오류 안내를 확인합니다. 상담 테스트는 실제 훅·컴포넌트 소스에 제어 가능한 상태·효과 실행기를 연결해 응답 순서를 재현합니다. 실제 브라우저 E2E 테스트는 없습니다.
+- `npm test`는 SDK 대역으로 결제창 중복 실행·닫기, 지원 결제수단, 인증 복귀 URL, 임시 승인 정보 처리, 배송지 연락처 표시·우편번호 찾기 결과의 주소 조합, 품절로 거절된 승인을 새로고침해도 다시 보내지 않는지, 품절 사이즈를 피한 사이즈 선택, 남은 수량과 담은 수량으로 정하는 최대 수량을 확인하고, 상담 메시지 합치기·중복 제거·입력 검증, 재연결 중 전송·조회 실패·겹친 조회, 늦게 완료된 읽음 요청·조회 이후의 새 답변 배지, 최근 100개 밖의 미답변 상담 목록·관리자 배지, 서버에 연결하지 못했을 때의 오류 안내를 확인합니다. 상담 테스트는 실제 훅·컴포넌트 소스에 제어 가능한 상태·효과 실행기를 연결해 응답 순서를 재현합니다. 실제 브라우저 E2E 테스트는 없습니다.
 - `npm run build`는 타입 검사 후 `frontend/dist/`를 만듭니다. 백엔드 JAR에는 포함되지 않습니다.
 - 화면을 바꾸면 [DESIGN.md](../DESIGN.md) 기준으로 PC·모바일, 키보드 포커스, 처리 중·오류 상태를 확인합니다.
 
 ## 개발 서버의 경로
 
-Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹칩니다. 브라우저가 페이지를 요청할 때(`Accept: text/html`)는 [vite.config.ts](../frontend/vite.config.ts)가 API 대신 React 화면을 돌려주므로, `/orders/:orderId`나 `/admin/chat` 같은 주소를 새로고침하거나 로그인 후 돌아와도 화면이 열립니다. 상담 실시간 알림 `/ws`는 WebSocket 프록시(`ws: true`)로 백엔드에 연결합니다.
+Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹칩니다. 마이페이지 API는 화면 주소 `/mypage`와 겹치지 않게 `/me/`로 프록시합니다. 브라우저가 페이지를 요청할 때(`Accept: text/html`)는 [vite.config.ts](../frontend/vite.config.ts)가 API 대신 React 화면을 돌려주므로, `/orders/:orderId`나 `/admin/chat` 같은 주소를 새로고침하거나 로그인 후 돌아와도 화면이 열립니다. 상담 실시간 알림 `/ws`는 WebSocket 프록시(`ws: true`)로 백엔드에 연결합니다.
 
 ## 실제 상담 확인
 
@@ -79,6 +81,13 @@ Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹�
 3. 관리자가 답하면 고객 창에 바로 보이고, 창을 닫아 두었으면 **새 답변 1**이 뜹니다.
 4. 백엔드를 껐다 켜면 두 화면이 **다시 연결하고 있습니다**를 거쳐 자동으로 다시 연결됩니다. 꺼진 동안 보낸 메시지는 **다시 보내기**로 보냅니다.
 5. 테스트 회원으로 `/admin/chat`을 열면 관리자 전용 안내가 나오는지 확인합니다.
+
+## 실제 마이페이지 확인
+
+1. 테스트 회원으로 로그인하고 헤더의 `{이름}님`(520px 이하에서는 `마이페이지`)을 눌러 마이페이지를 엽니다. 주문 내역에 내 주문만 보이는지 확인합니다.
+2. **배송지 추가 → 우편번호 찾기**로 주소를 고르고 상세 주소를 넣어 저장합니다. 첫 배송지가 `기본 배송지`가 되는지 확인합니다.
+3. 두 번째 배송지를 `기본 배송지로 지정`해 저장하면 기본 표시가 옮겨 가는지, 기본 배송지를 지우면 남은 배송지가 기본이 되는지 확인합니다.
+4. 쇼핑몰 관리자로 로그인하면 헤더에 `주문 확인`이 없고, 마이페이지·주문 확인 화면에 관리자 안내가 나오며, 장바구니의 결제 버튼이 막히는지 확인합니다.
 
 ## 실제 결제 확인
 
@@ -104,6 +113,7 @@ Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹�
 | [V5](../src/main/resources/db/migration/V5__add_order_customer.sql) | 주문한 회원(`customer_id`) 컬럼 추가. 기존 주문은 비어 있음 |
 | [V6](../src/main/resources/db/migration/V6__add_chat.sql) | 1:1 상담 테이블 `chat_rooms`·`chat_messages` 추가 |
 | [V7](../src/main/resources/db/migration/V7__add_product_stocks.sql) | 사이즈별 재고 `product_stocks` 추가. 사이즈마다 20개(`tee-10`은 3개, XL은 품절)로 시작하고, 승인이 진행 중인 주문의 수량은 미리 뺌 |
+| [V9](../src/main/resources/db/migration/V9__add_customer_addresses.sql) | 마이페이지 배송지 `customer_addresses` 추가. 회원당 기본 배송지 하나를 부분 유니크 인덱스로 보장 |
 | [V8](../src/main/resources/db/migration/V8__vary_initial_stock.sql) | `tee-04`~`tee-09`의 초기 재고를 사이즈별 1~10장(한 번 무작위로 뽑은 고정값)으로 바꿈. `tee-01`~`tee-03`은 20장, `tee-10`은 그대로. 값을 덮어쓰므로 V7 직후 판매·조정이 없다는 전제이며, 유일하게 V7 뒤 따로 실행된 로컬 DB에서 잃은 판매가 없음을 확인함 |
 
 - 서버를 시작하면 Flyway가 아직 적용하지 않은 버전만 차례로 적용합니다. Hibernate는 스키마를 검증만 합니다.

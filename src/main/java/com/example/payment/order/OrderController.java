@@ -3,6 +3,7 @@ package com.example.payment.order;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.net.URI;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -27,6 +28,12 @@ public class OrderController {
                                                 @RequestBody CreateOrderRequest request) {
         OrderResponse order = orderService.create(request, customer.getSubject());
         return ResponseEntity.created(URI.create("/orders/" + order.orderId())).body(order);
+    }
+
+    @GetMapping("/me/orders")
+    @Operation(summary = "내 주문 목록 (최근 50건)")
+    public List<OrderSummaryResponse> mine(@AuthenticationPrincipal Jwt customer) {
+        return orderService.listMine(customer.getSubject());
     }
 
     @GetMapping("/orders/{orderId}")

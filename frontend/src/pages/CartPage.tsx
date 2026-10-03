@@ -15,6 +15,8 @@ export function CartPage() {
   const { products, loading, catalogError, cart, cartCount, changeQuantity, removeFromCart, clearCart } = useShop();
   const { status: authStatus, customer, login } = useAuth();
   const customerId = authStatus === "signedIn" ? customer?.id ?? null : null;
+  // 관리자는 직원 계정이라 서버가 주문·결제를 403으로 거부한다. 화면에서도 미리 막고 이유를 알린다.
+  const isShopAdmin = authStatus === "signedIn" && Boolean(customer?.isShopAdmin);
   const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
   const [savedPendingOrder, setSavedPendingOrder] = useState<{ customerId: string; order: Order } | null>(null);
   const pendingOrder = savedPendingOrder?.customerId === customerId ? savedPendingOrder.order : null;
@@ -48,7 +50,7 @@ export function CartPage() {
     setError("");
     setBusy(false);
     busyRef.current = false;
-    const savedId = getPendingOrderId(customerId);
+    const savedId = isShopAdmin ? null : getPendingOrderId(customerId);
     setPendingLoading(Boolean(savedId));
     if (savedId) {
       getOrder(savedId).then(order => { if (active) setPendingOrder(order); })
@@ -56,10 +58,10 @@ export function CartPage() {
         .finally(() => { if (active) setPendingLoading(false); });
     }
     return () => { active = false; controller.abort(); };
-  }, [customerId]);
+  }, [customerId, isShopAdmin]);
 
   async function handlePay() {
-    if (busyRef.current || !customerId || !paymentConfig?.enabled || (cart.length === 0 && !pendingOrder) || (cart.length > 0 && (catalogError || cart.some(item => !productById.has(item.productId))))) return;
+    if (busyRef.current || !customerId || isShopAdmin || !paymentConfig?.enabled || (cart.length === 0 && !pendingOrder) || (cart.length > 0 && (catalogError || cart.some(item => !productById.has(item.productId))))) return;
     const signal = abortRef.current.signal;
     busyRef.current = true;
     setBusy(true);
@@ -149,10 +151,10 @@ export function CartPage() {
           </dl>
           {authStatus !== "signedIn" ? <button className="primary-button wide" type="button" onClick={() => login("/cart")} disabled={authStatus === "checking"}>
             로그인하고 결제하기
-          </button> : <button className="primary-button wide" type="button" onClick={handlePay} disabled={busy || loading || Boolean(catalogError) || cart.some(item => !productById.has(item.productId)) || !paymentConfig?.enabled || (showPending && (pendingOrder.status !== "PENDING_PAYMENT" || !["READY", "FAILED"].includes(pendingOrder.payment.status)))}>
+          </button> : <button className="primary-button wide" type="button" onClick={handlePay} disabled={isShopAdmin || busy || loading || Boolean(catalogError) || cart.some(item => !productById.has(item.productId)) || !paymentConfig?.enabled || (showPending && (pendingOrder.status !== "PENDING_PAYMENT" || !["READY", "FAILED"].includes(pendingOrder.payment.status)))}>
             {busy ? "처리 중…" : "결제하기"}
           </button>}
-          <p className="notice">{authStatus === "signedOut" ? "주문과 결제는 로그인한 회원만 할 수 있습니다. 담은 상품은 로그인한 뒤에도 그대로 남아 있습니다." : paymentConfig === null ? "결제 설정을 확인하고 있습니다." : paymentConfig.enabled ? "결제 시 서버가 상품 가격으로 주문 금액을 확정하고 토스 결제창을 엽니다." : "테스트 결제 키가 없어 결제창을 열 수 없습니다."}</p>
+          <p className="notice">{authStatus === "signedOut" ? "주문과 결제는 로그인한 회원만 할 수 있습니다. 담은 상품은 로그인한 뒤에도 그대로 남아 있습니다." : isShopAdmin ? "관리자 계정은 주문·결제를 할 수 없습니다. 상품을 직접 사 보려면 일반 회원 계정으로 로그인해주세요." : paymentConfig === null ? "결제 설정을 확인하고 있습니다." : paymentConfig.enabled ? "결제 시 서버가 상품 가격으로 주문 금액을 확정하고 토스 결제창을 엽니다." : "테스트 결제 키가 없어 결제창을 열 수 없습니다."}</p>
           <p className="subtle">토스페이먼츠 테스트 환경이며 실제 금액은 청구되지 않습니다.</p>
         </aside>
       </div>}

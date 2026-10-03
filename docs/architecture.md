@@ -18,6 +18,7 @@
 | 확정된 결과는 바뀌지 않는다 | 도메인 상태 전이 검사, 결과 기록 시 종료 상태 무시 |
 | 같은 시도의 승인은 한 번만 호출 | 같은 결제 키 재요청은 저장 결과 반환, 첫 호출에 시도 ID를 `Idempotency-Key`로 전송 |
 | 주문은 주문한 회원만 조회·결제 | 주문의 `customer_id`(access token의 `sub`)와 요청 회원 비교, 쓰기 요청은 주문 잠금 아래에서 확인 |
+| 쇼핑몰 관리자 계정은 주문·결제하지 않는다 | `shop-admin` 역할이 있는 토큰은 주문·결제·마이페이지 API에서 `403` |
 | 재고는 승인 슬롯과 함께 잡고 놓는다 | 승인 관문에서 조건부 UPDATE로 차감, 확인된 실패에서만 복원, `quantity >= 0` 제약 |
 
 - 결제 관련 쓰기 트랜잭션은 모두 주문 행을 먼저 잠근다. 같은 주문의 요청이 한 줄로 처리된다. 방어 단계 전체는 [중복 결제 방지](duplicate-payment-prevention.md)에 정리했다.
@@ -43,6 +44,7 @@
 | `product_stocks` | 상품·사이즈별 남은 수량 | `quantity` |
 | `purchase_orders` | 서버가 계산한 주문 금액, 주문한 회원, 주문 상태 | `customer_id`, `status`, `approval_attempt_id`, `paid_at` |
 | `purchase_order_items` | 주문 당시 상품명·단가·사이즈·수량 | — |
+| `customer_addresses` | 회원이 마이페이지에서 관리하는 배송지. 회원당 최대 10개, 기본 배송지 하나 | — |
 | `payment_attempts` | 시도별 인증·승인 상태와 PG 응답 증거 | `status`, `payment_key`, `amount`, `pg_*`, `last_checked_at` |
 | `payments` | 검증된 승인 성공만 기록 | `order_id`, `attempt_id`, `payment_key`, `amount`, `approved_at` |
 
@@ -188,4 +190,4 @@ stateDiagram-v2
 - 복구 주기·기한·배치 크기는 코드 상수다. 서버를 여러 대 띄우면 같은 결제를 중복 조회할 수 있다(결과 기록은 안전하다).
 - 결과가 미확정이거나 수동 확인 중인 주문은 확정될 때까지 재고를 붙잡는다. 결제 취소·환불이 없으므로 취소에 따른 재고 복원도 없다.
 - 재고 보충·수정 API가 없어 재고는 SQL로 바꾼다. 남은 수량 알림, 재입고 알림도 없다.
-- 관리자 역할, 배송, 상품 관리 API, 결제 완료 후 후속 작업은 구현하지 않았다. 로그인 방식은 [로그인과 회원](authentication.md)에 있다.
+- 마이페이지에 배송지를 저장할 수 있지만 아직 주문에 연결하지 않는다. 배송 처리, 관리자 주문 관리, 상품 관리 API, 결제 완료 후 후속 작업은 구현하지 않았다. 로그인 방식은 [로그인과 회원](authentication.md)에 있다.

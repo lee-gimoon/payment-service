@@ -23,6 +23,8 @@ export default defineConfig({
       "/payment-config": api("http://127.0.0.1:8080"),
       "/chat": api("http://127.0.0.1:8080"),
       "/admin": api("http://127.0.0.1:8080"),
+      // 마이페이지 API. 화면 주소 /mypage와 겹치지 않게 슬래시까지 맞춘다.
+      "/me/": api("http://127.0.0.1:8080"),
       // 상담 실시간 알림(STOMP over WebSocket)
       "/ws": { target: "ws://127.0.0.1:8080", ws: true }
     }

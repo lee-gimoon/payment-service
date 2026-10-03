@@ -25,9 +25,9 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 
 /**
- * 상품과 결제 설정은 공개하고, 주문·결제는 Keycloak access token을 가진 회원만,
- * {@code /admin/**}는 Keycloak realm 역할 {@code shop-admin}이 있는 쇼핑몰 관리자만 호출한다.
- * 고객 상담 창구 {@code /chat/**}는 쇼핑몰 관리자가 아닌 회원만 쓴다.
+ * 상품과 결제 설정은 공개하고, {@code /admin/**}는 Keycloak realm 역할 {@code shop-admin}이 있는 쇼핑몰 관리자만 호출한다.
+ * 쇼핑몰 관리자 계정은 직원 계정이라 주문·결제·마이페이지·고객 상담 같은 고객 기능은
+ * Keycloak access token을 가진 일반 회원만 쓴다.
  */
 @Configuration
 public class SecurityConfiguration {
@@ -48,8 +48,10 @@ public class SecurityConfiguration {
                         // 토큰은 연결 직후 STOMP CONNECT 프레임에서 ChatSocketAuthorization이 검사한다.
                         .requestMatchers("/ws").permitAll()
                         .requestMatchers("/admin/**").hasRole(SHOP_ADMIN)
-                        // 쇼핑몰 관리자는 고객 상담 창구를 쓰지 않고 /admin/chat에서 답한다.
-                        .requestMatchers("/chat/**").access(AuthorizationManagers.allOf(
+                        // 쇼핑몰 관리자는 직원 계정이다. 주문·결제·마이페이지·고객 상담은 일반 회원 계정으로만 쓰고,
+                        // 관리자는 /admin 화면에서 상담에 답한다.
+                        .requestMatchers("/orders", "/orders/**", "/payment-attempts/**", "/payments/**",
+                                "/me/**", "/chat/**").access(AuthorizationManagers.allOf(
                                 AuthenticatedAuthorizationManager.authenticated(),
                                 AuthorizationManagers.not(AuthorityAuthorizationManager.hasRole(SHOP_ADMIN))))
                         .anyRequest().authenticated())

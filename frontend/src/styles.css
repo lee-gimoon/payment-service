@@ -43,6 +43,9 @@ header nav span { color: #4258e7; }
 .nav-button { border: 0; background: transparent; padding: 0; color: inherit; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .nav-button:hover { color: #4258e7; }
 .nav-customer { font-size: 14px; max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-mypage { display: inline-flex; font-weight: 800; }
+.nav-mypage .nav-customer { display: inline-block; }
+.nav-mypage-short { display: none; }
 
 main { padding: 26px clamp(20px, 5vw, 70px) 64px; }
 .eyebrow { margin: 0 0 18px; color: #4258e7; font-size: 12px; font-weight: 850; letter-spacing: .2em; }
@@ -258,6 +261,40 @@ button.secondary:hover:not(:disabled) { background: #dce5ff; }
 .cart-payment { position: sticky; top: 20px; }
 .cart-payment .cart-summary { margin: 14px 0 25px; }
 .empty-state { padding: 60px 30px; text-align: center; border: 1px solid #dce0eb; border-radius: 22px; background: white; }
+
+.mypage { max-width: 960px; }
+.mypage .lookup-card { margin-top: 0; }
+.mypage-section { margin-top: 24px; padding: 30px 38px; background: white; border: 1px solid #dce0eb; border-radius: 22px; }
+.mypage-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 16px; }
+.mypage-heading h2 { margin: 0; font-size: 22px; }
+.mypage-heading button { margin-left: auto; }
+.mypage-empty { color: #70748d; }
+.secondary-link { display: inline-block; background: #e9eeff; color: #23243a; border-radius: 10px; padding: 11px 18px; font-weight: 750; text-decoration: none; white-space: nowrap; }
+.secondary-link:hover { background: #dce5ff; }
+.order-history { list-style: none; padding: 0; margin: 0 0 14px; }
+.order-history li + li { border-top: 1px solid #e0e4ee; }
+.order-history a { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; text-decoration: none; }
+.order-history a:hover strong { color: #4258e7; }
+.order-history-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.order-history-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order-history-main small { color: #70748d; font-size: 12px; }
+.order-history-side { display: flex; align-items: center; gap: 12px; flex: none; }
+.address-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.address-card { border: 1px solid #dce0eb; border-radius: 14px; padding: 18px 20px; }
+.address-card.default { border-color: #cdd4f6; background: #f3f5ff; }
+.address-card p { margin: 6px 0; font-size: 14px; overflow-wrap: anywhere; }
+.address-card-title { display: flex; align-items: center; gap: 10px; }
+.address-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; }
+.address-form { border: 1px solid #cdd4f6; background: #f3f5ff; border-radius: 14px; padding: 22px 24px; margin-bottom: 18px; }
+.address-form h3 { margin: 0 0 16px; font-size: 17px; }
+.form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.form-grid .form-wide { grid-column: 1 / -1; }
+.form-grid .error { margin: 0; }
+.postal-row input { max-width: 160px; }
+.postcode-frame { height: 420px; border: 1px solid #dce0eb; border-radius: 12px; overflow: hidden; background: white; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; margin: 16px 0; font-size: 14px; color: #23243a; }
+.checkbox-label input { width: auto; padding: 0; }
+.address-form .actions { margin-top: 16px; }
 .empty-state h1, .empty-state h2 { margin-top: 0; }
 .empty-state p { color: #70748d; }
 .empty-state .primary-button { margin-top: 16px; }
@@ -364,6 +401,7 @@ footer span { color: #70748d; font-weight: 500; }
   .section-heading > p { margin-top: 12px; }
   .product-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .lookup-card { grid-template-columns: 1fr; }
+  .address-list, .form-grid { grid-template-columns: 1fr; }
   .cart-layout { grid-template-columns: 1fr; }
   .cart-payment { position: static; }
   .admin-chat { grid-template-columns: 1fr; }
@@ -376,6 +414,8 @@ footer span { color: #70748d; font-weight: 500; }
   header nav { gap: 6px 13px; flex-wrap: wrap; justify-content: flex-end; }
   header nav a, .nav-button { font-size: 12px; }
   .nav-customer, .nav-register { display: none; }
+  .nav-mypage .nav-customer { display: none; }
+  .nav-mypage-short { display: inline; }
   main { padding: 12px 20px 45px; }
   .hero { border-radius: 20px; }
   .hero-copy { padding: 30px 24px 6px; }
@@ -405,7 +445,9 @@ footer span { color: #70748d; font-weight: 500; }
   .cart-line-info strong { font-size: 13px; }
   .quantity-control button { width: 30px; height: 36px; }
   .quantity-control span { min-width: 18px; }
-  .lookup-card, .result-card { padding: 22px 18px; }
+  .lookup-card, .result-card, .mypage-section { padding: 22px 18px; }
+  .address-form { padding: 18px 16px; }
+  .order-history a { flex-direction: column; align-items: flex-start; gap: 8px; }
   .result-details div { flex-direction: column; gap: 3px; }
   .result-details dd { text-align: left; }
   footer { flex-direction: column; gap: 4px; }

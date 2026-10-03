@@ -12,7 +12,9 @@ export function OrderPage() {
   const { orderId } = useParams();
   const navigate = useNavigate();
   const { status: authStatus, customer, login } = useAuth();
-  const customerId = authStatus === "signedIn" ? customer?.id ?? null : null;
+  const isShopAdmin = authStatus === "signedIn" && Boolean(customer?.isShopAdmin);
+  // 관리자는 직원 계정이라 주문을 조회하지 않는다. 서버도 403으로 거부한다.
+  const customerId = authStatus === "signedIn" && !isShopAdmin ? customer?.id ?? null : null;
   const [lookupOrderId, setLookupOrderId] = useState(orderId ?? "");
   const [loadedOrder, setLoadedOrder] = useState<{ customerId: string; order: Order } | null>(null);
   const order = loadedOrder?.customerId === customerId && loadedOrder.order.orderId === orderId ? loadedOrder.order : null;
@@ -65,7 +67,15 @@ export function OrderPage() {
       </div>
       <button className="primary-button" type="button" onClick={() => login()}>로그인하고 주문 확인하기</button>
     </section>}
-    {authStatus === "signedIn" && <OrderLookup orderId={lookupOrderId} busy={busy} onOrderIdChange={setLookupOrderId} onSubmit={handleLookup} />}
+    {isShopAdmin && <section className="lookup-card" aria-labelledby="admin-order-title">
+      <div>
+        <p className="eyebrow">STAFF ACCOUNT</p>
+        <h2 id="admin-order-title">관리자 계정은 주문을 조회할 수 없습니다</h2>
+        <p className="subtle">주문은 주문한 일반 회원만 확인할 수 있습니다.</p>
+      </div>
+      <Link className="primary-button" to="/admin/chat">상담 관리로 이동</Link>
+    </section>}
+    {authStatus === "signedIn" && !isShopAdmin && <OrderLookup orderId={lookupOrderId} busy={busy} onOrderIdChange={setLookupOrderId} onSubmit={handleLookup} />}
     {busy && !order && <p role="status">주문을 불러오고 있습니다.</p>}
     {order && <OrderResultCard order={order} busy={busy} onRefresh={handleRefresh} />}
     {error && <p className="error" role="alert">{error}</p>}

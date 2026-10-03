@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.payment.api.error.ApiException;
+import com.example.payment.config.SecurityConfiguration;
 import com.example.payment.order.CreateOrderRequest;
 import com.example.payment.order.OrderResponse.PaymentState;
 import com.example.payment.order.OrderService;
@@ -54,6 +55,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -110,7 +112,7 @@ class PaymentIntegrationTest {
     @Test
     void freshDatabaseAppliesAllMigrations() {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success AND version IS NOT NULL "
-                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
         assertThat(columns("payment_attempts")).contains("amount", "currency", "payment_key", "approval_requested_at",
                 "last_checked_at", "pg_status", "pg_approved_at", "pg_amount", "pg_currency");
         assertThat(columns("purchase_orders")).contains("approval_attempt_id", "paid_at", "customer_id");
@@ -222,6 +224,60 @@ class PaymentIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempts", Long.class)).isEqualTo(1);
         assertThat(attemptStatus(checkout.attemptId())).isEqualTo("STARTED");
         assertThat(orderStatus(checkout.orderId())).isEqualTo("PENDING_PAYMENT");
+        verifyNoInteractions(toss);
+    }
+
+    @Test
+    void myOrdersListOnlyTheCustomersOwnOrdersNewestFirst() throws Exception {
+        String older = order();
+        jdbc.update("UPDATE purchase_orders SET created_at = now() - interval '1 hour' WHERE id = ?", older);
+        orders.create(new CreateOrderRequest(List.of(new CreateOrderRequest.Item("tee-02", "S", 1))), OTHER_CUSTOMER);
+        String newer = orders.create(new CreateOrderRequest(List.of(
+                new CreateOrderRequest.Item("tee-01", "M", 2),
+                new CreateOrderRequest.Item("tee-04", "L", 1))), CUSTOMER).orderId();
+
+        mvc.perform(get("/me/orders").with(signedIn()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].orderId").value(newer))
+                .andExpect(jsonPath("$[0].productName").value("선데이 크루 티 외 1종"))
+                .andExpect(jsonPath("$[0].quantity").value(3))
+                .andExpect(jsonPath("$[0].amount").value(65000))
+                .andExpect(jsonPath("$[0].status").value("PENDING_PAYMENT"))
+                .andExpect(jsonPath("$[1].orderId").value(older));
+        mvc.perform(get("/me/orders").with(signedIn("customer-without-orders")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void shopAdminAccountsCannotOrderOrPay() throws Exception {
+        // 관리자는 직원 계정이다. 상품은 볼 수 있지만 주문·결제·마이페이지는 일반 회원 계정으로만 쓴다.
+        Checkout checkout = checkout(order());
+        RequestPostProcessor admin = jwt().jwt(token -> token.subject("admin-1"))
+                .authorities(new SimpleGrantedAuthority("ROLE_" + SecurityConfiguration.SHOP_ADMIN));
+
+        mvc.perform(get("/products").with(admin)).andExpect(status().isOk());
+        mvc.perform(post("/orders").with(admin).contentType(MediaType.APPLICATION_JSON).content("""
+                {"items":[{"productId":"tee-01","size":"M","quantity":1}]}
+                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mvc.perform(get("/orders/{id}", checkout.orderId()).with(admin)).andExpect(status().isForbidden());
+        mvc.perform(post("/orders/{id}/payment-attempts", checkout.orderId()).with(admin))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/payment-attempts/{id}/authentication-result", checkout.attemptId()).with(admin)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"AUTH_CANCELED\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/payments/confirm").with(admin).contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmJson(checkout, "payment-key", 19_000)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/me/orders").with(admin)).andExpect(status().isForbidden());
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM purchase_orders", Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempts", Long.class)).isEqualTo(1);
+        assertThat(attemptStatus(checkout.attemptId())).isEqualTo("STARTED");
+        assertThat(stock("tee-01", "M")).isEqualTo(20);
         verifyNoInteractions(toss);
     }
 
