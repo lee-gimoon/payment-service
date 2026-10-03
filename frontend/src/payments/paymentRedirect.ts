@@ -15,6 +15,13 @@ export interface PaymentRedirectState {
   storageKey: string | null;
   errorCode: string | null;
   errorMessage: string | null;
+  stockRejection: StockRejection | null;
+}
+
+interface StockRejection {
+  orderId: string;
+  attemptId: string;
+  message: string;
 }
 
 interface PendingFailure {
@@ -72,6 +79,35 @@ function failureStorageKey(orderId: string): string {
   return `pendingAuthenticationResult:${orderId}`;
 }
 
+function stockRejectionStorageKey(orderId: string): string {
+  return `stockRejection:${orderId}`;
+}
+
+function readStockRejection(orderId: string): StockRejection | null {
+  try {
+    const value = JSON.parse(readSessionValue(stockRejectionStorageKey(orderId)) ?? "null") as Partial<StockRejection> | null;
+    return value?.orderId === orderId && typeof value.attemptId === "string"
+      && ATTEMPT_ID_PATTERN.test(value.attemptId) && typeof value.message === "string"
+      && value.message.length <= 300 ? value as StockRejection : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 확정된 품절 거절은 승인 명령 대신 안내만 보관해 새로고침으로 승인하지 않는다. */
+export function recordStockRejection(command: ConfirmPaymentCommand, message: string): void {
+  const storageKey = `pendingConfirmation:${command.orderId}`;
+  const current = readStoredConfirmation(storageKey, command.orderId);
+  // 이전 요청의 늦은 응답이 새 결제 시도의 복귀 정보를 지우지 않는다.
+  if (current && (current.attemptId !== command.attemptId || current.paymentKey !== command.paymentKey)) return;
+  const failure = readStoredFailure(command.orderId);
+  if (failure && failure.attemptId !== command.attemptId) return;
+  removeSessionValue(storageKey);
+  writeSessionValue(stockRejectionStorageKey(command.orderId), JSON.stringify({
+    orderId: command.orderId, attemptId: command.attemptId, message: message.slice(0, 300)
+  }));
+}
+
 function readStoredFailure(orderId: string): PendingFailure | null {
   const stored = readSessionValue(failureStorageKey(orderId));
   if (!stored) return null;
@@ -117,6 +153,7 @@ export function readPaymentRedirect(): PaymentRedirectState {
   const storageKey = orderId ? `pendingConfirmation:${orderId}` : null;
   let errorCode = flow === "fail" ? parameters.get("code")?.slice(0, 80) ?? null : null;
   let errorMessage = flow === "fail" ? parameters.get("message")?.slice(0, 300) ?? null : null;
+  let stockRejection = orderId ? readStockRejection(orderId) : null;
 
   let confirmation: ConfirmPaymentCommand | null = null;
 
@@ -124,9 +161,13 @@ export function readPaymentRedirect(): PaymentRedirectState {
     // 새 인증 결과에 이전 시도의 승인·실패 정보를 재사용하지 않는다.
     removeSessionValue(storageKey);
     removeSessionValue(failureStorageKey(orderId as string));
+    if (stockRejection?.attemptId !== attemptId) {
+      removeSessionValue(stockRejectionStorageKey(orderId as string));
+      stockRejection = null;
+    }
   }
 
-  if (flow === "success" && orderId && attemptId && storageKey) {
+  if (flow === "success" && orderId && attemptId && storageKey && !stockRejection) {
     const paymentKey = parameters.get("paymentKey");
     const amount = parameters.get("amount");
 
@@ -145,7 +186,7 @@ export function readPaymentRedirect(): PaymentRedirectState {
     }
   } else if (flow === "fail" && orderId && attemptId) {
     writeSessionValue(failureStorageKey(orderId), JSON.stringify({ orderId, attemptId, errorCode, errorMessage }));
-  } else if (flow === null && orderId && storageKey) {
+  } else if (flow === null && orderId && storageKey && !stockRejection) {
     const failure = readStoredFailure(orderId);
     if (failure) {
       flow = "fail";
@@ -163,5 +204,5 @@ export function readPaymentRedirect(): PaymentRedirectState {
     : "/payment/result";
   window.history.replaceState(null, "", safeUrl);
 
-  return { orderId, attemptId, flow, confirmation, storageKey, errorCode, errorMessage };
+  return { orderId, attemptId, flow, confirmation, storageKey, errorCode, errorMessage, stockRejection };
 }

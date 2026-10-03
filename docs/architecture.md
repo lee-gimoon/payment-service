@@ -91,7 +91,7 @@ sequenceDiagram
 | 판정 | 조건 |
 | --- | --- |
 | 성공 | `DONE`이고 주문번호·결제 키·금액·통화가 일치, 카드·간편결제, 승인 시각 있음 |
-| 실패 | 4xx 카드 거절 코드(`REJECT_CARD_COMPANY`·`INVALID_REJECT_CARD`·`INVALID_STOPPED_CARD`) 또는 `ABORTED`·`EXPIRED` |
+| 실패 | 4xx 카드 거절 코드(`REJECT_CARD_COMPANY`·`INVALID_REJECT_CARD`·`INVALID_STOPPED_CARD`), 최초 승인 요청에 대한 404 `NOT_FOUND_PAYMENT`(없는 결제 키)·`NOT_FOUND_PAYMENT_SESSION`(인증 세션 만료), 또는 `ABORTED`·`EXPIRED` |
 | 수동 확인 | 조회에서도 확인된 불일치(주문번호·결제 키·금액·통화·결제수단), `CANCELED`·`PARTIAL_CANCELED` |
 | 미확정 | 그 밖의 오류, 타임아웃, 불완전한 응답 |
 
@@ -181,7 +181,7 @@ stateDiagram-v2
 
 ## 알려진 한계
 
-- 주문한 회원 본인이 잘못된 결제 키로 승인을 요청하면 그 주문이 `REVIEW_REQUIRED`로 막힐 수 있다. 다른 회원의 요청은 승인 관문에서 거부된다.
+- 주문한 회원 본인이 잘못된 결제 키로 승인을 요청할 때, 토스가 404 `NOT_FOUND_PAYMENT`·`NOT_FOUND_PAYMENT_SESSION`으로 답하면 실패로 확정해 슬롯과 재고를 바로 돌려준다. 그 밖의 응답(예: 그 회원의 다른 주문에서 인증만 해 둔 결제 키)은 `REVIEW_REQUIRED`로 막히고, 확인될 때까지 그 주문의 재고도 붙잡는다. 다른 회원의 요청은 승인 관문에서 거부된다.
 - 로그인 도입 전에 만든 주문은 주인(`customer_id`)이 없어 누구도 조회·결제할 수 없다. 미확정 결제는 복구 작업이 계속 확정한다.
 - 같은 장바구니로 따로 만든 주문의 중복 결제는 막지 않는다. 주문 생성에는 멱등키가 없다.
 - `REVIEW_REQUIRED` 수동 확정 API, 토스 웹훅, 결제 취소·환불이 없다.

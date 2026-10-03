@@ -46,6 +46,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -546,6 +547,34 @@ class PaymentIntegrationTest {
         verify(toss).confirm(any());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"NOT_FOUND_PAYMENT", "NOT_FOUND_PAYMENT_SESSION"})
+    void invalidPaymentKeyReleasesLastStockExactlyOnceForAnotherCustomer(String errorCode) {
+        setStock("tee-01", "M", 1);
+        Checkout invalid = checkout(order());
+        when(toss.confirm(any())).thenReturn(PaymentResult.failed(errorCode));
+
+        assertThat(payments.confirm(request(invalid, "invalid-key"), CUSTOMER).payment().status())
+                .isEqualTo(PaymentState.FAILED);
+        assertThat(stock("tee-01", "M")).isEqualTo(1);
+        assertThat(slot(invalid.orderId())).isNull();
+        // 같은 거절 결과로 다시 요청해도 재고를 두 번 돌려주지 않고, 새 승인도 보내지 않는다.
+        payments.confirm(request(invalid, "invalid-key"), CUSTOMER);
+        assertThat(stock("tee-01", "M")).isEqualTo(1);
+        verify(toss).confirm(any());
+        verify(toss, never()).lookup(any());
+
+        String otherOrder = orders.create(new CreateOrderRequest(List.of(
+                new CreateOrderRequest.Item("tee-01", "M", 1))), OTHER_CUSTOMER).orderId();
+        String otherAttempt = attempts.start(otherOrder, OTHER_CUSTOMER).id();
+        when(toss.confirm(any())).thenReturn(succeeded(19_000));
+        assertThat(payments.confirm(new ConfirmPaymentRequest(otherOrder, "valid-key",
+                BigDecimal.valueOf(19_000), otherAttempt), OTHER_CUSTOMER).payment().status())
+                .isEqualTo(PaymentState.SUCCEEDED);
+        assertThat(stock("tee-01", "M")).isZero();
+        assertThat(paymentCount()).isEqualTo(1);
+    }
+
     @Test
     void resultWriteFailureKeepsApprovalLiveUntilRecoveryConfirmsIt() {
         Checkout checkout = checkout(order());
@@ -828,6 +857,7 @@ class PaymentIntegrationTest {
         assertThatThrownBy(() -> attempts.start(checkout.orderId(), CUSTOMER)).isInstanceOf(ApiException.class);
 
         // 수동 확인 대상은 자동 복구가 다시 조회하지 않는다.
+        assertThat(stock("tee-01", "M")).isEqualTo(19);
         makeStale(checkout.attemptId());
         assertThat(recovery.recoverUnresolved()).isZero();
         verify(toss).lookup(any());

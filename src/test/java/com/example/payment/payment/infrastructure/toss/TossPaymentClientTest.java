@@ -108,8 +108,19 @@ class TossPaymentClientTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"NOT_FOUND_PAYMENT", "NOT_FOUND_PAYMENT_SESSION"})
+    void missingPaymentOrExpiredSessionRejectsTheInitialConfirmation(String code) {
+        server.expect(requestTo(BASE + "/confirm")).andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                        .contentType(MediaType.APPLICATION_JSON).body("{\"code\":\"" + code + "\"}"));
+        assertThat(gateway.confirm(PAYMENT)).isEqualTo(PaymentResult.failed(code));
+    }
+
+    @ParameterizedTest
     @CsvSource({"400,ALREADY_PROCESSED_PAYMENT", "409,IDEMPOTENT_REQUEST_PROCESSING", "401,UNAUTHORIZED_KEY",
-            "500,REJECT_CARD_COMPANY", "429,TOO_MANY_REQUESTS", "400,UNKNOWN_NEW_ERROR", "404,NOT_FOUND_PAYMENT_SESSION"})
+            "500,REJECT_CARD_COMPANY", "429,TOO_MANY_REQUESTS", "400,UNKNOWN_NEW_ERROR", "404,UNKNOWN_NEW_ERROR",
+            "400,NOT_FOUND_PAYMENT", "400,NOT_FOUND_PAYMENT_SESSION",
+            "500,NOT_FOUND_PAYMENT", "500,NOT_FOUND_PAYMENT_SESSION"})
     void ambiguousErrorsStayUnknown(int status, String code) {
         server.expect(requestTo(BASE + "/confirm")).andRespond(withStatus(HttpStatus.valueOf(status))
                 .contentType(MediaType.APPLICATION_JSON).body("{\"code\":\"" + code + "\"}"));

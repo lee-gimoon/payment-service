@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
-import { readPaymentRedirect, recordPaymentFailure } from "../src/payments/paymentRedirect.ts";
+import { readPaymentRedirect, recordPaymentFailure, recordStockRejection } from "../src/payments/paymentRedirect.ts";
 
 const attemptId = "123e4567-e89b-12d3-a456-426614174000";
 
@@ -202,4 +202,50 @@ test("잘못된 새 인증 복귀에 이전 실패 정보를 재사용하지 않
   window.location.search = "?flow=success&orderId=order-123&paymentKey=key&amount=10000";
   assert.equal(readPaymentRedirect().confirmation, null);
   assert.equal(readPaymentRedirect().flow, null);
+});
+
+const nextAttemptId = "223e4567-e89b-12d3-a456-426614174000";
+
+test("품절 거절 뒤 새로고침하면 승인 정보 없이 품절 안내만 복원한다", () => {
+  window.location.search = `?flow=success&orderId=order-123&paymentKey=test-payment&amount=10000&attemptId=${attemptId}`;
+  recordStockRejection(readPaymentRedirect().confirmation, "볼트 그래픽 티 M 사이즈의 재고가 부족합니다.");
+
+  const reloaded = readPaymentRedirect();
+  assert.equal(reloaded.confirmation, null);
+  assert.deepEqual(reloaded.stockRejection, {
+    orderId: "order-123", attemptId, message: "볼트 그래픽 티 M 사이즈의 재고가 부족합니다."
+  });
+  assert.equal(window.sessionStorage.getItem("pendingConfirmation:order-123"), null);
+});
+
+test("같은 시도의 인증 성공 주소를 다시 열어도 품절로 거절된 승인을 만들지 않는다", () => {
+  const search = `?flow=success&orderId=order-123&paymentKey=test-payment&amount=10000&attemptId=${attemptId}`;
+  window.location.search = search;
+  recordStockRejection(readPaymentRedirect().confirmation, "품절");
+  window.location.search = search;
+  const reopened = readPaymentRedirect();
+  assert.equal(reopened.confirmation, null);
+  assert.equal(reopened.stockRejection.attemptId, attemptId);
+});
+
+test("같은 주문의 새 결제 시도는 이전 품절 안내를 지우고 승인 정보를 만든다", () => {
+  window.location.search = `?flow=success&orderId=order-123&paymentKey=old-key&amount=10000&attemptId=${attemptId}`;
+  recordStockRejection(readPaymentRedirect().confirmation, "품절");
+  window.location.search = `?flow=success&orderId=order-123&paymentKey=new-key&amount=10000&attemptId=${nextAttemptId}`;
+  const redirect = readPaymentRedirect();
+  assert.equal(redirect.stockRejection, null);
+  assert.equal(redirect.confirmation.paymentKey, "new-key");
+  assert.equal(readPaymentRedirect().confirmation.paymentKey, "new-key");
+});
+
+test("이전 시도의 늦은 품절 응답이 새 시도의 승인 정보를 지우지 않는다", () => {
+  window.location.search = `?flow=success&orderId=order-123&paymentKey=old-key&amount=10000&attemptId=${attemptId}`;
+  const previous = readPaymentRedirect().confirmation;
+  window.location.search = `?flow=success&orderId=order-123&paymentKey=new-key&amount=10000&attemptId=${nextAttemptId}`;
+  readPaymentRedirect();
+  recordStockRejection(previous, "품절");
+
+  const reloaded = readPaymentRedirect();
+  assert.equal(reloaded.stockRejection, null);
+  assert.equal(reloaded.confirmation.paymentKey, "new-key");
 });

@@ -15,7 +15,7 @@ import {
 } from "../lib/formatters";
 import { clearPendingOrderId, saveLastOrderId } from "../lib/orderStorage";
 import { removeSessionValue } from "../lib/storage";
-import { readPaymentRedirect, recordPaymentFailure } from "../payments/paymentRedirect";
+import { readPaymentRedirect, recordPaymentFailure, recordStockRejection } from "../payments/paymentRedirect";
 import type { ConfirmPaymentCommand, Order } from "../types/payment";
 
 function errorMessage(error: unknown): string {
@@ -52,7 +52,17 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
   const [needsSignIn, setNeedsSignIn] = useState(false);
+  const [stockRejected, setStockRejected] = useState(Boolean(redirect.stockRejection));
   const busyRef = useRef(true);
+
+  function showStockRejection(message: string) {
+    setStockRejected(true);
+    setConfirmation(null);
+    setOrder(null);
+    setTitle("재고가 부족해 결제를 승인하지 않았습니다");
+    setMessage("이 결제 시도는 재고 부족으로 승인을 요청하지 않아 결제 금액이 청구되지 않습니다. 스토어에서 다른 사이즈나 상품을 골라 새로 주문해주세요.");
+    setError(message);
+  }
 
   function showOrder(nextOrder: Order) {
     setOrder(nextOrder);
@@ -81,9 +91,8 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
     }
     // 재고가 부족하면 서버는 승인을 요청하지 않는다. 결과를 모르는 상황이 아니므로 조회를 안내하지 않는다.
     if (requestError instanceof ApiRequestError && requestError.code === "OUT_OF_STOCK") {
-      setTitle("재고가 부족해 결제를 승인하지 않았습니다");
-      setMessage("결제수단 인증은 완료됐지만 승인을 요청하지 않아 결제 금액이 청구되지 않습니다. 스토어에서 다른 사이즈나 상품을 골라 새로 주문해주세요.");
-      setError(requestError.message);
+      if (confirmation) recordStockRejection(confirmation, requestError.message);
+      showStockRejection(requestError.message);
       return;
     }
     setTitle("결제 결과 확인이 필요합니다");
@@ -119,6 +128,10 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
 
     async function initializeResult() {
       try {
+        if (redirect.stockRejection) {
+          showStockRejection(redirect.stockRejection.message);
+          return;
+        }
         if (redirect.flow === "fail") {
           const failedOrder = await loadFailedOrder();
           if (!active) {
@@ -219,8 +232,8 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
       <h1>{title}</h1>
       <p role="status">{message}</p>
 
-      <Link className="primary-button result-cta" to={order?.orderId || redirect.orderId ? `/orders/${order?.orderId ?? redirect.orderId}` : "/orders"}>
-        {order?.payment.status === "SUCCEEDED" ? "결제 확인하기" : "주문 상태 확인하기"} <span aria-hidden="true">↗</span>
+      <Link className="primary-button result-cta" to={stockRejected ? "/#products" : order?.orderId || redirect.orderId ? `/orders/${order?.orderId ?? redirect.orderId}` : "/orders"}>
+        {stockRejected ? "다른 상품 고르기" : order?.payment.status === "SUCCEEDED" ? "결제 확인하기" : "주문 상태 확인하기"} <span aria-hidden="true">↗</span>
       </Link>
 
       <section className="result-card" aria-live="polite" aria-busy={busy}>
@@ -235,7 +248,7 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
           </div>
           <div>
             <dt>결제 상태</dt>
-            <dd>{order ? paymentStatusLabel(order.payment.status) : "—"}</dd>
+            <dd>{stockRejected ? "재고 부족 · 승인하지 않음" : order ? paymentStatusLabel(order.payment.status) : "—"}</dd>
           </div>
           <div>
             <dt>실제 승인 금액</dt>
@@ -253,7 +266,7 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
           )}
         </dl>
 
-        <div className="actions">
+        {!stockRejected && <div className="actions">
           {redirect.orderId && (
             <button className="secondary" type="button" disabled={busy} onClick={handleRefresh}>
               주문 내역 새로고침
@@ -264,7 +277,7 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
               승인 요청 다시 확인
             </button>
           )}
-        </div>
+        </div>}
       </section>
 
       {error && (

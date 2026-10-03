@@ -98,6 +98,14 @@ public class TossPaymentClient {
     private PaymentResult readConfirmationError(RestClientResponseException exception) {
         try {
             TossErrorResponse error = exception.getResponseBodyAs(TossErrorResponse.class);
+            // 이 경로는 시도당 한 번만 보내는 최초 승인 요청의 응답이다. 토스가 거래 부재나
+            // 인증 세션 만료를 명시하면 승인 거절로 확정한다. 타임아웃 뒤 lookup의 404와는 다르다.
+            // https://docs.tosspayments.com/reference/error-codes#결제-승인
+            if (exception.getStatusCode().value() == 404 && error != null
+                    && ("NOT_FOUND_PAYMENT".equals(error.code())
+                    || "NOT_FOUND_PAYMENT_SESSION".equals(error.code()))) {
+                return PaymentResult.failed(error.code());
+            }
             if (exception.getStatusCode().is4xxClientError() && error != null
                     && ("REJECT_CARD_COMPANY".equals(error.code())
                     || "INVALID_REJECT_CARD".equals(error.code())
