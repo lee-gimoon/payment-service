@@ -1,0 +1,231 @@
+/* MODO CLUB 계정 설정 화면(Keycloak 계정 콘솔, PatternFly 5). 값은 frontend/src/styles.css의 스토어 규칙을 따르고,
+   입력란·버튼은 로그인 테마(../../login/resources/css/modo.css)와 같은 모양으로 맞춘다. */
+:root {
+  --modo-bg: #fffdf7;
+  --modo-text: #23243a;
+  --modo-subtle: #70748d;
+  --modo-label: #626983;
+  --modo-primary: #4258e7;
+  --modo-primary-hover: #3143bb;
+  --modo-soft: #e9eeff;
+  --modo-soft-hover: #dce5ff;
+  --modo-row-hover: #f7f8fe;
+  --modo-border: #dce0eb;
+  --modo-input-border: #cbd0dd;
+  --modo-error: #913f31;
+  --modo-error-bg: #f9ebe4;
+  --modo-error-border: #e7c9ba;
+  --modo-font: "Segoe UI", "Malgun Gothic", sans-serif;
+
+  --pf-v5-global--FontFamily--text: var(--modo-font);
+  --pf-v5-global--FontFamily--heading: var(--modo-font);
+  --pf-v5-global--Color--100: var(--modo-text);
+  --pf-v5-global--Color--200: var(--modo-subtle);
+  --pf-v5-global--BorderColor--100: var(--modo-border);
+  --pf-v5-global--link--Color: var(--modo-primary);
+  --pf-v5-global--link--Color--hover: var(--modo-primary-hover);
+  --pf-v5-global--primary-color--100: var(--modo-primary);
+  --pf-v5-global--primary-color--200: var(--modo-primary-hover);
+  --pf-v5-global--active-color--100: var(--modo-primary);
+  --pf-v5-global--danger-color--100: var(--modo-error);
+}
+
+body,
+.pf-v5-c-page {
+  background: var(--modo-bg);
+  color: var(--modo-text);
+  font-family: var(--modo-font);
+}
+
+:focus-visible {
+  outline: 3px solid var(--modo-primary);
+  outline-offset: 3px;
+}
+
+/* 헤더: 스토어처럼 흰 바탕에 MODO CLUB 로고와 아래 구분선 */
+.pf-v5-c-masthead {
+  --pf-v5-global--Color--100: var(--modo-text);
+  background: white;
+  border-bottom: 1px solid var(--modo-border);
+  color: var(--modo-text);
+}
+.pf-v5-c-masthead .pf-v5-c-toolbar {
+  background: transparent;
+}
+.pf-v5-c-masthead__brand img {
+  height: 30px;
+  width: auto;
+}
+.pf-v5-c-masthead .pf-v5-c-button.pf-m-plain,
+.pf-v5-c-masthead .pf-v5-c-menu-toggle {
+  color: var(--modo-text);
+}
+.pf-v5-c-masthead .pf-v5-c-menu-toggle {
+  border-radius: 10px;
+  font-weight: 700;
+}
+.pf-v5-c-masthead .pf-v5-c-menu-toggle::before {
+  border-color: var(--modo-border);
+  border-radius: 10px;
+}
+
+/* 왼쪽 메뉴: 흰 바탕, 고른 메뉴는 부드러운 파랑 */
+.pf-v5-c-page__sidebar,
+.pf-v5-c-page__sidebar-body {
+  background: white;
+  color: var(--modo-text);
+}
+.pf-v5-c-page__sidebar {
+  border-right: 1px solid var(--modo-border);
+}
+.pf-v5-c-nav {
+  padding: 12px 10px;
+}
+.pf-v5-c-nav .pf-v5-c-nav__link {
+  background: transparent;
+  border-radius: 10px;
+  color: var(--modo-text);
+  font-weight: 700;
+}
+.pf-v5-c-nav .pf-v5-c-nav__link::before,
+.pf-v5-c-nav .pf-v5-c-nav__link::after,
+.pf-v5-c-nav .pf-v5-c-nav__item::before {
+  border: 0;
+}
+.pf-v5-c-nav .pf-v5-c-nav__link:hover {
+  background: var(--modo-row-hover);
+  color: var(--modo-primary);
+}
+.pf-v5-c-nav .pf-v5-c-nav__link.pf-m-current,
+.pf-v5-c-nav .pf-v5-c-nav__item.pf-m-current > .pf-v5-c-nav__link {
+  background: var(--modo-soft);
+  color: var(--modo-primary);
+}
+.pf-v5-c-nav .pf-v5-c-nav__toggle-icon {
+  color: inherit;
+}
+.pf-v5-c-nav .pf-v5-c-nav__subnav {
+  --pf-v5-c-nav__subnav--PaddingLeft: 12px;
+}
+
+/* 본문: 제목은 스토어의 페이지 머리말처럼, 내용은 흰 카드 */
+.pf-v5-c-page__main-section {
+  background: transparent;
+}
+/* 화면 안쪽에 겹친 구역까지 카드로 만들지 않도록 맨 위 구역만 고른다. */
+.pf-v5-c-page__main > .pf-v5-c-page__main-section + .pf-v5-c-page__main-section {
+  background: white;
+  border: 1px solid var(--modo-border);
+  border-radius: 22px;
+  margin: 0 24px 24px;
+}
+.pf-v5-c-page__main-section .pf-v5-c-title.pf-m-2xl {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -.05em;
+}
+.pf-v5-c-page__main-section .pf-v5-c-content p {
+  color: var(--modo-subtle);
+}
+.pf-v5-c-card {
+  border: 1px solid var(--modo-border);
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+/* 입력란: 로그인 화면과 같은 모양 */
+.pf-v5-c-form__label-text {
+  color: var(--modo-label);
+  font-size: 12px;
+  font-weight: 700;
+}
+.pf-v5-c-form-control {
+  background: white;
+  border: 1px solid var(--modo-input-border);
+  border-radius: 10px;
+}
+.pf-v5-c-form-control.pf-m-disabled,
+.pf-v5-c-form-control.pf-m-readonly {
+  background: #f4f5f8;
+}
+.pf-v5-c-form-control::before,
+.pf-v5-c-form-control::after {
+  display: none;
+}
+.pf-v5-c-form-control:focus-within {
+  border-color: var(--modo-primary);
+}
+.pf-v5-c-form-control input:focus,
+.pf-v5-c-form-control select:focus {
+  outline: none;
+}
+.pf-v5-c-form-control.pf-m-error {
+  border-color: var(--modo-error);
+}
+.pf-v5-c-helper-text__item.pf-m-error {
+  color: var(--modo-error);
+}
+.pf-v5-c-menu-toggle:not(.pf-m-plain) {
+  border-radius: 10px;
+}
+.pf-v5-c-menu-toggle:not(.pf-m-plain)::before {
+  border-color: var(--modo-input-border);
+  border-radius: 10px;
+}
+/* 선택 상자 아래의 강조선 대신 테두리 색으로 상태를 보여준다. */
+.pf-v5-c-menu-toggle::after {
+  display: none;
+}
+.pf-v5-c-menu-toggle:not(.pf-m-plain):hover::before,
+.pf-v5-c-menu-toggle.pf-m-expanded::before {
+  border-color: var(--modo-primary);
+}
+
+/* 버튼: 주요 버튼은 스토어의 파란 버튼, 보조 버튼은 부드러운 파랑 */
+.pf-v5-c-button.pf-m-primary {
+  background: var(--modo-primary);
+  border-radius: 10px;
+  color: white;
+  font-weight: 800;
+}
+.pf-v5-c-button.pf-m-primary::after {
+  border-radius: 10px;
+}
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus {
+  background: var(--modo-primary-hover);
+}
+.pf-v5-c-button.pf-m-secondary {
+  background: var(--modo-soft);
+  border-radius: 10px;
+  color: var(--modo-text);
+  font-weight: 750;
+}
+.pf-v5-c-button.pf-m-secondary::after {
+  border: 0;
+}
+.pf-v5-c-button.pf-m-secondary:hover {
+  background: var(--modo-soft-hover);
+}
+.pf-v5-c-button.pf-m-link {
+  color: var(--modo-primary);
+  font-weight: 700;
+}
+
+/* 알림: 스토어의 오류 상자 */
+.pf-v5-c-alert {
+  border-radius: 10px;
+  box-shadow: none;
+}
+.pf-v5-c-alert.pf-m-danger {
+  background: var(--modo-error-bg);
+  border: 1px solid var(--modo-error-border);
+  color: var(--modo-error);
+}
+
+/* 좁은 화면: 카드 좌우 여백을 줄인다. */
+@media (max-width: 767px) {
+  .pf-v5-c-page__main > .pf-v5-c-page__main-section + .pf-v5-c-page__main-section {
+    margin: 0 12px 16px;
+  }
+}

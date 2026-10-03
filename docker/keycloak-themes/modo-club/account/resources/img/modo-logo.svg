@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="170" height="36" viewBox="0 0 170 36" role="img" aria-label="MODO CLUB">
+  <!-- 스토어 헤더의 .brand와 같은 모양: 굵은 MODO와 작은 파란 CLUB -->
+  <text x="0" y="29" font-family="Segoe UI, Malgun Gothic, sans-serif" font-size="32" font-weight="900" letter-spacing="-2.4" fill="#23243a">MODO</text>
+  <text x="105" y="25" font-family="Segoe UI, Malgun Gothic, sans-serif" font-size="13" font-weight="800" letter-spacing="1.6" fill="#4258e7">CLUB</text>
+</svg>

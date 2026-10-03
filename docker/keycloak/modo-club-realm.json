@@ -3,6 +3,7 @@
   "displayName": "MODO CLUB",
   "displayNameHtml": "<a href=\"http://127.0.0.1:5173/\">MODO <span>CLUB</span></a>",
   "loginTheme": "modo-club",
+  "accountTheme": "modo-club",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": true,
@@ -62,6 +63,7 @@
       "firstName": "모도",
       "lastName": "김",
       "enabled": true,
+      "realmRoles": ["default-roles-modo-club"],
       "credentials": [
         { "type": "password", "value": "modo_buyer_local", "temporary": false }
       ]
@@ -73,6 +75,7 @@
       "firstName": "다른",
       "lastName": "이",
       "enabled": true,
+      "realmRoles": ["default-roles-modo-club"],
       "credentials": [
         { "type": "password", "value": "modo_other_local", "temporary": false }
       ]
@@ -84,7 +87,7 @@
       "firstName": "admin",
       "lastName": "modo",
       "enabled": true,
-      "realmRoles": ["shop-admin"],
+      "realmRoles": ["default-roles-modo-club", "shop-admin"],
       "credentials": [
         { "type": "password", "value": "admin", "temporary": false }
       ]

@@ -75,6 +75,7 @@ $env:TOSS_SECRET_KEY = 'test_gsk_REPLACE_WITH_YOUR_KEY'
 | Keycloak 관리자(슈퍼 유저) | `admin` / `keycloak_admin_local` (`KEYCLOAK_ADMIN_USERNAME`·`KEYCLOAK_ADMIN_PASSWORD`로 변경, 첫 실행 때만 적용). 쇼핑몰 관리자와 다른 계정이며 [로컬 계정](authentication.md#로컬-계정) 참고 |
 | realm·client | `modo-club` / `modo-club-web` ([realm 설정](../docker/keycloak/modo-club-realm.json)) |
 | 로그인 테마 | `modo-club` ([테마 폴더](../docker/keycloak-themes/modo-club/login/), [디자인 설명](authentication.md#로그인-화면-디자인)) |
+| 계정 테마 | `modo-club` ([테마 폴더](../docker/keycloak-themes/modo-club/account/), [디자인 설명](authentication.md#계정-설정-화면-디자인)) |
 | 실행 모드 | `start-dev` (HTTP, 로컬 개발용) |
 | 메모리 한도 | 1.5GB. 힙은 한도의 70%까지, 힙 밖 메모리는 약 300MB |
 

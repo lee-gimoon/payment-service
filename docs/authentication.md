@@ -227,6 +227,29 @@ realm 설정 파일에 쇼핑몰 관리자를 넣기 전부터 쓰던 환경이�
 - 개발 모드에서는 테마를 캐시하지 않으므로 CSS나 문구를 고친 뒤 로그인 화면을 새로고침하면 바로 반영됩니다. 테마 폴더를 처음 연결할 때만 `docker compose up -d keycloak`으로 컨테이너를 다시 만듭니다.
 - 테마 적용 전부터 있던 realm은 설정 파일이 다시 적용되지 않습니다. 관리 콘솔 **Realm settings → Themes → Login theme**에서 `modo-club`을, **Realm settings → General → HTML Display name**에 설정 파일의 `displayNameHtml` 값을 넣습니다.
 
+## 계정 설정 화면 디자인
+
+마이페이지·관리자 홈의 `계정 설정`이 여는 Keycloak 계정 화면(계정 콘솔)은 계정 테마 `modo-club`이 스토어와 같은 모양으로 꾸밉니다. 이 화면은 Keycloak이 만든 React 앱(PatternFly 5)이라, 화면 구조·메뉴·문구는 그대로 두고 CSS와 로고만 덧입힙니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| [theme.properties](../docker/keycloak-themes/modo-club/account/theme.properties) | 부모 테마(`keycloak.v3`), 추가 CSS, 로고와 로고 링크, 탭 제목 지정, 다크 모드 끔 |
+| [modo-account.css](../docker/keycloak-themes/modo-club/account/resources/css/modo-account.css) | 크림색 배경, 흰 헤더, 흰 왼쪽 메뉴(고른 메뉴는 부드러운 파랑), 흰 카드, 입력란·버튼·알림. 값은 [styles.css](../frontend/src/styles.css)와 로그인 테마를 따름 |
+| [modo-logo.svg](../docker/keycloak-themes/modo-club/account/resources/img/modo-logo.svg) | 헤더의 `MODO CLUB` 로고 |
+
+- realm 설정의 `accountTheme`이 이 테마를 고릅니다.
+- 로고를 누르면 스토어(`logoUrl`)로 가고, 스토어에서 연 경우 `MODO CLUB(으)로 돌아가기` 링크가 마이페이지로 돌려보냅니다. 배포할 때는 `logoUrl`도 실제 스토어 주소로 바꿉니다.
+- 화면 언어는 브라우저 언어나 회원이 계정 화면에서 고른 언어를 따릅니다. 한국어 브라우저에서는 한국어로 나옵니다.
+- 계정 테마 폴더를 처음 추가했을 때는 `docker compose restart keycloak`으로 Keycloak을 다시 시작해야 테마 목록에 나타납니다. 그 뒤 CSS 수정은 새로고침만 하면 반영됩니다.
+- 테마 적용 전부터 있던 realm은 관리 콘솔 **Realm settings → Themes → Account theme**에서 `modo-club`을 고릅니다. 명령으로 바꿀 수도 있습니다.
+
+```sh
+docker exec payment-service-keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password keycloak_admin_local
+docker exec payment-service-keycloak /opt/keycloak/bin/kcadm.sh update realms/modo-club -s accountTheme=modo-club
+```
+
+Windows의 Git Bash에서는 컨테이너 안 경로가 바뀌지 않게 `MSYS_NO_PATHCONV=1`을 앞에 붙입니다.
+
 ## Keycloak·React·Spring의 책임
 
 **인증**은 “요청한 사람이 누구인지” 확인하는 일이고, **인가**는 “그 사람이 이 요청을 해도 되는지” 판단하는 일입니다. Keycloak은 로그인할 때 회원을 확인하고 토큰을 발급합니다. Spring API 서버는 요청마다 그 토큰을 검증하고, API와 데이터에 접근해도 되는지 판단합니다.
@@ -290,6 +313,7 @@ realm 설정 파일에 쇼핑몰 관리자를 넣기 전부터 쓰던 환경이�
 | 토큰 교환에서 CORS 오류 | client의 Web origins에 쇼핑몰 주소가 없음 |
 | 로그인은 되는데 API가 401 | 토큰의 `iss`나 `aud`가 서버 설정과 다름 |
 | 쇼핑몰 관리자인데 관리자 API가 403 | 토큰에 `shop-admin`이 없음. 역할을 `master`가 아닌 `modo-club` realm에 만들었는지 확인하고, 역할을 준 뒤 로그아웃·재로그인 |
+| `계정 설정` 화면이 `Something went wrong`, 계정 API가 401 | 회원에게 기본 역할 `default-roles-modo-club`(계정 화면 권한 포함)이 없음. 예전 설정 파일로 만든 테스트 회원에게 생길 수 있음. **Users → 회원 → Role mapping → Assign role**에서 `default-roles-modo-club`을 주고 다시 로그인. 지금 설정 파일은 테스트 회원에게 이 역할을 줌 |
 | 새로고침하면 로그인이 풀림 | `localhost`와 `127.0.0.1`을 섞어 씀. 항상 `127.0.0.1`을 씀 |
 | 헤더에 로그인 버튼이 늦게 뜨거나 주문 조회가 401 | Keycloak이 꺼져 있거나 아직 시작 중. 첫 시작은 1분쯤 걸림 |
 
