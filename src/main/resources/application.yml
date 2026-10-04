@@ -6,6 +6,11 @@ spring:
     url: ${PAYMENT_DB_URL:jdbc:postgresql://localhost:5432/payment_service}
     username: ${PAYMENT_DB_USERNAME:payment}
     password: ${PAYMENT_DB_PASSWORD:payment_local}
+    # 운영 배포(Railway)는 통신이 없는 서버를 재운다. 쉬는 연결을 붙잡고 있으면 잠들지 못하므로 운영에서는 최소 연결을 0으로 둔다.
+    # 기본값은 HikariCP 기본값과 같다(최소 연결 10개, 쉬는 연결은 10분 뒤 정리).
+    hikari:
+      minimum-idle: ${PAYMENT_DB_POOL_MIN_IDLE:10}
+      idle-timeout: ${PAYMENT_DB_POOL_IDLE_TIMEOUT_MS:600000}
 
   # 스키마 변경은 Flyway로만 적용한다.
   jpa:
@@ -34,19 +39,24 @@ payment:
     secret-key: ${TOSS_SECRET_KEY:}
     payment-method-variant-key: ${TOSS_PAYMENT_METHOD_VARIANT_KEY:}
     agreement-variant-key: ${TOSS_AGREEMENT_VARIANT_KEY:}
-  # 결과를 모르는 승인을 1분마다 토스 조회로 확정한다.
+  # 결과를 모르는 승인을 interval마다 토스 조회로 확정한다.
   recovery:
     enabled: ${PAYMENT_RECOVERY_ENABLED:true}
+    interval: ${PAYMENT_RECOVERY_INTERVAL:PT1M}
 
-# 결제 기한(after)이 지난 결제 대기 주문을 10분마다 취소한다. 기한은 PT24H, PT2M 같은 ISO-8601 기간으로 적는다.
+# 결제 기한(after)이 지난 결제 대기 주문을 interval마다 취소한다. 기간은 PT24H, PT2M 같은 ISO-8601 기간으로 적는다.
 order:
   unpaid-expiry:
     enabled: ${ORDER_UNPAID_EXPIRY_ENABLED:true}
     after: ${ORDER_UNPAID_EXPIRY_AFTER:PT24H}
+    interval: ${ORDER_UNPAID_EXPIRY_INTERVAL:PT10M}
 
 server:
   address: ${PAYMENT_BIND_ADDRESS:127.0.0.1}
   port: ${PORT:8080}
+  # 운영 배포는 nginx가 원래 주소(https, 스토어 도메인)를 X-Forwarded-* 헤더로 넘긴다.
+  # 상담 WebSocket의 같은 출처 검사가 이 주소를 보도록 운영 이미지에서만 framework로 켠다.
+  forward-headers-strategy: ${PAYMENT_FORWARD_HEADERS_STRATEGY:none}
   error:
     include-message: never
     include-stacktrace: never

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "docker/keycloak.Dockerfile",
+    "watchPatterns": [
+      "/docker/keycloak.Dockerfile",
+      "/docker/keycloak/**",
+      "/docker/keycloak-themes/**",
+      "/.dockerignore",
+      "/railway/keycloak.json"
+    ]
+  },
+  "deploy": {
+    "healthcheckPath": "/realms/modo-club",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 5,
+    "sleepApplication": true
+  }
+}

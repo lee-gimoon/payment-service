@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { createAddress, deleteAddress, getAddresses, getMyOrders, makeDefaultAddress, updateAddress } from "../api/myPageApi";
 import { useAuth } from "../auth/auth";
-import { accountUrl } from "../auth/keycloak";
+import { accountUrl, followAuthLink } from "../auth/keycloak";
 import { AddressForm } from "../components/AddressForm";
 import { AddressLines } from "../components/AddressLines";
 import { AppShell } from "../components/AppShell";
@@ -48,7 +48,7 @@ export function MyPage() {
       </div>
       <div className="actions">
         <Link className="primary-button" to="/admin">관리자 홈으로 이동</Link>
-        <a className="secondary-link" href={accountUrl("/mypage")}>계정 설정</a>
+        <a className="secondary-link" href={accountUrl("/mypage")} onClick={followAuthLink}>계정 설정</a>
       </div>
     </section>}
     {status === "signedIn" && customer && !customer.isShopAdmin && <>
@@ -57,7 +57,7 @@ export function MyPage() {
       <section className="mypage-section" aria-labelledby="account-title">
         <div className="card-heading"><h2 id="account-title">계정 설정</h2></div>
         <p className="subtle">이름, 이메일, 비밀번호, 2단계 인증은 로그인 서비스(Keycloak)의 계정 화면에서 바꿉니다.</p>
-        <a className="secondary-link" href={accountUrl("/mypage")}>계정 설정 열기 <span aria-hidden="true">↗</span></a>
+        <a className="secondary-link" href={accountUrl("/mypage")} onClick={followAuthLink}>계정 설정 열기 <span aria-hidden="true">↗</span></a>
       </section>
     </>}
   </AppShell>;

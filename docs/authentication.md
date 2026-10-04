@@ -317,6 +317,12 @@ Windows의 Git Bash에서는 컨테이너 안 경로가 바뀌지 않게 `MSYS_N
 | 새로고침하면 로그인이 풀림 | `localhost`와 `127.0.0.1`을 섞어 씀. 항상 `127.0.0.1`을 씀 |
 | 헤더에 로그인 버튼이 늦게 뜨거나 주문 조회가 401 | Keycloak이 꺼져 있거나 아직 시작 중. 첫 시작은 1분쯤 걸림 |
 
-## 운영 배포 전에 할 일
+## 운영 배포
 
-이 구성은 로컬 개발용입니다. 배포할 때는 `start-dev` 대신 `start` 모드, HTTPS와 고정 hostname, 관리 콘솔 접근 제한, 메일 서버(이메일 인증·비밀번호 찾기), Keycloak DB 백업과 버전 업그레이드 절차를 따로 준비합니다.
+위의 compose 구성은 로컬 개발용(`start-dev`)입니다. Railway 배포는 [keycloak.Dockerfile](../docker/keycloak.Dockerfile)로 만든 운영 모드(`start --optimized`) 이미지를 씁니다. HTTPS는 Railway가 처리하고 hostname은 공개 주소로 고정하며, realm 파일의 테스트 회원은 빼고 스토어 주소를 바꿔 넣습니다. 설정 순서와 쇼핑몰 관리자 만들기는 [Railway 배포](deployment.md)에 있습니다.
+
+시연용 배포라 다음은 준비하지 않았습니다. 실제 서비스로 쓰려면 따로 갖춥니다.
+
+- 관리 콘솔(`/admin`) 접근 제한. 지금은 공개 주소에 있으므로 관리자 비밀번호를 길고 무작위로 정합니다.
+- 메일 서버(이메일 인증·비밀번호 찾기)
+- Keycloak DB 백업과 버전 업그레이드 절차

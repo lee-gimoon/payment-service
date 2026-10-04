@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { getChatRooms } from "../api/chatApi";
 import { getAdminOrderCounts } from "../api/adminOrderApi";
 import { useAuth } from "../auth/auth";
-import { accountUrl } from "../auth/keycloak";
+import { accountUrl, followAuthLink } from "../auth/keycloak";
 import { AdminGate } from "../components/AdminGate";
 import { AppShell } from "../components/AppShell";
 import type { AdminOrderCounts } from "../types/admin";
@@ -53,7 +53,7 @@ function AdminHomeCards() {
       <p>{waiting === null ? "고객 문의에 답합니다." : <>답변 대기 <strong>{waiting}</strong>건</>}</p>
       <span className="card-link">상담 관리로 이동 →</span>
     </Link>
-    <a className="admin-home-card" href={accountUrl("/admin")}>
+    <a className="admin-home-card" href={accountUrl("/admin")} onClick={followAuthLink}>
       <span className="eyebrow">ACCOUNT</span>
       <h2>계정 설정</h2>
       <p>이름, 비밀번호, 2단계 인증은 로그인 서비스(Keycloak) 계정 화면에서 바꿉니다.</p>

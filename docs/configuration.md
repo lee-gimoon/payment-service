@@ -11,16 +11,23 @@
 | `PAYMENT_DB_URL` | `jdbc:postgresql://localhost:5432/payment_service` | JDBC 연결 주소 |
 | `PAYMENT_DB_USERNAME` | `payment` | DB 사용자 |
 | `PAYMENT_DB_PASSWORD` | `payment_local` | DB 암호 |
+| `PAYMENT_DB_POOL_MIN_IDLE` | `10` | DB 커넥션 풀이 남겨 두는 쉬는 연결 수 |
+| `PAYMENT_DB_POOL_IDLE_TIMEOUT_MS` | `600000` | 최소 수를 넘는 쉬는 연결을 닫기까지의 시간(밀리초) |
 | `PAYMENT_BIND_ADDRESS` | `127.0.0.1` | 백엔드 수신 주소 |
 | `PORT` | `8080` | 백엔드 포트 |
+| `PAYMENT_FORWARD_HEADERS_STRATEGY` | `none` | 앞단 프록시가 넘긴 `X-Forwarded-*`를 원래 주소로 쓸지. 프록시 뒤에서만 받을 때 `framework` |
 | `TOSS_CLIENT_KEY` | 빈 문자열 | 브라우저 SDK의 공개 클라이언트 키 |
 | `TOSS_SECRET_KEY` | 빈 문자열 | 서버 승인·조회 API의 시크릿 키 |
 | `TOSS_PAYMENT_METHOD_VARIANT_KEY` | 빈 문자열 | 결제수단 UI의 variantKey |
 | `TOSS_AGREEMENT_VARIANT_KEY` | 빈 문자열 | 약관 UI의 variantKey |
 | `PAYMENT_RECOVERY_ENABLED` | `true` | 미확정 승인 복구 작업 실행 여부 |
+| `PAYMENT_RECOVERY_INTERVAL` | `PT1M` | 미확정 승인 복구 작업 주기. ISO-8601 기간 |
 | `ORDER_UNPAID_EXPIRY_ENABLED` | `true` | 미결제 주문 자동 취소 작업 실행 여부 |
 | `ORDER_UNPAID_EXPIRY_AFTER` | `PT24H` | 결제 대기 주문의 결제 기한. ISO-8601 기간(`PT24H`, `PT2M` 등) |
+| `ORDER_UNPAID_EXPIRY_INTERVAL` | `PT10M` | 미결제 주문 자동 취소 작업 주기. ISO-8601 기간 |
 | `KEYCLOAK_ISSUER_URI` | `http://127.0.0.1:8081/realms/modo-club` | access token 발급자. 공개키를 이 주소에서 찾는다 |
+
+운영 이미지([Dockerfile](../Dockerfile))는 방문이 없을 때 서버가 잠들 수 있도록 일부 값을 바꿔 둡니다(작업 주기 30분, 쉬는 연결 0개 등). 운영 값과 Railway 변수는 [Railway 배포](deployment.md)에 있습니다.
 
 프런트엔드는 `GET /payment-config`로 공개 키와 UI 설정을 받습니다. Keycloak 주소를 바꿀 때만 `frontend/.env.local`에 `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID`를 지정합니다.
 
@@ -48,13 +55,13 @@ $env:TOSS_SECRET_KEY = 'test_gsk_REPLACE_WITH_YOUR_KEY'
 
 ## 결제 복구 작업
 
-- 결과를 모르는 승인(`APPROVING`·`UNKNOWN`)을 1분마다 토스에 조회합니다. 한 번에 최대 50건이며, 1시간이 지나도 모르면 `REVIEW_REQUIRED`로 남깁니다.
+- 결과를 모르는 승인(`APPROVING`·`UNKNOWN`)을 1분마다(`PAYMENT_RECOVERY_INTERVAL`) 토스에 조회합니다. 운영 배포는 30분마다이며, 서버가 잠든 동안은 멈췄다가 깨어나고 1분 뒤 실행합니다. 한 번에 최대 50건이며, 1시간이 지나도 모르면 `REVIEW_REQUIRED`로 남깁니다.
 - `PAYMENT_RECOVERY_ENABLED=false`는 주기 작업만 끕니다. 승인 요청 중 즉시 조회와, 같은 결제 키로 다시 요청할 때의 조회는 계속 동작합니다.
 - 끄면 미확정 주문이 오래 막힐 수 있으니 로컬 개발에서도 기본값을 유지합니다. 동작 규칙은 [아키텍처](architecture.md#실패와-복구)를 참고합니다.
 
 ## 미결제 주문 자동 취소
 
-- 결제 기한(`ORDER_UNPAID_EXPIRY_AFTER`, 기본 24시간)이 지난 결제 대기 주문을 10분마다 `CANCELED`로 바꿉니다. 승인 중·결과 모름·결제 완료 주문과, 최근 30분 안에 결제창을 연 주문은 건드리지 않습니다.
+- 결제 기한(`ORDER_UNPAID_EXPIRY_AFTER`, 기본 24시간)이 지난 결제 대기 주문을 10분마다(`ORDER_UNPAID_EXPIRY_INTERVAL`, 운영 배포는 30분) `CANCELED`로 바꿉니다. 승인 중·결과 모름·결제 완료 주문과, 최근 30분 안에 결제창을 연 주문은 건드리지 않습니다.
 - 처음 켜면 이미 기한이 지난 로컬 결제 대기 주문(배송지 없이 만든 이전 주문 포함)이 서버 시작 1분 뒤 한꺼번에 취소됩니다.
 - 로컬에서 바로 확인하려면 `ORDER_UNPAID_EXPIRY_AFTER=PT2M`으로 실행하거나, pgAdmin에서 주문의 `created_at`을 하루 전으로 바꿉니다.
 - `ORDER_UNPAID_EXPIRY_ENABLED=false`로 끄면 결제 대기 주문이 계속 남습니다. 동작 규칙은 [아키텍처](architecture.md#미결제-주문-자동-취소)를 참고합니다.
@@ -114,4 +121,5 @@ SET TIME ZONE 'Asia/Seoul';
 
 - 프런트엔드는 `127.0.0.1:5173`에서 실행되고, [vite.config.ts](../frontend/vite.config.ts)의 프록시가 API 요청과 상담 WebSocket(`/ws`)을 `127.0.0.1:8080`으로 전달합니다. 포트가 사용 중이면 Vite가 다른 포트를 쓰므로 터미널에 표시된 주소를 확인합니다.
 - 상담 WebSocket은 같은 출처 연결만 받습니다. 프록시가 브라우저의 `Host`를 그대로 넘기므로 개발 서버에서는 따로 설정할 것이 없습니다. 화면을 다른 주소에서 띄우면 [ChatWebSocketConfiguration](../src/main/java/com/example/payment/chat/infrastructure/websocket/ChatWebSocketConfiguration.java)에 허용할 출처를 추가합니다.
+- 운영 배포처럼 앞단이 HTTPS를 처리하고 백엔드는 HTTP로 받으면, 브라우저 출처(`https://…`)와 백엔드가 보는 주소(`http://…`)가 달라 연결이 거부됩니다. nginx가 `Host`·`X-Forwarded-Host`·`X-Forwarded-Proto`를 넘기고 백엔드는 `PAYMENT_FORWARD_HEADERS_STRATEGY=framework`로 그 값을 씁니다.
 - 백엔드 포트를 바꾸면 Vite 프록시도 함께 바꿉니다.

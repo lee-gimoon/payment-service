@@ -1,11 +1,20 @@
 import Keycloak from "keycloak-js";
+import { SleepingServer } from "../lib/serverWakeup";
 
-// 로그인·회원가입 화면은 Keycloak이 제공한다. 이 앱은 비밀번호를 받지 않고 access token만 메모리에 둔다.
-const keycloak = new Keycloak({
+const config = {
   url: import.meta.env.VITE_KEYCLOAK_URL || "http://127.0.0.1:8081",
   realm: import.meta.env.VITE_KEYCLOAK_REALM || "modo-club",
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "modo-club-web"
-});
+};
+
+// 로그인·회원가입 화면은 Keycloak이 제공한다. 이 앱은 비밀번호를 받지 않고 access token만 메모리에 둔다.
+const keycloak = new Keycloak(config);
+
+// 운영 배포에서는 Keycloak도 방문이 없으면 잠든다. 어느 출처에서나 읽을 수 있는 realm 공개 정보로 깨어났는지 확인한다.
+const authServer = new SleepingServer(`${config.url}/realms/${config.realm}`);
+
+/** Keycloak 화면(계정 설정)으로 가는 링크의 onClick. Keycloak이 잠들었으면 깨운 뒤 이동한다. */
+export const followAuthLink = authServer.followWhenAwake;
 
 let initialized: Promise<boolean> | null = null;
 
@@ -19,13 +28,13 @@ export interface Customer {
 
 // 새로고침이나 결제창 복귀로 페이지를 다시 열어도 Keycloak 세션이 있으면 화면 이동 없이 토큰을 다시 받는다.
 export function initAuth(): Promise<boolean> {
-  initialized ??= keycloak.init({
+  initialized ??= authServer.whenAwake().then(() => keycloak.init({
     onLoad: "check-sso",
     pkceMethod: "S256",
     silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
     checkLoginIframe: false,
     messageReceiveTimeout: 3000
-  }).catch(() => false);
+  })).catch(() => false);
   return initialized;
 }
 
@@ -33,11 +42,23 @@ export function initAuth(): Promise<boolean> {
 export async function getAccessToken(): Promise<string | null> {
   if (!(await initAuth()) || !keycloak.authenticated) return null;
   try {
-    await keycloak.updateToken(30);
+    await refreshToken();
     return keycloak.token ?? null;
   } catch {
     keycloak.clearToken();
     return null;
+  }
+}
+
+// 오래 쉬는 동안 Keycloak이 잠들면 갱신 요청이 실패한다. 세션은 Keycloak DB에 남아 있으므로 깨운 뒤 한 번 더 시도하고,
+// 그래도 실패하면 세션이 끝난 것으로 본다.
+async function refreshToken(): Promise<void> {
+  try {
+    await keycloak.updateToken(30);
+  } catch (error) {
+    if (!authServer.sleeps) throw error;
+    await authServer.whenAwake(true);
+    await keycloak.updateToken(30);
   }
 }
 
@@ -69,11 +90,14 @@ function appUrl(path: string): string {
   return `${window.location.origin}${path}`;
 }
 
-export function login(returnPath: string): Promise<void> {
+// Keycloak 화면으로 이동하는 동작은 잠든 Keycloak이 오류 화면을 보여주지 않도록 깨운 뒤 이동한다.
+export async function login(returnPath: string): Promise<void> {
+  await authServer.whenAwake();
   return keycloak.login({ redirectUri: appUrl(returnPath), locale: "ko" });
 }
 
-export function register(returnPath: string): Promise<void> {
+export async function register(returnPath: string): Promise<void> {
+  await authServer.whenAwake();
   return keycloak.register({ redirectUri: appUrl(returnPath), locale: "ko" });
 }
 
@@ -82,6 +106,7 @@ export function accountUrl(returnPath: string): string {
   return keycloak.createAccountUrl({ redirectUri: appUrl(returnPath) });
 }
 
-export function logout(): Promise<void> {
+export async function logout(): Promise<void> {
+  await authServer.whenAwake();
   return keycloak.logout({ redirectUri: appUrl("/") });
 }

@@ -2,7 +2,7 @@
 
 Spring Boot와 React로 구성한 티셔츠 쇼핑몰의 주문·결제 서비스입니다. MODO CLUB 스토어에서 상품과 사이즈를 선택하고, 서버가 계산한 주문 금액으로 토스페이먼츠 결제를 진행합니다.
 
-현재 버전은 **토스 테스트 키를 사용하는 로컬 개발용 서비스**입니다. 회원가입·로그인은 Keycloak이 맡으며, 택배사 배송 추적 연동, 재고 보충·수정 기능, 취소·환불은 구현되어 있지 않습니다.
+현재 버전은 **토스 테스트 키를 사용하는 시연용 서비스**입니다. 로컬에서 실행하거나 [Railway에 배포](docs/deployment.md)할 수 있고, 어느 쪽이든 결제는 실제로 청구되지 않습니다. 회원가입·로그인은 Keycloak이 맡으며, 택배사 배송 추적 연동, 재고 보충·수정 기능, 취소·환불은 구현되어 있지 않습니다.
 
 ## 주요 기능
 
@@ -40,6 +40,7 @@ Spring Boot와 React로 구성한 티셔츠 쇼핑몰의 주문·결제 서비�
 | 인증 | Keycloak 26.7 (OIDC), Spring Security OAuth2 Resource Server, keycloak-js |
 | 실시간 상담 | Spring WebSocket(STOMP, 내장 메시지 브로커), @stomp/stompjs |
 | 테스트 | JUnit, Testcontainers, Node.js 내장 테스트 |
+| 배포 | Docker, nginx, Railway(방문이 없으면 백엔드·Keycloak을 재움) |
 
 정확한 의존성 버전은 [build.gradle](build.gradle)과 [package-lock.json](frontend/package-lock.json)에 있습니다.
 
@@ -136,7 +137,7 @@ npm test
 npm run build
 ```
 
-빌드 결과는 백엔드 JAR와 `frontend/dist/`로 나뉘며, 운영 배포 구성은 없습니다. 테스트 범위와 수동 결제 확인 절차는 [개발 가이드](docs/development.md)에 있습니다.
+빌드 결과는 백엔드 JAR와 `frontend/dist/`로 나뉩니다. 테스트 범위와 수동 결제 확인 절차는 [개발 가이드](docs/development.md)에, 운영 이미지와 Railway 배포 순서는 [배포 문서](docs/deployment.md)에 있습니다.
 
 ## 문서
 
@@ -151,6 +152,7 @@ npm run build
 | [로그인과 회원](docs/authentication.md) | 로그인 기술 기초(OAuth 2.0·OIDC·JWT), 로그인 흐름, 테스트 계정, realm 설정 |
 | [설정](docs/configuration.md) | 환경변수, 토스 키, 로컬 DB·pgAdmin·Keycloak 연결 |
 | [개발 가이드](docs/development.md) | 테스트, 빌드, 스키마 변경, 기여 시 확인 사항 |
+| [Railway 배포](docs/deployment.md) | 운영 서비스 구성, 방문이 없으면 잠드는 방식, Railway 설정 순서, 비용 |
 | [UI 디자인 기준](DESIGN.md) | 현재 화면의 스타일과 결제 문구 |
 
 ## 라이선스

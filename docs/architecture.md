@@ -173,7 +173,7 @@ stateDiagram-v2
 
 ## 미결제 주문 자동 취소
 
-주문만 만들고 결제하지 않은 주문은 결제 기한(기본 24시간, `ORDER_UNPAID_EXPIRY_AFTER`)이 지나면 `CANCELED`가 된다. 취소 작업(`UnpaidOrderExpiryService`)은 서버가 켜지고 1분 뒤부터 10분마다 실행되며, 한 번에 오래된 주문부터 최대 100건을 처리한다.
+주문만 만들고 결제하지 않은 주문은 결제 기한(기본 24시간, `ORDER_UNPAID_EXPIRY_AFTER`)이 지나면 `CANCELED`가 된다. 취소 작업(`UnpaidOrderExpiryService`)은 서버가 켜지고 1분 뒤부터 10분마다(`ORDER_UNPAID_EXPIRY_INTERVAL`) 실행되며, 한 번에 오래된 주문부터 최대 100건을 처리한다. 방문이 없으면 서버를 재우는 운영 배포에서는 30분마다 실행하고, 잠든 동안 밀린 주문은 깨어난 뒤 처리한다([Railway 배포](deployment.md#방문이-없으면-잠드는-방식)).
 
 | 취소 조건 | 이유 |
 | --- | --- |
@@ -190,7 +190,7 @@ stateDiagram-v2
 
 승인 관문이 PG 호출 전에 `APPROVING`을 커밋하므로, 서버가 중간에 멈추거나 결과를 저장하지 못해도 슬롯이 남아 새 승인을 막고 무엇을 조회할지 알 수 있다.
 
-복구 작업(`PaymentRecoveryService`)은 1분마다 실행되며, 마지막 확인 뒤 1분이 지난 `APPROVING`·`UNKNOWN` 시도를 최대 50건 토스에 조회한다.
+복구 작업(`PaymentRecoveryService`)은 1분마다(`PAYMENT_RECOVERY_INTERVAL`) 실행되며, 마지막 확인 뒤 1분이 지난 `APPROVING`·`UNKNOWN` 시도를 최대 50건 토스에 조회한다. 운영 배포에서는 30분마다 실행하고 서버가 잠든 동안은 멈춘다. 승인 요청 중의 즉시 조회와 같은 결제 키로 다시 요청할 때의 조회는 주기와 상관없이 동작한다.
 
 | 조회 결과 | 처리 |
 | --- | --- |

@@ -1,0 +1,12 @@
+# 세 운영 이미지(Dockerfile, frontend/Dockerfile, docker/keycloak.Dockerfile)가 모두 저장소 루트를 빌드 컨텍스트로 쓴다.
+.git
+.claude
+.gradle
+.idea
+.vscode
+build
+bin
+out
+docs
+**/node_modules
+frontend/dist

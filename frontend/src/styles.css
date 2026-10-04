@@ -23,6 +23,17 @@ button:disabled { opacity: .52; cursor: not-allowed; }
   font-size: 11px;
   font-weight: 650;
 }
+/* 운영 배포에서 잠든 서버를 깨우는 동안만 보이는 안내 띠 */
+.wake-notice {
+  padding: 9px 20px;
+  background: #e9eeff;
+  color: #23243a;
+  border-bottom: 1px solid #dce0eb;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 650;
+}
+.wake-notice[hidden] { display: none; }
 
 header, main, footer { max-width: 1440px; margin: auto; }
 header {
@@ -454,6 +465,7 @@ footer span { color: #70748d; font-weight: 500; }
 }
 @media (max-width: 520px) {
   .announcement { font-size: 9px; }
+  .wake-notice { padding: 8px 16px; font-size: 12px; }
   header { padding: 16px 20px; }
   header nav { gap: 6px 13px; flex-wrap: wrap; justify-content: flex-end; }
   header nav a, .nav-button { font-size: 12px; }
