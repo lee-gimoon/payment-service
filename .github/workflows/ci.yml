@@ -2,10 +2,17 @@
 # Railway 서비스의 "Wait for CI"를 켜 두면 이 검사가 통과한 커밋만 배포된다(docs/deployment.md).
 name: CI
 
+# 문서만 바뀐 커밋은 검사하지 않는다. Railway도 이런 커밋은 배포하지 않는다(서비스의 Watch Paths).
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
 
 permissions:
   contents: read
