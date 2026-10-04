@@ -31,7 +31,7 @@
 | `frontend/src/chat/` | 상담 WebSocket 연결, 한 대화의 메시지·보내는 중·안 읽은 수 관리 |
 | `frontend/src/components/ChatWidget.tsx`·`ChatThread.tsx` | 고객 문의 창, 고객·관리자가 함께 쓰는 대화 목록과 입력란 |
 | `frontend/src/lib/serverWakeup.ts` | 운영 배포에서 잠든 백엔드·Keycloak을 깨운 뒤 요청하기, 깨우는 중 안내 상태 |
-| `Dockerfile`, `frontend/Dockerfile`, `frontend/nginx/`, `docker/keycloak.Dockerfile`, `railway/` | 운영 이미지와 Railway 서비스 설정([Railway 배포](deployment.md)) |
+| `Dockerfile`, `frontend/Dockerfile`, `frontend/nginx/`, `docker/keycloak.Dockerfile` | 운영 이미지. Railway 서비스 설정은 대시보드에 있음([Railway 배포](deployment.md)) |
 | `frontend/tests/` | SDK 대역을 쓰는 결제창·인증 복귀·품절 거절 복원 테스트, 품절 사이즈 선택·담을 수 있는 수량·택배사 정보 테스트, 상담 메시지 합치기·재연결 복구·비동기 읽음 처리 테스트 |
 
 `...`는 `com/example/payment`입니다. 도메인 규칙은 [아키텍처](architecture.md)에 있습니다.

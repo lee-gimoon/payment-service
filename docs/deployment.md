@@ -21,12 +21,12 @@
 
 - 화면은 API를 같은 주소의 상대 경로(`/orders`, `/ws` 등)로 부릅니다. 개발 서버의 [vite.config.ts](../frontend/vite.config.ts) 프록시 규칙을 운영에서는 [nginx 설정](../frontend/nginx/default.conf.template)이 그대로 맡습니다. API 경로라도 브라우저가 페이지(`Accept: text/html`)를 요청하면 React 화면을 줍니다.
 - Postgres를 같이 재우면 백엔드·Keycloak이 깨어날 때 DB가 아직 잠들어 있어 시작에 실패할 수 있습니다. frontend는 메모리를 거의 쓰지 않고, 깨어 있어야 첫 화면이 바로 뜹니다.
-- 서비스별 빌드·배포 설정은 [railway/](../railway/)의 설정 파일(config as code)에 있습니다. Dockerfile 위치, 다시 배포할 파일 경로(watch paths), 상태 확인 주소, 잠듦 여부를 정합니다.
+- 서비스별 빌드·배포 설정(Dockerfile 위치, 다시 배포할 파일 경로, 상태 확인 주소, 잠듦 여부)은 Railway 대시보드에 직접 넣습니다([2단계](#2-서비스-3개)). 저장소 설정 파일(`railway.json`, config as code)은 Railway가 지원을 끝내 2026-08-28 이후 만든 프로젝트에는 적용되지 않습니다.
 - pgAdmin은 올리지 않습니다. 운영 DB는 Railway 대시보드의 Postgres 화면에서 봅니다.
 
 ## 방문이 없으면 잠드는 방식
 
-Railway는 서비스가 **바깥으로 보내는 통신이 5~10분 없으면** 재우고, 인터넷이나 같은 프로젝트의 다른 서비스에서 요청이 오면 깨웁니다. 내부망으로 DB와 주고받는 통신도 통신으로 칩니다. 잠든 서비스에 온 첫 요청은 502로 실패할 수 있습니다([Railway 문서](https://docs.railway.com/reference/app-sleeping)).
+Railway는 서비스가 **바깥으로 보내는 통신이 5~10분 없으면** 재우고, 인터넷이나 같은 프로젝트의 다른 서비스에서 요청이 오면 깨웁니다. 내부망으로 DB와 주고받는 통신도 통신으로 칩니다. 대시보드 설명으로는 잠든 동안 온 요청을 대기시켰다가 깨어나면 처리하고, 문서에는 첫 요청이 502로 실패할 수 있다고 되어 있어 화면은 두 경우 모두 대비합니다([Railway 문서](https://docs.railway.com/reference/app-sleeping)).
 
 ### 잠들 수 있게 바꾼 것
 
@@ -68,7 +68,6 @@ Railway는 서비스가 **바깥으로 보내는 통신이 5~10분 없으면** �
 | [frontend/Dockerfile](../frontend/Dockerfile) | 스토어 이미지. Keycloak 공개 주소를 빌드 인자 `VITE_KEYCLOAK_URL`로 받음 |
 | [frontend/nginx/default.conf.template](../frontend/nginx/default.conf.template) | 화면·API·WebSocket 나누기, 내부망 백엔드 전달, 캐시·결제창 팝업 헤더 |
 | [docker/keycloak.Dockerfile](../docker/keycloak.Dockerfile) | Keycloak 이미지. 스토어 주소를 빌드 인자 `STORE_URL`로 받아 realm과 계정 테마에 넣음 |
-| [railway/*.json](../railway/) | 서비스별 Railway 빌드·배포 설정 |
 | [.dockerignore](../.dockerignore) | 세 이미지가 공유하는 빌드 컨텍스트(저장소 루트)에서 뺄 파일 |
 
 운영용 realm은 [modo-club-realm.json](../docker/keycloak/modo-club-realm.json)에서 이미지 빌드 때 만듭니다. **테스트 회원은 뺍니다.** 비밀번호가 저장소에 공개돼 있어 그대로 올리면 누구나 쇼핑몰 관리자로 로그인할 수 있기 때문입니다. 로컬 스토어 주소 `http://127.0.0.1:5173`은 `STORE_URL`로 바꿉니다.
@@ -84,7 +83,7 @@ Railway는 서비스가 **바깥으로 보내는 통신이 5~10분 없으면** �
 ### 1. 프로젝트와 Postgres
 
 1. **New Project**로 빈 프로젝트를 만들고 **+ Create → Database → PostgreSQL**을 추가합니다. 서비스 이름은 `Postgres`로 둡니다(변수 참조에 쓰임).
-2. Keycloak용 DB를 한 번 만듭니다. Postgres 서비스의 **Variables**에서 `DATABASE_PUBLIC_URL` 값을 복사해 로컬에서 실행합니다.
+2. Keycloak용 DB를 한 번 만듭니다. Postgres 서비스의 **Database → Data**에 있는 SQL 입력란에서 `CREATE DATABASE keycloak;`을 실행하고, `SELECT datname FROM pg_database;` 결과에 `keycloak`이 있는지 확인합니다. 입력란을 쓸 수 없으면 **Variables**의 `DATABASE_PUBLIC_URL` 값으로 로컬에서 실행합니다.
 
    ```sh
    docker run --rm postgres:18-alpine psql "DATABASE_PUBLIC_URL_값" -c "CREATE DATABASE keycloak;"
@@ -94,21 +93,41 @@ Railway는 서비스가 **바깥으로 보내는 통신이 5~10분 없으면** �
 
 ### 2. 서비스 3개
 
-**+ Create → GitHub Repo**로 이 저장소를 세 번 추가하고 이름을 정확히 `backend`, `frontend`, `keycloak`으로 바꿉니다. 이름이 내부 주소(`backend.railway.internal`)와 변수 참조에 쓰입니다.
+**+ Create → GitHub Repo**로 이 저장소를 세 번 추가하고, 패널 맨 위 제목을 눌러 이름을 정확히 `backend`, `frontend`, `keycloak`으로 바꿉니다. 이름이 변수 참조(`${{backend.RAILWAY_PRIVATE_DOMAIN}}` 등)에 쓰입니다.
 
-각 서비스의 **Settings**에서:
+새로 만든 서비스는 적용 전(New) 상태로 모입니다. 아래 설정을 넣는 동안에는 위쪽 **Deploy**를 누르지 않습니다. **Settings**에서는 **Filter Settings** 칸에 검색어를 넣으면 항목을 찾기 쉽습니다.
 
-| 항목 | backend | frontend | keycloak |
+| 설정 (검색어) | backend | frontend | keycloak |
 | --- | --- | --- | --- |
-| Source → Branch | `main` | `main` | `main` |
-| Config-as-code → Railway Config File | `/railway/backend.json` | `/railway/frontend.json` | `/railway/keycloak.json` |
-| Networking → Public Domain | **만들지 않음** | Generate Domain (포트 `8080`) | Generate Domain (포트 `8080`) |
+| Dockerfile 위치: **Variables** 탭에 `RAILWAY_DOCKERFILE_PATH` | 넣지 않음(루트 `Dockerfile`) | `frontend/Dockerfile` | `docker/keycloak.Dockerfile` |
+| Watch Paths (`watch`) | `/src/main/**`, `/build.gradle`, `/settings.gradle`, `/gradle/**`, `/Dockerfile` | `/frontend/**` | `/docker/keycloak.Dockerfile`, `/docker/keycloak/**`, `/docker/keycloak-themes/**` |
+| Healthcheck Path (`health`) | `/payment-config` | `/` | `/realms/modo-club` |
+| Serverless (`serverless`) | 켬 | 끔 | 켬 |
 
-Root Directory는 비워 둡니다. 세 이미지 모두 저장소 루트를 빌드 컨텍스트로 씁니다. 잠듦(Serverless)은 설정 파일의 `sleepApplication`으로 켜지므로 따로 켜지 않아도 됩니다.
+- Source의 Branch는 `main`, Root Directory는 비워 둡니다. 세 이미지 모두 저장소 루트를 빌드 컨텍스트로 씁니다.
+- Watch Paths는 바뀐 파일이 목록에 걸릴 때만 그 서비스를 다시 배포하게 합니다. 화면만 고치면 backend는 다시 배포되지 않습니다.
+- Healthcheck Path는 새 버전이 200으로 답할 때만 교체하게 합니다. 300초 안에 답이 없으면 배포를 실패로 처리하고 이전 버전을 유지합니다.
 
-### 3. 변수
+### 3. 첫 배포와 도메인
 
-각 서비스의 **Variables → Raw Editor**에 붙여 넣습니다. `${{...}}`는 Railway가 다른 서비스의 값으로 채우는 참조라 그대로 둡니다.
+공개 도메인은 서비스가 실제로 만들어진 뒤에만 붙일 수 있습니다. 적용 전 상태에서 Networking을 열면 `Could not load public networking`이 나옵니다.
+
+1. 위쪽 **Deploy**로 모아 둔 변경을 적용합니다. 아직 변수가 없어서 세 서비스 모두 실패하는 것이 정상입니다.
+
+   | 서비스 | 실패 | 이유 |
+   | --- | --- | --- |
+   | backend | Healthcheck failure | DB 주소가 없어 기본값 `localhost:5432`에 연결하려다 시작하지 못함 |
+   | frontend | 빌드 실패 | `VITE_KEYCLOAK_URL(Keycloak 공개 주소)이 필요합니다` |
+   | keycloak | 빌드 실패 | `STORE_URL(스토어 공개 주소)이 필요합니다` |
+
+   frontend·keycloak은 주소 없이 빌드되면 잘못된 주소가 이미지에 굳으므로 일부러 멈추게 했습니다. 특히 keycloak은 처음 켜질 때 realm에 스토어 주소를 한 번만 저장합니다.
+2. frontend와 keycloak의 **Settings → Networking → Generate Domain**을 누르고 포트 `8080`을 입력합니다. backend에는 만들지 않습니다.
+
+8080은 각 컨테이너 안에서 프로그램이 듣는 포트입니다. 서비스마다 컨테이너가 따로라서 같은 번호를 써도 겹치지 않고, Railway가 도메인 이름으로 어느 서비스로 보낼지 정합니다.
+
+### 4. 변수와 다시 배포
+
+각 서비스의 **Variables → Raw Editor**에 붙여 넣고 저장합니다. `<frontend 도메인>`과 `<keycloak 도메인>`은 3단계에서 만든 주소(`...up.railway.app`)로 바꿉니다. `${{...}}`는 Railway가 다른 서비스의 값으로 채우는 참조라 그대로 둡니다. 도메인은 참조(`${{keycloak.RAILWAY_PUBLIC_DOMAIN}}`) 대신 실제 주소를 적습니다. 참조로 쓰면 배포 전에 확인되지 않았다는 경고가 붙고, 실제 주소가 읽기도 쉽습니다.
 
 **backend**
 
@@ -117,7 +136,7 @@ PORT=8080
 PAYMENT_DB_URL=jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
 PAYMENT_DB_USERNAME=${{Postgres.PGUSER}}
 PAYMENT_DB_PASSWORD=${{Postgres.PGPASSWORD}}
-KEYCLOAK_ISSUER_URI=https://${{keycloak.RAILWAY_PUBLIC_DOMAIN}}/realms/modo-club
+KEYCLOAK_ISSUER_URI=https://<keycloak 도메인>/realms/modo-club
 TOSS_CLIENT_KEY=test_gck_REPLACE_WITH_YOUR_KEY
 TOSS_SECRET_KEY=test_gsk_REPLACE_WITH_YOUR_KEY
 ```
@@ -125,9 +144,10 @@ TOSS_SECRET_KEY=test_gsk_REPLACE_WITH_YOUR_KEY
 **keycloak**
 
 ```properties
+RAILWAY_DOCKERFILE_PATH=docker/keycloak.Dockerfile
 PORT=8080
-STORE_URL=https://${{frontend.RAILWAY_PUBLIC_DOMAIN}}
-KC_HOSTNAME=https://${{RAILWAY_PUBLIC_DOMAIN}}
+STORE_URL=https://<frontend 도메인>
+KC_HOSTNAME=https://<keycloak 도메인>
 KC_DB_URL=jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/keycloak
 KC_DB_USERNAME=${{Postgres.PGUSER}}
 KC_DB_PASSWORD=${{Postgres.PGPASSWORD}}
@@ -138,18 +158,18 @@ KC_BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_LONG_RANDOM_PASSWORD
 **frontend**
 
 ```properties
+RAILWAY_DOCKERFILE_PATH=frontend/Dockerfile
 PORT=8080
-VITE_KEYCLOAK_URL=https://${{keycloak.RAILWAY_PUBLIC_DOMAIN}}
-BACKEND_URL=http://${{backend.RAILWAY_PRIVATE_DOMAIN}}:${{backend.PORT}}
+VITE_KEYCLOAK_URL=https://<keycloak 도메인>
+BACKEND_URL=http://${{backend.RAILWAY_PRIVATE_DOMAIN}}:8080
 ```
 
+- `BACKEND_URL`은 backend의 내부 주소를 참조로 받습니다. 서비스 이름을 바꾸기 전 이름으로 내부 주소가 정해졌을 수 있어서 직접 적지 않습니다.
 - `STORE_URL`과 `VITE_KEYCLOAK_URL`은 **빌드할 때** 이미지에 들어갑니다(Dockerfile의 `ARG`). 도메인을 바꾸면 해당 서비스를 다시 배포합니다.
-- Keycloak 관리 콘솔은 공개 주소에 있으므로 관리자 비밀번호는 길고 무작위로 정합니다. 첫 실행 때만 적용됩니다.
+- `KC_BOOTSTRAP_ADMIN_*`는 Keycloak 관리 화면의 슈퍼 관리자 계정이며 **처음 켜질 때 한 번만** 만들어집니다. 나중에 변수를 바꾸고 다시 배포해도 비밀번호는 바뀌지 않으므로, 관리 화면(master realm → **Users** → 계정 → **Credentials → Reset password**)에서 바꿉니다. 관리 화면은 공개 주소에 있으니 비밀번호는 길고 무작위로 정합니다.
 - 이미지에 들어 있는 운영 기본값(메모리, 작업 주기, 커넥션 풀 등)은 [Dockerfile](../Dockerfile)과 [keycloak.Dockerfile](../docker/keycloak.Dockerfile)의 `ENV`에 있습니다. 같은 이름의 변수를 Railway에 넣으면 덮어씁니다.
 
-### 4. 배포
-
-변수를 저장하면 Railway가 바뀐 내용을 모아 보여 줍니다. **Deploy**로 적용합니다. 세 서비스를 한꺼번에 배포해도 됩니다.
+변수를 다 넣고 위쪽 **Deploy**를 누릅니다. 몇 분 뒤 네 서비스가 모두 Online이 되면 됩니다.
 
 | 서비스 | 정상 로그 |
 | --- | --- |
@@ -161,10 +181,14 @@ frontend 도메인을 열어 상품 목록이 보이면 화면·백엔드·DB �
 
 ### 5. 쇼핑몰 관리자 만들기
 
-운영 realm에는 테스트 회원이 없으므로 관리자를 직접 만듭니다.
+운영 realm에는 테스트 회원이 없으므로 관리자를 직접 만듭니다. 계정은 세 종류입니다. Keycloak 슈퍼 관리자(master, Keycloak 관리), 쇼핑몰 관리자(modo-club, `shop-admin` 역할), 일반 회원(modo-club, 쇼핑몰에서 가입)입니다.
 
-1. `https://<keycloak 도메인>/admin`에 `KC_BOOTSTRAP_ADMIN_*` 계정으로 로그인합니다. 임시 관리자라는 경고가 보이면 `master` realm에 영구 관리자를 만들고 임시 계정을 지웁니다.
-2. [쓰던 환경에 쇼핑몰 관리자 추가하기](authentication.md#쓰던-환경에-쇼핑몰-관리자-추가하기)의 3~6단계를 따릅니다. 역할 `shop-admin`은 realm에 이미 있으므로 2단계는 건너뜁니다. 이메일은 실제로 받을 수 있는 주소가 아니어도 되고, 비밀번호는 새로 정합니다.
+1. `https://<keycloak 도메인>/admin`에 `KC_BOOTSTRAP_ADMIN_*` 계정으로 로그인합니다. 이 화면은 Keycloak 기본 디자인입니다.
+2. 왼쪽 위 realm을 `master`에서 **modo-club**으로 바꿉니다.
+3. **Users → Create new user**에서 **Email verified**를 켜고 Email, First name, Last name을 넣어 만듭니다. 메일 서버가 없고 관리자가 직접 만든 계정이라 인증 메일을 보내지 않습니다. 이름이 한글이면 화면에 성과 이름을 붙여(`이기문님`) 보여 줍니다.
+4. **Credentials → Set password**에서 비밀번호를 정하고 **Temporary**는 끕니다.
+5. **Role mapping → Assign role → Realm roles**에서 `shop-admin`을 골라 **Assign**합니다.
+6. 스토어에서 이 계정으로 로그인해 헤더에 `관리자 홈`·`주문 관리`·`상담 관리`가 보이는지 확인합니다.
 
 ### 6. 결제 확인
 
@@ -195,7 +219,7 @@ Hobby 플랜은 월 5달러이고 사용량 5달러가 포함됩니다. 사용�
 
 ## 바꿀 때
 
-- `main`에 푸시하면 설정 파일의 watch paths에 맞는 서비스만 다시 배포됩니다. 예를 들어 `frontend/`만 바꾸면 frontend만 다시 빌드합니다.
+- `main`에 푸시하면 Railway가 최신 코드를 받아 Dockerfile대로 다시 빌드하고, 새 버전이 Healthcheck를 통과하면 교체합니다. 각 서비스의 Watch Paths에 걸리는 파일이 바뀐 서비스만 다시 배포됩니다. 예를 들어 `frontend/`만 바꾸면 frontend만 다시 빌드합니다.
 - 이미지 빌드는 테스트를 돌리지 않습니다. 푸시 전에 로컬에서 [백엔드](development.md#백엔드-검증)와 [프런트엔드](development.md#프런트엔드-검증)를 검증합니다.
 - realm 파일은 Keycloak DB에 realm이 **없을 때만** 읽습니다. 처음 배포한 뒤 realm 파일을 고치거나 스토어 도메인을 바꾸면 관리 콘솔에서 직접 고칩니다([realm 설정 바꾸기](authentication.md#realm-설정-바꾸기)). 스토어 도메인은 **Clients → modo-club-web**의 Root·Home URL, Redirect URI, Web origins, Post logout redirect URI와 **Realm settings**의 HTML display name에 있습니다. 계정 화면 로고 링크는 테마 파일이라 `STORE_URL`을 바꾸고 keycloak을 다시 배포합니다.
 
@@ -219,3 +243,6 @@ docker build -f docker/keycloak.Dockerfile --build-arg STORE_URL=http://127.0.0.
 | 로그인은 되는데 API가 401 | backend의 `KEYCLOAK_ISSUER_URI`가 `KC_HOSTNAME` + `/realms/modo-club`과 정확히 같은지 |
 | 상담 창이 `연결이 끊겨 다시 연결하고 있습니다`에서 멈춤 | backend 로그의 WebSocket 403. nginx가 `Host`·`X-Forwarded-Proto`를 넘기는지, `PAYMENT_FORWARD_HEADERS_STRATEGY=framework`인지 |
 | 결제 버튼이 비활성화됨 | backend의 `TOSS_CLIENT_KEY`·`TOSS_SECRET_KEY`([토스 키](configuration.md#토스-키)) |
+| 서비스 Settings의 Networking에 `Could not load public networking` | 서비스가 아직 적용 전(New)임. 위쪽 **Deploy**로 먼저 적용([3단계](#3-첫-배포와-도메인)) |
+| `KC_BOOTSTRAP_ADMIN_PASSWORD`를 바꿨는데 관리 화면 로그인이 안 됨 | 이 값은 처음 켜질 때만 쓰임. 이전 비밀번호로 로그인해 관리 화면에서 바꿈([4단계](#4-변수와-다시-배포)) |
+| 변수 옆에 노란 ⓘ 경고 | 참조(`${{...}}`)를 아직 확인하지 못함. 도메인은 실제 주소로 적음 |
