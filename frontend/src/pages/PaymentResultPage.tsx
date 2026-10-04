@@ -14,8 +14,7 @@ import {
   paymentStatusLabel
 } from "../lib/formatters";
 import { clearPendingOrderId, saveLastOrderId } from "../lib/orderStorage";
-import { removeSessionValue } from "../lib/storage";
-import { readPaymentRedirect, recordPaymentFailure, recordStockRejection } from "../payments/paymentRedirect";
+import { clearPaymentConfirmation, readPaymentRedirect, recordPaymentFailure, recordStockRejection } from "../payments/paymentRedirect";
 import type { ConfirmPaymentCommand, Order } from "../types/payment";
 
 // 결제 기한이 지나 취소된 주문은 서버가 승인을 요청하지 않는다. 결과를 모르는 상황이 아니므로 취소된 주문을 보여준다.
@@ -32,6 +31,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : "결과를 확인하지 못했습니다. 다시 결제하지 말고 저장된 결과를 조회해주세요.";
+}
+
+function isPendingConfirmation(order: Order, command: ConfirmPaymentCommand | null): boolean {
+  return command?.orderId === order.orderId && order.status === "PENDING_PAYMENT"
+    && order.latestAttempt?.id === command.attemptId && order.latestAttempt.status === "STARTED";
 }
 
 // 로그인 확인이 끝난 뒤 복귀 주소를 읽는다. Keycloak이 로그인 복귀 정보를 먼저 읽어야 하고, 승인 요청에는 토큰이 필요하다.
@@ -75,10 +79,14 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
   }
 
   function showOrder(nextOrder: Order) {
+    const pendingConfirmation = isPendingConfirmation(nextOrder, confirmation);
     setOrder(nextOrder);
-    setTitle(nextOrder.payment.status === "SUCCEEDED" ? "결제가 완료되었습니다."
+    setTitle(pendingConfirmation ? "결제 결과 확인이 필요합니다"
+      : nextOrder.payment.status === "SUCCEEDED" ? "결제가 완료되었습니다."
       : nextOrder.status === "CANCELED" ? "결제 기한이 지나 취소된 주문입니다" : paymentStatusLabel(nextOrder.payment.status));
-    setMessage(nextOrder.payment.status === "SUCCEEDED"
+    setMessage(pendingConfirmation
+      ? "현재 결제 시도의 최종 승인 결과를 확인하지 못했습니다. 승인 요청 다시 확인으로 같은 결제 시도를 확인해주세요."
+      : nextOrder.payment.status === "SUCCEEDED"
       ? "결제가 정상적으로 승인되었습니다. 주문 내역에서 상품과 결제 정보를 확인하세요."
       : nextOrder.payment.message);
     setError("");
@@ -87,12 +95,11 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
       clearPendingOrderId(customerId, nextOrder.orderId);
     }
 
-    // 서버에 기록된 결제는 재승인 대신 저장된 결과를 조회한다.
-    if (nextOrder.payment.status !== "READY") {
+    // payment는 이전 승인 결과일 수 있다. 현재 시도가 처리됐거나 주문이 끝난 경우만 정리한다.
+    if (confirmation && (nextOrder.status === "PAID" || nextOrder.status === "CANCELED"
+      || (nextOrder.latestAttempt?.id === confirmation.attemptId && nextOrder.latestAttempt.status !== "STARTED"))) {
+      clearPaymentConfirmation(confirmation);
       setConfirmation(null);
-      if (redirect.storageKey) {
-        removeSessionValue(redirect.storageKey);
-      }
     }
   }
 
@@ -238,6 +245,8 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
   }
 
   const canceled = order?.status === "CANCELED";
+  const pendingConfirmation = order !== null && isPendingConfirmation(order, confirmation);
+  const payment = pendingConfirmation ? null : order?.payment;
 
   return (
     <AppShell footerText="테스트 결제 결과" mainClassName="result-page">
@@ -261,20 +270,20 @@ function PaymentResult({ customerId }: { customerId: string | null }) {
           </div>
           <div>
             <dt>결제 상태</dt>
-            <dd>{stockRejected ? "재고 부족 · 승인하지 않음" : order ? paymentStatusLabel(order.payment.status) : "—"}</dd>
+            <dd>{stockRejected ? "재고 부족 · 승인하지 않음" : pendingConfirmation ? "승인 요청 확인 필요" : payment ? paymentStatusLabel(payment.status) : "—"}</dd>
           </div>
           <div>
             <dt>실제 승인 금액</dt>
-            <dd>{order?.payment.paidAmount == null ? "—" : `${order.payment.paidAmount.toLocaleString("ko-KR")} ${order.payment.paidCurrency}`}</dd>
+            <dd>{payment?.paidAmount == null ? "—" : `${payment.paidAmount.toLocaleString("ko-KR")} ${payment.paidCurrency}`}</dd>
           </div>
           <div>
             <dt>승인 시각</dt>
-            <dd>{formatDateTime(order?.payment.approvedAt ?? null)}</dd>
+            <dd>{formatDateTime(payment?.approvedAt ?? null)}</dd>
           </div>
-          {order?.payment.errorCode && (
+          {payment?.errorCode && (
             <div>
               <dt>오류 코드</dt>
-              <dd>{order.payment.errorCode}</dd>
+              <dd>{payment.errorCode}</dd>
             </div>
           )}
         </dl>

@@ -75,6 +75,16 @@ function readStoredConfirmation(
   }
 }
 
+/** 처리한 시도의 정보만 지워, 늦은 응답이 새 인증 결과를 삭제하지 않게 한다. */
+export function clearPaymentConfirmation(command: ConfirmPaymentCommand): void {
+  const storageKey = `pendingConfirmation:${command.orderId}`;
+  const stored = readStoredConfirmation(storageKey, command.orderId);
+  if (stored?.attemptId === command.attemptId && stored.paymentKey === command.paymentKey
+    && stored.amount === command.amount) {
+    removeSessionValue(storageKey);
+  }
+}
+
 function failureStorageKey(orderId: string): string {
   return `pendingAuthenticationResult:${orderId}`;
 }

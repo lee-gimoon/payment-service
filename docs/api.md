@@ -252,6 +252,7 @@
 | `canceledAt` | 결제 기한이 지나 주문이 취소된 시각. 취소되지 않은 주문은 `null` |
 
 - 두 필드는 서로 다른 시도를 가리킬 수 있다. 예를 들어 승인 실패 뒤 결제창을 닫으면 `latestAttempt`는 `AUTH_CANCELED`, `payment`는 `FAILED`다.
+- 새 시도로 인증한 뒤 승인 요청에 통신 오류가 나면, 주문 조회의 `payment`가 이전 시도의 `FAILED`여도 새 승인 정보를 지우지 않는다. 현재 시도의 ID가 `latestAttempt.id`와 같고 `STARTED`를 벗어났거나, 주문이 `PAID`·`CANCELED`일 때만 해당 승인 정보를 정리한다. 결제 결과 화면은 현재 시도가 아직 `STARTED`인 결제 대기 주문에 `승인 요청 확인 필요`를 표시하고 같은 시도로 확인하는 버튼을 유지한다.
 - 시각은 ISO 8601 UTC 문자열이다. `finishedAt`은 종료 상태에서만 값이 있다.
 - `paymentKey`와 전체 시도 이력은 응답에 넣지 않는다.
 
