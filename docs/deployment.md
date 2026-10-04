@@ -64,7 +64,8 @@ Railway는 서비스가 **바깥으로 보내는 통신이 5~10분 없으면** �
 
 | 파일 | 역할 |
 | --- | --- |
-| [Dockerfile](../Dockerfile) | 백엔드 이미지. 테스트는 Docker가 필요해 빌드에서 돌리지 않으므로 푸시 전에 로컬에서 실행 |
+| [Dockerfile](../Dockerfile) | 백엔드 이미지. 테스트는 Docker가 필요해 빌드에서 돌리지 않고 GitHub Actions가 실행 |
+| [.github/workflows/ci.yml](../.github/workflows/ci.yml) | 푸시·PR마다 백엔드·프런트엔드 테스트와 빌드. Railway의 Wait for CI가 이 결과를 기다림 |
 | [frontend/Dockerfile](../frontend/Dockerfile) | 스토어 이미지. Keycloak 공개 주소를 빌드 인자 `VITE_KEYCLOAK_URL`로 받음 |
 | [frontend/nginx/default.conf.template](../frontend/nginx/default.conf.template) | 화면·API·WebSocket 나누기, 내부망 백엔드 전달, 캐시·결제창 팝업 헤더 |
 | [docker/keycloak.Dockerfile](../docker/keycloak.Dockerfile) | Keycloak 이미지. 스토어 주소를 빌드 인자 `STORE_URL`로 받아 realm과 계정 테마에 넣음 |
@@ -103,10 +104,12 @@ Railway는 서비스가 **바깥으로 보내는 통신이 5~10분 없으면** �
 | Watch Paths (`watch`) | `/src/main/**`, `/build.gradle`, `/settings.gradle`, `/gradle/**`, `/Dockerfile` | `/frontend/**` | `/docker/keycloak.Dockerfile`, `/docker/keycloak/**`, `/docker/keycloak-themes/**` |
 | Healthcheck Path (`health`) | `/payment-config` | `/` | `/realms/modo-club` |
 | Serverless (`serverless`) | 켬 | 끔 | 켬 |
+| Wait for CI (`ci`) | 켬 | 켬 | 켬 |
 
 - Source의 Branch는 `main`, Root Directory는 비워 둡니다. 세 이미지 모두 저장소 루트를 빌드 컨텍스트로 씁니다.
 - Watch Paths는 바뀐 파일이 목록에 걸릴 때만 그 서비스를 다시 배포하게 합니다. 화면만 고치면 backend는 다시 배포되지 않습니다.
 - Healthcheck Path는 새 버전이 200으로 답할 때만 교체하게 합니다. 300초 안에 답이 없으면 배포를 실패로 처리하고 이전 버전을 유지합니다.
+- Wait for CI는 GitHub Actions 검사([ci.yml](../.github/workflows/ci.yml))가 통과한 커밋만 배포하게 합니다. 검사가 실패한 커밋은 배포하지 않습니다.
 
 ### 3. 첫 배포와 도메인
 
@@ -220,7 +223,7 @@ Hobby 플랜은 월 5달러이고 사용량 5달러가 포함됩니다. 사용�
 ## 바꿀 때
 
 - `main`에 푸시하면 Railway가 최신 코드를 받아 Dockerfile대로 다시 빌드하고, 새 버전이 Healthcheck를 통과하면 교체합니다. 각 서비스의 Watch Paths에 걸리는 파일이 바뀐 서비스만 다시 배포됩니다. 예를 들어 `frontend/`만 바꾸면 frontend만 다시 빌드합니다.
-- 이미지 빌드는 테스트를 돌리지 않습니다. 푸시 전에 로컬에서 [백엔드](development.md#백엔드-검증)와 [프런트엔드](development.md#프런트엔드-검증)를 검증합니다.
+- 이미지 빌드는 테스트를 돌리지 않습니다. 테스트는 GitHub Actions가 돌리고([자동 검사](development.md#자동-검사github-actions)), **Wait for CI**를 켠 서비스는 검사가 통과한 커밋만 배포합니다. 검사가 실패하면 배포하지 않고 이전 버전을 유지합니다.
 - realm 파일은 Keycloak DB에 realm이 **없을 때만** 읽습니다. 처음 배포한 뒤 realm 파일을 고치거나 스토어 도메인을 바꾸면 관리 콘솔에서 직접 고칩니다([realm 설정 바꾸기](authentication.md#realm-설정-바꾸기)). 스토어 도메인은 **Clients → modo-club-web**의 Root·Home URL, Redirect URI, Web origins, Post logout redirect URI와 **Realm settings**의 HTML display name에 있습니다. 계정 화면 로고 링크는 테마 파일이라 `STORE_URL`을 바꾸고 keycloak을 다시 배포합니다.
 
 ## 로컬에서 운영 이미지 확인

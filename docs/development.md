@@ -75,6 +75,20 @@ npm run build
 - `npm run build`는 타입 검사 후 `frontend/dist/`를 만듭니다. 백엔드 JAR에는 포함되지 않습니다.
 - 화면을 바꾸면 [DESIGN.md](../DESIGN.md) 기준으로 PC·모바일, 키보드 포커스, 처리 중·오류 상태를 확인합니다.
 
+## 자동 검사(GitHub Actions)
+
+`main` 푸시와 PR마다 [ci.yml](../.github/workflows/ci.yml)이 두 작업을 동시에 돌립니다. 결과는 저장소의 **Actions** 탭과 커밋 옆 체크 표시로 확인합니다.
+
+| 작업 | 실행 | 환경 |
+| --- | --- | --- |
+| Backend tests | `./gradlew test bootJar` | Java 21(Temurin), Testcontainers용 Docker |
+| Frontend tests and build | `npm ci`, `npm test`, `npm run build` | Node.js 22 |
+
+- 백엔드 테스트가 실패하면 테스트 보고서(`build/reports/tests/test/`)를 실행 결과의 **Artifacts**에 `backend-test-report`로 올립니다.
+- Railway 서비스는 **Wait for CI**를 켜 두어 이 검사를 통과한 커밋만 배포합니다([Railway 배포](deployment.md#2-서비스-3개)). 실패한 커밋은 배포되지 않고 이전 버전이 그대로 동작합니다.
+- 같은 브랜치에 연달아 푸시하면 이전 실행은 취소하고 최신 커밋만 검사합니다.
+- CI가 있어도 푸시 전에 로컬에서 위 검증을 돌리면 실패를 더 빨리 알 수 있습니다.
+
 ## 개발 서버의 경로
 
 Vite 프록시 경로 `/products`, `/orders`, `/admin`이 화면 경로와 겹칩니다. 마이페이지 API는 화면 주소 `/mypage`와 겹치지 않게 `/me/`로 프록시합니다. 브라우저가 페이지를 요청할 때(`Accept: text/html`)는 [vite.config.ts](../frontend/vite.config.ts)가 API 대신 React 화면을 돌려주므로, `/orders/:orderId`나 `/admin/chat` 같은 주소를 새로고침하거나 로그인 후 돌아와도 화면이 열립니다. 상담 실시간 알림 `/ws`는 WebSocket 프록시(`ws: true`)로 백엔드에 연결합니다. 운영 배포에서는 [nginx 설정](../frontend/nginx/default.conf.template)이 같은 규칙을 맡으므로, 경로를 추가하거나 바꾸면 두 파일을 함께 고칩니다.
