@@ -22,20 +22,41 @@ Spring Boot와 React로 만든 티셔츠 쇼핑몰(MODO CLUB)입니다. 서버�
 ## 시스템 구성
 
 ```mermaid
-flowchart LR
-    Browser["브라우저"] -->|"화면·API·WebSocket"| Front["frontend<br/>nginx + React"]
-    Front -->|"내부망"| Back["backend<br/>Spring Boot"]
-    Back --> DB[("PostgreSQL")]
-    Browser -->|"로그인·회원가입"| KC["Keycloak"]
-    KC --> DB
-    Browser -->|"결제창 인증"| Toss["토스페이먼츠"]
-    Back -->|"승인·조회"| Toss
-    Back -.->|"토큰 검증 공개키"| KC
+flowchart TB
+    user(["사용자 (브라우저)"])
+
+    subgraph railway["Railway 배포"]
+        front["쇼핑몰 화면<br/>React + nginx"]
+        auth["로그인 서버<br/>Keycloak"]
+        api["주문·결제 서버<br/>Spring Boot"]
+        db[("DB<br/>PostgreSQL")]
+    end
+
+    toss["토스페이먼츠<br/>결제 승인 API"]
+
+    user -->|"상품 보기·주문·결제"| front
+    user -->|"로그인·회원가입"| auth
+    front -->|"API 요청 (내부망)"| api
+    api -->|"주문·결제 저장"| db
+    auth -->|"회원 저장"| db
+    api -->|"결제 승인 요청"| toss
+
+    classDef web fill:#e9eeff,stroke:#4258e7,color:#23243a
+    classDef server fill:#e7f6ec,stroke:#2f9e5b,color:#23243a
+    classDef login fill:#fff1e6,stroke:#e8833a,color:#23243a
+    classDef store fill:#f1f2f6,stroke:#70748d,color:#23243a
+    classDef external fill:#ffffff,stroke:#23243a,color:#23243a,stroke-dasharray: 4 3
+    class front web
+    class api server
+    class auth login
+    class db store
+    class toss,user external
 ```
 
-- 화면은 API를 같은 주소의 상대 경로로 부르고, nginx가 API와 상담 WebSocket을 내부망의 백엔드로 넘깁니다. 백엔드에는 공개 주소가 없습니다.
-- 로그인은 Keycloak(OIDC)이 맡습니다. 백엔드는 비밀번호를 다루지 않고 access token의 서명·발급자·대상을 검증하며, `shop-admin` 역할로 관리자 API를 나눕니다.
-- Railway에 배포했으며, 방문이 없으면 백엔드와 Keycloak을 재워 Hobby 플랜 포함 사용량(월 5달러) 안에서 운영합니다([Railway 배포](docs/deployment.md)).
+- 사용자가 접속하는 주소는 **쇼핑몰 화면**과 **로그인 서버** 두 개뿐입니다. 쇼핑몰 화면(nginx)이 API 요청과 상담 WebSocket을 내부망의 주문·결제 서버로 넘기므로, 주문·결제 서버에는 공개 주소가 없습니다.
+- 결제는 브라우저에서 연 토스 결제창에서 카드 인증을 마친 뒤, 주문·결제 서버가 토스에 **승인**을 요청해 확정합니다.
+- 로그인 서버(Keycloak)가 회원가입·로그인을 맡고, 주문·결제 서버는 비밀번호를 다루지 않고 로그인 토큰만 검증합니다. `shop-admin` 역할이 있는 토큰만 관리자 API를 쓸 수 있습니다.
+- 방문이 없으면 주문·결제 서버와 로그인 서버를 재워 Hobby 플랜 포함 사용량(월 5달러) 안에서 운영합니다([Railway 배포](docs/deployment.md)).
 
 ## 중복 결제 방지
 
