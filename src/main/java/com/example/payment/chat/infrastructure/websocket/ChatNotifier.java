@@ -13,7 +13,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * </ul>
  * onSaved가 어떻게 불리는지는 메서드 주석에 있다.
  * 커밋 전에 알리면 알림을 받은 화면이 서버에 조회해도 아직 메시지가 안 보이거나, 저장이 취소(롤백)된 메시지를 화면에 띄울 수 있다.
- * 연결이 끊겨 알림을 놓쳐도 메시지는 DB에 있으므로, 화면이 다시 연결할 때 조회로 채운다.
+ * 연결이 끊겨 알림을 놓쳐도 메시지는 DB에 있으므로, 화면이 다시 연결할 때 조회로 채운다. 11
  */
 @Component
 class ChatNotifier {
