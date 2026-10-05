@@ -19,6 +19,37 @@ Spring Boot와 React로 만든 티셔츠 쇼핑몰(MODO CLUB)입니다. 서버�
 - 방문이 없으면 서버를 재워 두므로, 한동안 접속이 없었다면 `서버를 깨우고 있습니다` 안내와 함께 첫 화면과 로그인 버튼이 뜨기까지 수십 초 걸릴 수 있습니다.
 - 여러 사람이 함께 쓰는 공개 계정입니다. **실제 이름·연락처·주소는 입력하지 마세요.** 관리자 계정은 모든 주문의 배송지를 볼 수 있습니다. 다른 사람이 쓸 수 있도록 데모 계정의 비밀번호와 계정 정보는 바꾸지 말아 주세요.
 
+## 화면
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/store-home.png" alt="스토어 홈 화면"></td>
+    <td width="50%"><img src="docs/screenshots/product-detail.png" alt="상품 상세 화면"></td>
+  </tr>
+  <tr>
+    <td>스토어 홈</td>
+    <td>상품 상세: 아바타 착용 미리보기, 사이즈별 재고</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/order-paid.png" alt="결제 완료 주문 확인 화면"></td>
+    <td><img src="docs/screenshots/admin-orders.png" alt="관리자 주문 관리 화면"></td>
+  </tr>
+  <tr>
+    <td>주문 확인: 서버 승인 결과와 배송 단계</td>
+    <td>관리자 주문 관리: 결제 완료 주문의 송장 등록</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/customer-chat.png" alt="고객 1:1 문의 창"></td>
+    <td><img src="docs/screenshots/admin-chat.png" alt="관리자 상담 관리 화면"></td>
+  </tr>
+  <tr>
+    <td>고객 1:1 문의</td>
+    <td>관리자 상담 관리: 실시간 답변</td>
+  </tr>
+</table>
+
+스크린샷의 배송지 주소는 가렸습니다.
+
 ## 시스템 구성
 
 ```mermaid
@@ -60,7 +91,7 @@ flowchart TB
 
 ## 중복 결제 방지
 
-결제에서 가장 피해야 할 일은 한 주문에 두 번 청구되는 것입니다. 중복은 아래 세 경우에 생기고, 서버에서 각각 막습니다. 화면의 버튼 비활성화는 탭 두 개나 API 직접 호출로 우회할 수 있어 편의 기능으로만 둡니다.
+결제에서 가장 피해야 할 일은 한 주문에 두 번 청구되는 것입니다. 중복은 아래 세 경우에 생기고, 서버에서 각각 막습니다. 마지막 줄은 코드 버그에 대비한 DB 안전장치입니다. 화면의 버튼 비활성화는 탭 두 개나 API 직접 호출로 우회할 수 있어 편의 기능으로만 둡니다.
 
 | 언제 생기나 | 어떻게 막나 |
 | --- | --- |
